@@ -1,0 +1,17 @@
+[tool.poetry]
+name = "msc"
+version = "0.1.0"
+description = "MSc Thesis of Shengdi 'shc' Chen"
+authors = ["Shengdi 'shc' Chen"]
+readme = "README.md"
+packages = [
+    { include = "src" },
+]
+
+[tool.poetry.dependencies]
+python = "^3.11"
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
