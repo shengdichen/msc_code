@@ -1,0 +1,10 @@
+__pycache__/
+*.py[cod]
+*$py.class
+
+.mypy_cache/
+.ropeproject/
+.pytest_cache/
+.idea/
+
+src/playground/
