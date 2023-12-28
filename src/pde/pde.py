@@ -1,8 +1,13 @@
 import logging
+import os
 from collections.abc import Iterable
+from typing import Generator
 
 import matplotlib.pyplot as plt
 import numpy as np
+
+from src.definition import DEFINITION
+from src.util.gif import MakerGif
 
 logger = logging.getLogger(__name__)
 
@@ -62,6 +67,42 @@ class GridTwoD:
     def coords_y(self) -> np.ndarray:
         return self._coords_y
 
+    def init_solution_zeros(self) -> np.ndarray:
+        # np's 0th axis := human's y
+        # np's 1st axis := human's x
+        return np.zeros((self._n_gridpts_y, self._n_gridpts_x))
+
+
+class GridTime:
+    def __init__(self, n_steps: int, stepsize: float):
+        self._n_steps = n_steps
+        self._stepsize = stepsize
+
+        # (pre-)pad (just) enough zeros to make all timesteps uniform length
+        # NOTE:
+        #   add 1 to n-steps since we might want to track states before AND
+        #   after time-stepping, which yields a total of (n-steps + 1) states
+        #   in total
+        self._formatter_timestep = f"{{:0{int(np.ceil(np.log10(self._n_steps+1)))}}}"
+
+    @property
+    def n_steps(self) -> int:
+        return self._n_steps
+
+    @property
+    def stepsize(self) -> float:
+        return self._stepsize
+
+    def timestep_formatted(self, timestep: int) -> str:
+        return f"{self._formatter_timestep}".format(timestep)
+
+    def step(self) -> Generator[int, None, None]:
+        # NOTE:
+        #   the zeroth timestep, containing in particular the
+        #   initial-condition, should be handled separately by user
+        for timestep in range(1, self._n_steps + 1):
+            yield timestep
+
 
 class PDEPoisson:
     def __init__(self):
@@ -71,9 +112,7 @@ class PDEPoisson:
 
         self._source_f = self._apply_source_function()
 
-        # np's 0th axis := human's y
-        # np's 1st axis := human's x
-        self._sol = np.zeros((self._grid.n_gridpts_y, self._grid.n_gridpts_x))
+        self._sol = self._grid.init_solution_zeros()
         PDEUtil.boundary_space(self._sol, -1)
 
         self._n_iters_max = int(5e3)
@@ -154,9 +193,69 @@ class PDEPoisson:
         plt.savefig("poisson-3d")
 
 
+class PDEHeat:
+    def __init__(self, alpha: float = 0.1):
+        self._grid = GridTwoD(
+            n_gridpts_x=50, n_gridpts_y=50, stepsize_x=0.1, step_size_y=0.1
+        )
+        self._sol = self._grid.init_solution_zeros()
+
+        self._gridtime = GridTime(n_steps=100, stepsize=0.01)
+
+        # initial-condition: heat-source at center
+        self._sol[self._grid.n_gridpts_x // 2, self._grid.n_gridpts_y // 2] = 100.0
+
+        self._alpha = alpha
+
+        self._output_dir = DEFINITION.BIN_DIR / "pde/heat"
+        os.makedirs(self._output_dir, exist_ok=True)
+
+    def solve(self) -> None:
+        self.plot_3d(0)  # initial-state
+
+        for timestep in self._gridtime.step():
+            sol_curr = self._sol.copy()
+            for i in range(1, self._grid.n_gridpts_x - 1):
+                for j in range(1, self._grid.n_gridpts_y - 1):
+                    self._sol[i, j] = sol_curr[
+                        i, j
+                    ] + self._alpha * self._gridtime.stepsize * (
+                        (sol_curr[i + 1, j] - 2 * sol_curr[i, j] + sol_curr[i - 1, j])
+                        / self._grid.stepsize_x**2
+                        + (sol_curr[i, j + 1] - 2 * sol_curr[i, j] + sol_curr[i, j - 1])
+                        / self._grid.stepsize_y**2
+                    )
+
+            self.plot_3d(timestep)
+
+    def plot_3d(self, timestep: int) -> None:
+        timestep_formatted = self._gridtime.timestep_formatted(timestep)
+
+        fig = plt.figure()
+        ax = fig.add_subplot(111, projection="3d")
+        ax.plot_surface(
+            self._grid.coords_x, self._grid.coords_y, self._sol, cmap="viridis"
+        )
+        ax.set_title(
+            "Heat [time-step " f"{timestep_formatted}/{self._gridtime.n_steps}" "]"
+        )
+        ax.set_xlabel("X")
+        ax.set_ylabel("Y")
+        ax.set_zlabel("Temperature")
+        plt.tight_layout()
+
+        plt.savefig(self._output_dir / f"./frame_{timestep_formatted}")
+        plt.close()
+
+    def plot_gif(self) -> None:
+        MakerGif(source_dir=self._output_dir).make(self._output_dir / "heat.gif")
+
+
 if __name__ == "__main__":
     logging.basicConfig(
         format="%(module)s [%(levelname)s]> %(message)s", level=logging.INFO
     )
-    pde = PDEPoisson()
-    pde.plot_3d()
+
+    pde = PDEHeat()
+    pde.solve()
+    pde.plot_gif()
