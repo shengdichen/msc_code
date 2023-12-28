@@ -4,7 +4,7 @@ import torch.nn as nn
 
 class RNNWithMasking(nn.Module):
     def __init__(self, input_size, hidden_size, output_size):
-        super(RNNWithMasking, self).__init__()
+        super().__init__()
         self.embedding = nn.Embedding(input_size, hidden_size)
         self.rnn = nn.RNN(hidden_size, hidden_size, batch_first=True)
         self.fc = nn.Linear(hidden_size, output_size)
@@ -33,30 +33,30 @@ class RNNWithMasking(nn.Module):
         return logits
 
 
-# Example usage
-input_size = 100  # Vocabulary size
-hidden_size = 128
-output_size = 10  # Number of classes
-max_sequence_length = 20
+def fname(arg) -> None:
+    input_size = 100  # Vocabulary size
+    hidden_size = 128
+    output_size = 10  # Number of classes
+    max_sequence_length = 20
 
-# Generate random input sequences of variable lengths
-batch_size = 5
-sequences = [
-    torch.randint(0, input_size, (torch.randint(1, max_sequence_length + 1),))
-    for _ in range(batch_size)
-]
+    # Generate random input sequences of variable lengths
+    batch_size = 5
+    sequences = [
+        torch.randint(0, input_size, (torch.randint(1, max_sequence_length + 1),))
+        for _ in range(batch_size)
+    ]
 
-# Pad sequences to the maximum length
-padded_sequences = nn.utils.rnn.pad_sequence(sequences, batch_first=True)
+    # Pad sequences to the maximum length
+    padded_sequences = nn.utils.rnn.pad_sequence(sequences, batch_first=True)
 
-# Get lengths of each sequence
-lengths = torch.tensor([len(seq) for seq in sequences])
+    # Get lengths of each sequence
+    lengths = torch.tensor([len(seq) for seq in sequences])
 
-# Create the model
-model = RNNWithMasking(input_size, hidden_size, output_size)
+    # Create the model
+    model = RNNWithMasking(input_size, hidden_size, output_size)
 
-# Forward pass with masked input
-logits = model(padded_sequences, lengths)
+    # Forward pass with masked input
+    logits = model(padded_sequences, lengths)
 
-# Print the output shape
-print("Logits Shape:", logits.shape)
+    # Print the output shape
+    print("Logits Shape:", logits.shape)
