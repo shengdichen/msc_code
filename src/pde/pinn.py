@@ -5,136 +5,165 @@ import numpy as np
 import torch
 import torch.nn as nn
 
+from src.pde.multidiff import Multidiff
+from src.pde.pde import Distance
+
 logger = logging.getLogger(__name__)
 
 
-def exact_solution(d: float, w0: float, t: torch.Tensor) -> torch.Tensor:
-    if d >= w0:
-        raise ValueError
+class SolverExact:
+    def __init__(self, delta: float = 2, omega_0: float = 20):
+        if delta >= omega_0:
+            raise ValueError
+        self._delta, self._omega_0 = delta, omega_0
 
-    w = np.sqrt(w0**2 - d**2)
-    phi = np.arctan(-d / w)
-    A = 1 / (2 * np.cos(phi))
-    cos = torch.cos(phi + w * t)
-    exp = torch.exp(-d * t)
+    def eval_pde(self, lhs: torch.Tensor) -> torch.Tensor:
+        omega = np.sqrt(self._omega_0**2 - self._delta**2)
+        phi = np.arctan(-self._delta / omega)
+        capital_a = 1 / (2 * np.cos(phi))
 
-    return exp * 2 * A * cos
+        return (
+            torch.exp(-self._delta * lhs) * 2 * capital_a * torch.cos(phi + omega * lhs)
+        )
+
+    def eval_boundary_time(self, lhs: torch.Tensor) -> torch.Tensor:
+        return 1
 
 
-class NetworkFullConnect(nn.Module):
+class NetworkDense(nn.Module):
     def __init__(
         self,
         size_hidden: int,
         n_layers: int,
-        size_input: int = 1,
-        size_output: int = 1,
         activation=nn.Tanh,
     ):
         super().__init__()
 
-        self._layer_start = nn.Sequential(
-            nn.Linear(size_input, size_hidden), activation()
-        )
+        self._size_layer_hidden = size_hidden
+        self._n_layers_hidden = n_layers
+        self._activation = activation
+
+        self._layer_start = nn.Sequential(nn.Linear(1, size_hidden), activation())
+        # hiddens = []
+        # for _ in range(self._n_layers_hidden - 1):
+        #     hiddens.append(
+        #         nn.Sequential(
+        #             nn.Linear(self._size_layer_hidden, self._size_layer_hidden),
+        #             activation(),
+        #         )
+        #     )
+        #     # hiddens.append(nn.Linear(self._size_layer_hidden, self._size_layer_hidden))
+        #     # hiddens.append(self._activation())
+        # self._layers_hidden = nn.Sequential(*hiddens)
+
         self._layers_hidden = nn.Sequential(
             *[
                 nn.Sequential(nn.Linear(size_hidden, size_hidden), activation())
                 for _ in range(n_layers - 1)
             ]
         )
-        self._layer_end = nn.Linear(size_hidden, size_output)
+        self._layer_end = nn.Linear(size_hidden, 1)
+
+        # self._layers = self._make_layers()
+
+    def _make_layers(self) -> nn.Module:
+        layers = []
+
+        layers.append(nn.Linear(1, self._size_layer_hidden))
+
+        layers.append(self._activation())
+        for _ in range(self._n_layers_hidden):
+            layers.append(nn.Linear(self._size_layer_hidden, self._size_layer_hidden))
+            layers.append(self._activation())
+
+        layers.append(nn.Linear(self._size_layer_hidden, 1))
+
+        return nn.Sequential(*layers)
 
     def forward(self, input: torch.Tensor) -> torch.Tensor:
         return self._layer_end(self._layers_hidden(self._layer_start(input)))
+        # return self._layers(input)
 
 
 class Pinn:
     def __init__(self):
         torch.manual_seed(123)
-        self._network = NetworkFullConnect(32, 3)
-        self._optimiser = torch.optim.Adam(self._network.parameters(), lr=1e-3)
+        self._network = NetworkDense(32, 3)
+        print(self._network)
 
-        # define boundary points, for the boundary loss
-        self._gridpts_boundary = (
-            torch.tensor(0.0).reshape(-1, 1).requires_grad_(True)
+        self._optimiser = torch.optim.Adam(self._network.parameters(), lr=1e-3)
+        self._loss_lambda_1, self._loss_lambda_2 = 1e-1, 1e-4
+
+        self._gridpts_boundary = torch.tensor(0.0, requires_grad=True).reshape(
+            -1, 1
         )  # (1, 1)
 
-        # define training points over the entire domain, for the physics loss
-        self._gridpts = (
-            torch.linspace(0, 1, 30).reshape(-1, 1).requires_grad_(True)
+        self._gridpts_pde = torch.linspace(0, 1, 30, requires_grad=True).reshape(
+            -1, 1
         )  # (30, 1)
 
-        constant_d, constant_w0 = 2, 20
-        self._constant_mu, self._constant_k = 2 * constant_d, constant_w0**2
+        constant_delta, constant_omega_0 = 2, 20
+        self._constant_mu, self._constant_k = 2 * constant_delta, constant_omega_0**2
         self._t_test = torch.linspace(0, 1, 300).reshape(-1, 1)
-        self._u_exact = exact_solution(constant_d, constant_w0, self._t_test)
+
+        self._solver_exact = SolverExact(constant_delta, constant_omega_0)
+        self._u_exact = self._solver_exact.eval_pde(self._t_test)
 
     def train(self) -> None:
         for timestep in range(15001):
-            u, dudt, d2udt2 = self._train_step()
+            self._train_step(timestep)
 
-            if timestep % 5000 == 0:
-                msg = (
-                    f"pred_full: {u.abs().mean().item()}",
-                    f"u_dt1: {dudt.abs().mean().item()}"
-                    f"u_dt2: {d2udt2.abs().mean().item()}",
-                )
-                logger.info(msg)
-                self._plot_progress(timestep)
-
-    def _train_step(self) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    def _train_step(self, timestep: int) -> None:
         self._optimiser.zero_grad()
 
-        # compute each term of the PINN loss function above
-        # using the following hyperparameters
-        lambda1, lambda2 = 1e-1, 1e-4
+        loss_d0, loss_d1 = self._loss_boundary_time()
+        loss_pde = self._loss_pde()
 
-        # compute boundary loss (dim == (1, 1))
-        pred_boundary = self._network(self._gridpts_boundary)
-        loss1 = (torch.squeeze(pred_boundary) - 1) ** 2
-        # dim == (1, 1)
-        u_dt1 = torch.autograd.grad(
-            pred_boundary,
-            self._gridpts_boundary,
-            torch.ones_like(pred_boundary),
-            create_graph=True,
-        )[0]
-        u_dt2 = (torch.squeeze(u_dt1) - 0) ** 2
+        if timestep % 100 == 0:
+            msg = (
+                f"step: {timestep}"
+                " | "
+                f"loss-d0: {loss_d0}"
+                " | "
+                f"loss-d1: {loss_d1}"
+                " | "
+                f"loss-pde: {loss_pde}"
+            )
+            logger.info(msg)
+            if timestep % 5000 == 0:
+                logger.info("plotting")
+                self._plot_progress(timestep)
 
-        # compute physics loss (dim == (30, 1))
-        pred_full = self._network(self._gridpts)  # (30, 1)
-        logger.info(f"shape {pred_full.shape}")
-        u_dt1 = torch.autograd.grad(
-            pred_full, self._gridpts, torch.ones_like(pred_full), create_graph=True
-        )[0]
-        # (30, 1)
-        d2udt2 = torch.autograd.grad(
-            u_dt1, self._gridpts, torch.ones_like(u_dt1), create_graph=True
-        )[0]
-        loss3 = torch.mean(
-            (d2udt2 + self._constant_mu * u_dt1 + self._constant_k * pred_full) ** 2
-        )
-
-        # backpropagate joint loss, take optimiser step
-        loss = loss1 + lambda1 * u_dt2 + lambda2 * loss3
+        loss = loss_d0 + self._loss_lambda_1 * loss_d1 + self._loss_lambda_2 * loss_pde
         loss.backward()
         self._optimiser.step()
 
-        return pred_full, u_dt1, d2udt2
+    def _loss_boundary_time(self) -> tuple[torch.Tensor, torch.Tensor]:
+        u_d0 = self._network(self._gridpts_boundary)  # (1, 1)
+        loss_d0 = Distance(u_d0, 1).mse()
 
-    def _dt(self, input: torch.Tensor, times: int) -> None:
-        pass
+        md = Multidiff(rhs=u_d0, lhs=self._gridpts_boundary)
+        u_dt1 = md.diff()
+        loss_d1 = Distance(u_dt1, 0).mse()
+
+        return loss_d0, loss_d1
+
+    def _loss_pde(self) -> torch.Tensor:
+        u_d0 = self._network(self._gridpts_pde)  # (30, 1)
+        md = Multidiff(rhs=torch.sum(u_d0), lhs=self._gridpts_pde)
+        u_d1t = md.diff()
+        u_d2t = md.diff()
+
+        pred = u_d2t + self._constant_mu * u_d1t + self._constant_k * u_d0
+        return Distance(pred, 0).mse()
 
     def _plot_progress(self, timestep: int) -> None:
         prediction = self._network(self._t_test).detach()
-        logger.info(
-            f"prediction [step {timestep}]> "
-            f"{prediction.abs().mean()} @ {prediction.shape}"
-        )
 
         plt.figure(figsize=(6, 2.5))
         plt.scatter(
-            self._gridpts.detach()[:, 0],
-            torch.zeros_like(self._gridpts)[:, 0],
+            self._gridpts_pde.detach()[:, 0],
+            torch.zeros_like(self._gridpts_pde)[:, 0],
             s=20,
             lw=0,
             color="tab:green",
