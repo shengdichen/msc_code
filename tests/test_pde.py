@@ -1,4 +1,28 @@
-from src.pde.pde import GridTime, GridTwoD
+import torch
+
+from src.pde.pde import Distance, GridTime, GridTwoD
+
+
+class TestDistance:
+    def test_mse(self):
+        assert torch.equal(Distance(5).mse(), torch.tensor(25))
+        assert torch.equal(Distance(5, 0).mse(), torch.tensor(25))
+
+        assert torch.equal(Distance(5, 1).mse(), torch.tensor(16))
+        assert torch.equal(Distance(5, -1).mse(), torch.tensor(36))
+
+        assert torch.equal(Distance(torch.tensor([1] * 3), 1).mse(), torch.tensor(0))
+        assert torch.equal(
+            Distance(torch.tensor([2, 3, 4, 5], dtype=torch.float), 1).mse(),
+            torch.tensor(7.5),  # (1 + 4 + 9 + 16) / 4
+        )
+        assert torch.equal(
+            Distance(
+                torch.tensor([1, 4, 7], dtype=torch.float),
+                torch.tensor([1, 2, 3], dtype=torch.float),
+            ).mse(),
+            torch.tensor(20 / 3),  # (0 + 4 + 16) / 3
+        )
 
 
 class TestGridTwoD:
