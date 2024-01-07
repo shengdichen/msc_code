@@ -14,9 +14,6 @@ class Multidiff:
         self, rhs: torch.Tensor, lhs: torch.Tensor
     ) -> tuple[torch.Tensor, torch.Tensor]:
         if rhs.shape:
-            logger.warning(
-                f"{self.__class__}> attempting to eliminate dimensions of rhs [{rhs}]"
-            )
             rhs = torch.squeeze(rhs)
             rhs_shape = rhs.shape
             if rhs_shape:
@@ -41,7 +38,6 @@ class Multidiff:
     def _rhs_to_scalar(self) -> None:
         if self._rhs.shape:
             rhs_next = torch.sum(self._rhs)
-            logger.info(f"converting {self._rhs} to scalar {rhs_next}")
             self._rhs = rhs_next
 
     def diff(self) -> torch.Tensor:
@@ -62,5 +58,5 @@ class Multidiff:
             self._rhs = result
             self._rhs_to_scalar()  # prepare for next diff()-call
 
-        logger.info(f"rhs [{self._rhs}] with size [{self._rhs.shape}]")
+        logger.debug(f"rhs [{self._rhs}] with size [{self._rhs.shape}]")
         return result
