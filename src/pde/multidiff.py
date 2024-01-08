@@ -6,7 +6,10 @@ logger = logging.getLogger(__name__)
 
 
 class Multidiff:
-    def __init__(self, rhs: torch.Tensor, lhs: torch.Tensor):
+    def __init__(
+        self, rhs: torch.Tensor, lhs: torch.Tensor, force_rhs_scalar: bool = False
+    ):
+        self._force_rhs_scalar = force_rhs_scalar
         self._rhs, self._lhs = self._preprocess(rhs, lhs)
         self._ones = torch.tensor(1)
 
@@ -14,13 +17,16 @@ class Multidiff:
         self, rhs: torch.Tensor, lhs: torch.Tensor
     ) -> tuple[torch.Tensor, torch.Tensor]:
         if rhs.shape:
-            rhs = torch.squeeze(rhs)
-            rhs_shape = rhs.shape
-            if rhs_shape:
-                raise ValueError(
-                    f"{self.__class__}> expected output without shape, "
-                    f"but got (post-squeezing) [{rhs}] with shape [{rhs_shape}]"
-                )
+            if self._force_rhs_scalar:
+                rhs = torch.squeeze(rhs)
+                rhs_shape = rhs.shape
+                if rhs_shape:
+                    raise ValueError(
+                        f"{self.__class__}> expected output without shape, "
+                        f"but got (post-squeezing) [{rhs}] with shape [{rhs_shape}]"
+                    )
+            else:
+                rhs = torch.sum(rhs)
 
         if not lhs.requires_grad:
             logger.warning(

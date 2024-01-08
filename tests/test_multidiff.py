@@ -8,12 +8,15 @@ class TestMultidiff:
     def _lhs_default(self) -> torch.Tensor:
         return torch.tensor([1, 3, 7], dtype=torch.float32)
 
-    def test_ctor_rhs(self):
+    def test_ctor_rhs_preprocessing(self):
         for rhs in [
             torch.tensor(42),  # shape = []
             torch.tensor([42]),  # shape = [1]
             torch.tensor([[42]]),  # shape = [1, 1]
             torch.tensor([[[42]]]),  # shape = [1, 1, 1]
+            torch.tensor([10, 20]),  # shape = [2]
+            torch.tensor([10, 20, 30]),  # shape = [3]
+            torch.tensor([[1, 2, 3], [10, 20, 30]]),  # shape = [2, 3]
         ]:
             assert Multidiff(rhs, self._lhs_default())
 
@@ -23,7 +26,7 @@ class TestMultidiff:
                 torch.tensor([10, 20, 30]),  # shape = [3]
                 torch.tensor([[1, 2, 3], [10, 20, 30]]),  # shape = [2, 3]
             ]:
-                Multidiff(rhs, self._lhs_default())
+                Multidiff(rhs, self._lhs_default(), force_rhs_scalar=True)
 
     def test_diff_const(self):
         rhs = torch.tensor(42)
