@@ -66,3 +66,23 @@ class Multidiff:
 
         logger.debug(f"rhs [{self._rhs}] with size [{self._rhs.shape}]")
         return result
+
+
+class MultidiffNetwork:
+    def __init__(self, network: torch.nn.Module, lhs: torch.Tensor, order: int = 1):
+        self._network, self._lhs = network, lhs
+
+        self._diff_0 = self._network(self._lhs)
+        self._md = Multidiff(self._diff_0, self._lhs)
+        self._diffs: dict[int, torch.Tensor] = {0: self._diff_0}
+        self.build_pool(order)
+
+    def diff(self, order: int) -> torch.Tensor:
+        self.build_pool(order)
+        return self._diffs[order]
+
+    def build_pool(self, order: int) -> None:
+        for od in range(1, order + 1):
+            if od not in self._diffs:
+                logger.debug(f"building [{od}]th derivative")
+                self._diffs[od] = self._md.diff()
