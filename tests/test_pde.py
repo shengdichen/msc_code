@@ -1,6 +1,8 @@
+import pytest
 import torch
 
-from src.pde.pde import Distance, GridTime, GridTwoD
+from src.pde.pde import Distance, Grid, GridTime, GridTwoD
+from src.util.equality import EqualityBuiltin
 
 
 class TestDistance:
@@ -23,6 +25,24 @@ class TestDistance:
             ).mse(),
             torch.tensor(20 / 3),  # (0 + 4 + 16) / 3
         )
+
+
+class TestGrid:
+    def test_grid(self):
+        with pytest.raises(ValueError):
+            Grid(n_pts=0, stepsize=0.1, start=3)
+            Grid(n_pts=10, stepsize=0, start=3)
+            Grid(n_pts=10, stepsize=-0.1, start=3)
+
+        assert EqualityBuiltin(
+            list(Grid(n_pts=1, stepsize=0.1, start=3).step()),
+            [3.0],
+        ).is_equal()
+
+        assert EqualityBuiltin(
+            list(Grid(n_pts=5, stepsize=0.1, start=3).step()),
+            [3.0, 3.1, 3.2, 3.3, 3.4],
+        ).is_equal()
 
 
 class TestGridTwoD:

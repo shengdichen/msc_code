@@ -56,6 +56,40 @@ class Distance:
         return torch.sum(diffs**p) ** (1 / p)
 
 
+class Grid:
+    def __init__(self, n_pts: int, stepsize: float, start: float = 0.0):
+        if n_pts < 1:
+            raise ValueError("grid must have at least one grid-point")
+        if stepsize <= 0.0:
+            raise ValueError("stepsize must be positive")
+        self._n_pts, self._stepsize = n_pts, stepsize
+
+        self._start = start
+        self._end = start + n_pts * stepsize
+
+    @property
+    def n_pts(self) -> int:
+        return self._n_pts
+
+    @property
+    def stepsize(self) -> float:
+        return self._stepsize
+
+    @property
+    def start(self) -> float:
+        return self._start
+
+    @property
+    def end(self) -> float:
+        return self._end
+
+    def step(self) -> Generator[float, None, None]:
+        curr = self._start
+        while curr < self._end:
+            yield curr
+            curr += self._stepsize
+
+
 class GridTwoD:
     def __init__(
         self, n_gridpts_x: int, n_gridpts_y: int, stepsize_x: float, step_size_y: float
