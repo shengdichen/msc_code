@@ -1,5 +1,7 @@
 import logging
+import math
 import os
+import pathlib
 from collections.abc import Iterable
 from typing import Generator, Union
 
@@ -65,7 +67,9 @@ class Grid:
         self._n_pts, self._stepsize = n_pts, stepsize
 
         self._start = start
-        self._end = start + n_pts * stepsize
+        self._end = start + (n_pts - 1) * stepsize
+        self._pts = [self._start + i * self._stepsize for i in range(self._n_pts)]
+        self._boundaries = [self._start, self._end]
 
     @property
     def n_pts(self) -> int:
@@ -83,11 +87,26 @@ class Grid:
     def end(self) -> float:
         return self._end
 
-    def step(self) -> Generator[float, None, None]:
-        curr = self._start
-        while curr < self._end:
-            yield curr
-            curr += self._stepsize
+    def step(self, with_start: bool = True, with_end: bool = True) -> list[float]:
+        start = 0 if with_start else 1
+        if not with_end:
+            return self._pts[start:-1]
+        return self._pts[start:]
+
+    def step_with_index(
+        self, with_start: bool = True, with_end: bool = True
+    ) -> Iterable[tuple[int, float]]:
+        start = 0 if with_start else 1
+        return enumerate(self.step(with_start, with_end), start=start)
+
+    def is_on_boundary(self, val: float) -> bool:
+        for boundary in self._boundaries:
+            if math.isclose(val, boundary):
+                return True
+        return False
+
+    def index_of(self, value: float) -> int:
+        return self._pts.index(value)
 
 
 class GridTwoD:
@@ -136,35 +155,34 @@ class GridTwoD:
         return np.zeros((self._n_gridpts_y, self._n_gridpts_x))
 
 
-class GridTime:
-    def __init__(self, n_steps: int, stepsize: float):
-        self._n_steps = n_steps
-        self._stepsize = stepsize
-
-        # (pre-)pad (just) enough zeros to make all timesteps uniform length
+class GridTime(Grid):
+    def __init__(self, n_pts: int, stepsize: float, start=0.0):
+        # NOTE:
+        #   the zeroth timestep, containing in particular the
+        #   initial-condition, should be handled separately by user
         # NOTE:
         #   add 1 to n-steps since we might want to track states before AND
         #   after time-stepping, which yields a total of (n-steps + 1) states
         #   in total
-        self._formatter_timestep = f"{{:0{int(np.ceil(np.log10(self._n_steps+1)))}}}"
+        super().__init__(n_pts=n_pts + 1, stepsize=stepsize, start=start)
+
+        # (pre-)pad (just) enough zeros to make all timesteps uniform length
+        self._formatter_timestep = f"{{:0{int(np.ceil(np.log10(self._n_pts)))}}}"
 
     @property
-    def n_steps(self) -> int:
-        return self._n_steps
-
-    @property
-    def stepsize(self) -> float:
-        return self._stepsize
+    def n_pts(self) -> int:
+        return self._n_pts - 1
 
     def timestep_formatted(self, timestep: int) -> str:
         return f"{self._formatter_timestep}".format(timestep)
 
-    def step(self) -> Generator[int, None, None]:
-        # NOTE:
-        #   the zeroth timestep, containing in particular the
-        #   initial-condition, should be handled separately by user
-        for timestep in range(1, self._n_steps + 1):
-            yield timestep
+    def step(self, with_start: bool = False, with_end: bool = True) -> list[float]:
+        return super().step(with_start, with_end)
+
+    def step_with_index(
+        self, with_start: bool = False, with_end: bool = True
+    ) -> Iterable[tuple[int, float]]:
+        return super().step_with_index(with_start, with_end)
 
 
 class PDEPoisson:
@@ -257,16 +275,14 @@ class PDEPoisson:
 
 
 class PDEHeat:
-    def __init__(self, alpha: float = 0.1):
-        self._grid = GridTwoD(
-            n_gridpts_x=50, n_gridpts_y=50, stepsize_x=0.1, step_size_y=0.1
-        )
-        self._sol = self._grid.init_solution_zeros()
+    def __init__(
+        self, grid_time: GridTime, grid_x1: Grid, grid_x2: Grid, alpha: float = 0.01
+    ):
+        self._grid_time, self._grid_x1, self._grid_x2 = grid_time, grid_x1, grid_x2
 
-        self._gridtime = GridTime(n_steps=100, stepsize=0.01)
-
-        # initial-condition: heat-source at center
-        self._sol[self._grid.n_gridpts_x // 2, self._grid.n_gridpts_y // 2] = 100.0
+        self._lhss: list[torch.Tensor] = []
+        self._rhss: list[float] = []
+        self._snapshot = torch.zeros((self._grid_x1.n_pts, self._grid_x2.n_pts))
 
         self._alpha = alpha
 
@@ -274,33 +290,133 @@ class PDEHeat:
         os.makedirs(self._output_dir, exist_ok=True)
 
     def solve(self) -> None:
-        self.plot_3d(0)  # initial-state
+        for lhs, rhs in self._solve_init():
+            self._lhss.append(lhs)
+            self._rhss.append(rhs)
+        self._plot_snapshot(0)
 
-        for timestep in self._gridtime.step():
-            sol_curr = self._sol.copy()
-            for i in range(1, self._grid.n_gridpts_x - 1):
-                for j in range(1, self._grid.n_gridpts_y - 1):
-                    self._sol[i, j] = sol_curr[
-                        i, j
-                    ] + self._alpha * self._gridtime.stepsize * (
-                        (sol_curr[i + 1, j] - 2 * sol_curr[i, j] + sol_curr[i - 1, j])
-                        / self._grid.stepsize_x**2
-                        + (sol_curr[i, j + 1] - 2 * sol_curr[i, j] + sol_curr[i, j - 1])
-                        / self._grid.stepsize_y**2
+        for idx_t, val_t in self._grid_time.step_with_index():
+            for lhs, rhs in self._solve_internal(val_t):
+                self._lhss.append(lhs)
+                self._rhss.append(rhs)
+            for lhs, rhs in self._solve_bound(val_t):
+                self._lhss.append(lhs)
+                self._rhss.append(rhs)
+            self._plot_snapshot(idx_t)
+
+        self.save_raw()
+
+    def _solve_init(self) -> Generator[tuple[torch.Tensor, float], None, None]:
+        for idx_x1, val_x1 in self._grid_x1.step_with_index():
+            for idx_x2, val_x2 in self._grid_x2.step_with_index():
+                lhs = torch.tensor([self._grid_time.start, val_x1, val_x2])
+                if (
+                    idx_x1 == self._grid_x1.n_pts / 2
+                    and idx_x2 == self._grid_x2.n_pts / 2
+                ):
+                    # initial-condition: heat-source at center
+                    rhs = 100.0
+                else:
+                    rhs = 0
+
+                self._snapshot[idx_x1, idx_x2] = rhs
+                yield lhs, rhs
+
+    def _solve_internal(
+        self, val_t: float
+    ) -> Generator[tuple[torch.Tensor, float], None, None]:
+        sol_curr = self._snapshot.clone()
+
+        for idx_x1, val_x1 in self._grid_x1.step_with_index(
+            with_start=False, with_end=False
+        ):
+            for idx_x2, val_x2 in self._grid_x2.step_with_index(
+                with_start=False, with_end=False
+            ):
+                lhs = torch.tensor([val_t, val_x1, val_x2])
+                rhs = sol_curr[
+                    idx_x1, idx_x2
+                ] + self._alpha * self._grid_time.stepsize * (
+                    (
+                        sol_curr[idx_x1 + 1, idx_x2]
+                        - 2 * sol_curr[idx_x1, idx_x2]
+                        + sol_curr[idx_x1 - 1, idx_x2]
                     )
+                    / self._grid_x1.stepsize**2
+                    + (
+                        sol_curr[idx_x1, idx_x2 + 1]
+                        - 2 * sol_curr[idx_x1, idx_x2]
+                        + sol_curr[idx_x1, idx_x2 - 1]
+                    )
+                    / self._grid_x2.stepsize**2
+                )
 
-            self.plot_3d(timestep)
+                self._snapshot[idx_x1, idx_x2] = rhs
+                yield lhs, rhs
 
-    def plot_3d(self, timestep: int) -> None:
-        timestep_formatted = self._gridtime.timestep_formatted(timestep)
+    def _solve_bound(
+        self, val_t: float
+    ) -> Generator[tuple[torch.Tensor, float], None, None]:
+        # not efficient, but readable & foolproof
+        for idx_x1, val_x1 in self._grid_x1.step_with_index():
+            for idx_x2, val_x2 in self._grid_x2.step_with_index():
+                if self._grid_x1.is_on_boundary(val_x1) or self._grid_x2.is_on_boundary(
+                    val_x2
+                ):
+                    yield torch.tensor([val_t, val_x1, val_x2]), 0.0
+
+    def as_dataset(self, save_raw: bool = False) -> torch.utils.data.TensorDataset:
+        out = self._output_dir / "dataset.torch"
+        if not pathlib.Path(out).exists():
+            logger.info("head2d: no saved data found, building data")
+
+            self.solve()
+            dataset = self.save_dataset(out)
+            if save_raw:
+                self.save_raw()
+
+            logger.info("head2d: dataset saved; returning it now")
+            return dataset
+        else:
+            logger.info(f"head2d: dataset found at {out}; returning it now")
+            return torch.load(out)
+
+    def save_raw(self) -> None:
+        for tensor, f in zip([self._lhss, self._rhss], ["lhss", "rhss"]):
+            filename = f"{f}.torch"
+            if not pathlib.Path(filename).exists():
+                torch.save(tensor, self._output_dir / filename)
+
+    def save_dataset(self, out: pathlib.Path) -> torch.utils.data.TensorDataset:
+        dataset = torch.utils.data.TensorDataset(
+            torch.stack(self._lhss), torch.tensor(self._rhss).view(-1, 1)
+        )
+        torch.save(dataset, out)
+        return dataset
+
+    def _to_frame(self, lhss: torch.Tensor, rhss: torch.Tensor) -> torch.Tensor:
+        res = torch.empty((self._grid_x1.n_pts, self._grid_x2.n_pts))
+
+        for lhs, rhs in zip(lhss, rhss):
+            res[self._grid_x1.index_of(lhs[1]), self._grid_x2.index_of(lhs[2])] = rhs
+        return res
+
+    def _plot_snapshot(self, timestep: int) -> None:
+        timestep_formatted = self._grid_time.timestep_formatted(timestep)
 
         fig = plt.figure()
         ax = fig.add_subplot(111, projection="3d")
         ax.plot_surface(
-            self._grid.coords_x, self._grid.coords_y, self._sol, cmap="viridis"
+            self._grid_x1.step(),
+            self._grid_x2.step(),
+            self._snapshot,
+            cmap="viridis",
         )
+        ax.set_xlim(*self._grid_x1._boundaries)
+        ax.set_ylim(*self._grid_x2._boundaries)
+        ax.set_zlim(0, 120)
         ax.set_title(
-            "Heat [time-step " f"{timestep_formatted}/{self._gridtime.n_steps}" "]"
+            "Heat [time-step " f"{timestep_formatted}/{self._grid_time.n_pts}" "]"
         )
         ax.set_xlabel("X")
         ax.set_ylabel("Y")
@@ -319,6 +435,9 @@ if __name__ == "__main__":
         format="%(module)s [%(levelname)s]> %(message)s", level=logging.INFO
     )
 
-    pde = PDEHeat()
-    pde.solve()
-    pde.plot_gif()
+    pde = PDEHeat(
+        GridTime(n_pts=100, stepsize=0.01),
+        Grid(n_pts=50, stepsize=0.1, start=0.0),
+        Grid(n_pts=50, stepsize=0.1, start=0.0),
+    )
+    pde.as_dataset()

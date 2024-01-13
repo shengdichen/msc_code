@@ -1,3 +1,5 @@
+import math
+
 import pytest
 import torch
 
@@ -28,21 +30,94 @@ class TestDistance:
 
 
 class TestGrid:
-    def test_grid(self):
+    def test_init_error(self):
         with pytest.raises(ValueError):
             Grid(n_pts=0, stepsize=0.1, start=3)
             Grid(n_pts=10, stepsize=0, start=3)
             Grid(n_pts=10, stepsize=-0.1, start=3)
 
+    def test_step(self):
+        gr = Grid(n_pts=1, stepsize=0.1, start=3)
         assert EqualityBuiltin(
-            list(Grid(n_pts=1, stepsize=0.1, start=3).step()),
+            gr.step(),
             [3.0],
         ).is_equal()
+        assert not gr.step(with_start=False)
 
+        gr = Grid(n_pts=5, stepsize=0.1, start=3)
         assert EqualityBuiltin(
-            list(Grid(n_pts=5, stepsize=0.1, start=3).step()),
+            list(gr.step()),
             [3.0, 3.1, 3.2, 3.3, 3.4],
         ).is_equal()
+        assert EqualityBuiltin(
+            list(gr.step(with_start=False)),
+            [3.1, 3.2, 3.3, 3.4],
+        ).is_equal()
+        assert EqualityBuiltin(
+            list(gr.step(with_end=False)),
+            [3.0, 3.1, 3.2, 3.3],
+        ).is_equal()
+        assert EqualityBuiltin(
+            list(gr.step(with_start=False, with_end=False)),
+            [3.1, 3.2, 3.3],
+        ).is_equal()
+
+    def test_step_with_index(self):
+        gr = Grid(n_pts=5, stepsize=0.1, start=3)
+
+        for idx_val_actual, idx_val_expected in zip(
+            gr.step_with_index(),
+            [
+                (0, 3.0),
+                (1, 3.1),
+                (2, 3.2),
+                (3, 3.3),
+                (4, 3.4),
+            ],
+        ):
+            assert idx_val_actual[0] == idx_val_expected[0]
+            assert math.isclose(idx_val_actual[1], idx_val_expected[1])
+        for idx_val_actual, idx_val_expected in zip(
+            gr.step_with_index(with_start=False),
+            [
+                (1, 3.1),
+                (2, 3.2),
+                (3, 3.3),
+                (4, 3.4),
+            ],
+        ):
+            assert idx_val_actual[0] == idx_val_expected[0]
+            assert math.isclose(idx_val_actual[1], idx_val_expected[1])
+        for idx_val_actual, idx_val_expected in zip(
+            gr.step_with_index(with_end=False),
+            [
+                (0, 3.0),
+                (1, 3.1),
+                (2, 3.2),
+                (3, 3.3),
+            ],
+        ):
+            assert idx_val_actual[0] == idx_val_expected[0]
+            assert math.isclose(idx_val_actual[1], idx_val_expected[1])
+        for idx_val_actual, idx_val_expected in zip(
+            gr.step_with_index(with_start=False, with_end=False),
+            [
+                (1, 3.1),
+                (2, 3.2),
+                (3, 3.3),
+            ],
+        ):
+            assert idx_val_actual[0] == idx_val_expected[0]
+            assert math.isclose(idx_val_actual[1], idx_val_expected[1])
+
+    def test_boundary(self):
+        gr = Grid(n_pts=5, stepsize=0.1, start=3)
+        assert gr.is_on_boundary(3.0)
+        assert gr.is_on_boundary(3.4)
+
+        assert not gr.is_on_boundary(3.1)
+        assert not gr.is_on_boundary(3.2)
+        assert not gr.is_on_boundary(3.3)
 
 
 class TestGridTwoD:
@@ -57,26 +132,92 @@ class TestGridTwoD:
 
 
 class TestGridTime:
+    def test_n_pts(self):
+        assert GridTime(n_pts=100, stepsize=0.1).n_pts == 100
+
     def test_formatter(self):
         step = 3
 
         assert (
-            GridTime(n_steps=1, stepsize=0.1).timestep_formatted(step)
-            == GridTime(n_steps=9, stepsize=0.1).timestep_formatted(step)
+            GridTime(n_pts=1, stepsize=0.1).timestep_formatted(step)
+            == GridTime(n_pts=9, stepsize=0.1).timestep_formatted(step)
             == "3"
         )
         assert (
-            GridTime(n_steps=10, stepsize=0.1).timestep_formatted(step)
-            == GridTime(n_steps=99, stepsize=0.1).timestep_formatted(step)
+            GridTime(n_pts=10, stepsize=0.1).timestep_formatted(step)
+            == GridTime(n_pts=99, stepsize=0.1).timestep_formatted(step)
             == "03"
         )
         assert (
-            GridTime(n_steps=100, stepsize=0.1).timestep_formatted(step)
-            == GridTime(n_steps=999, stepsize=0.1).timestep_formatted(step)
+            GridTime(n_pts=100, stepsize=0.1).timestep_formatted(step)
+            == GridTime(n_pts=999, stepsize=0.1).timestep_formatted(step)
             == "003"
         )
 
     def test_step(self):
-        gr = GridTime(n_steps=50, stepsize=0.1)
+        gr = GridTime(n_pts=5, stepsize=0.1)
 
-        assert list(gr.step()) == list(range(1, 51))
+        assert EqualityBuiltin(
+            list(gr.step()),
+            [0.1, 0.2, 0.3, 0.4, 0.5],
+        ).is_equal()
+        assert EqualityBuiltin(
+            list(gr.step(with_start=True)),
+            [0.0, 0.1, 0.2, 0.3, 0.4, 0.5],
+        ).is_equal()
+        assert EqualityBuiltin(
+            list(gr.step(with_end=False)),
+            [0.1, 0.2, 0.3, 0.4],
+        ).is_equal()
+        assert EqualityBuiltin(
+            list(gr.step(with_start=True, with_end=False)),
+            [0.0, 0.1, 0.2, 0.3, 0.4],
+        ).is_equal()
+
+    def test_step_with_index(self):
+        gr = GridTime(n_pts=5, stepsize=0.1)
+
+        for idx_val_actual, idx_val_expected in zip(
+            gr.step_with_index(),
+            [
+                (1, 0.1),
+                (2, 0.2),
+                (3, 0.3),
+                (4, 0.4),
+            ],
+        ):
+            assert idx_val_actual[0] == idx_val_expected[0]
+            assert math.isclose(idx_val_actual[1], idx_val_expected[1])
+        for idx_val_actual, idx_val_expected in zip(
+            gr.step_with_index(with_start=True),
+            [
+                (0, 0.0),
+                (1, 0.1),
+                (2, 0.2),
+                (3, 0.3),
+                (4, 0.4),
+            ],
+        ):
+            assert idx_val_actual[0] == idx_val_expected[0]
+            assert math.isclose(idx_val_actual[1], idx_val_expected[1])
+        for idx_val_actual, idx_val_expected in zip(
+            gr.step_with_index(with_end=False),
+            [
+                (1, 0.1),
+                (2, 0.2),
+                (3, 0.3),
+            ],
+        ):
+            assert idx_val_actual[0] == idx_val_expected[0]
+            assert math.isclose(idx_val_actual[1], idx_val_expected[1])
+        for idx_val_actual, idx_val_expected in zip(
+            gr.step_with_index(with_start=True, with_end=False),
+            [
+                (0, 0.0),
+                (1, 0.1),
+                (2, 0.2),
+                (3, 0.3),
+            ],
+        ):
+            assert idx_val_actual[0] == idx_val_expected[0]
+            assert math.isclose(idx_val_actual[1], idx_val_expected[1])
