@@ -3,7 +3,7 @@ import math
 import pytest
 import torch
 
-from src.pde.pde import Distance, Grid, GridTime, GridTwoD
+from src.pde.pde import Distance, Grid, Grids, GridTime, GridTwoD
 from src.util.equality import EqualityBuiltin
 
 
@@ -118,6 +118,56 @@ class TestGrid:
         assert not gr.is_on_boundary(3.1)
         assert not gr.is_on_boundary(3.2)
         assert not gr.is_on_boundary(3.3)
+
+
+class TestGrids:
+    def test_grids(self):
+        gr_1 = Grid(n_pts=4, stepsize=0.1, start=3)
+        gr_2 = Grid(n_pts=4, stepsize=0.1, start=4)
+        gr_3 = Grid(n_pts=4, stepsize=0.1, start=5)
+        grs = Grids([gr_1, gr_2, gr_3])
+
+        assert len(list(grs.steps())) == 64
+
+        boundaries = list(grs.boundaries())
+        assert len(boundaries) == 56
+        for vals in [
+            (3, 4.1, 5.1),
+            (3.3, 4.1, 5.1),
+            (3.1, 4, 5.1),
+            (3.1, 4.3, 5.1),
+            (3.1, 4.1, 5),
+            (3.1, 4.1, 5.3),
+        ]:
+            assert vals in boundaries
+
+        internals = list(grs.internals())
+        assert len(internals) == 8
+        for vals in [
+            (3.1, 4.1, 5.1),
+            (3.2, 4.1, 5.1),
+            (3.1, 4.2, 5.1),
+            (3.1, 4.1, 5.2),
+        ]:
+            assert vals in internals
+
+    def test_is_on_boundary(self):
+        gr_1 = Grid(n_pts=4, stepsize=0.1, start=3)
+        gr_2 = Grid(n_pts=4, stepsize=0.1, start=4)
+        gr_3 = Grid(n_pts=4, stepsize=0.1, start=5)
+        grs = Grids([gr_1, gr_2, gr_3])
+
+        assert grs.is_on_boundary([3, 4.1, 5.1])
+        assert grs.is_on_boundary([3.3, 4.1, 5.1])
+        assert grs.is_on_boundary([3.1, 4, 5.1])
+        assert grs.is_on_boundary([3.1, 4.3, 5.1])
+        assert grs.is_on_boundary([3.1, 4.1, 5])
+        assert grs.is_on_boundary([3.1, 4.1, 5.3])
+
+        assert not grs.is_on_boundary([3.1, 4.1, 5.1])
+        assert not grs.is_on_boundary([3.2, 4.1, 5.1])
+        assert not grs.is_on_boundary([3.1, 4.2, 5.1])
+        assert not grs.is_on_boundary([3.1, 4.1, 5.2])
 
 
 class TestGridTwoD:

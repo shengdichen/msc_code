@@ -1,3 +1,4 @@
+import itertools
 import logging
 import math
 import os
@@ -153,6 +154,31 @@ class GridTwoD:
         # np's 0th axis := human's y
         # np's 1st axis := human's x
         return np.zeros((self._n_gridpts_y, self._n_gridpts_x))
+
+
+class Grids:
+    def __init__(self, grids: list[Grid]):
+        self._grids = grids
+
+    def steps(self) -> Generator[Iterable[float], None, None]:
+        for vals in itertools.product(*(gr.step() for gr in self._grids)):
+            yield vals
+
+    def boundaries(self) -> Generator[Iterable[float], None, None]:
+        for vals in itertools.product(*(gr.step() for gr in self._grids)):
+            if self.is_on_boundary(vals):
+                yield vals
+
+    def internals(self) -> Generator[Iterable[float], None, None]:
+        for vals in itertools.product(*(gr.step() for gr in self._grids)):
+            if not self.is_on_boundary(vals):
+                yield vals
+
+    def is_on_boundary(self, vals: Iterable[float]) -> bool:
+        for val, grid in zip(vals, self._grids):
+            if grid.is_on_boundary(val):
+                return True
+        return False
 
 
 class GridTime(Grid):
