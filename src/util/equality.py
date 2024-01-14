@@ -44,8 +44,13 @@ class EqualityTorch(EqualityFloatlike):
     def __init__(self, ours: torch.Tensor, theirs: torch.Tensor, *args, **kwargs):
         super().__init__(ours, theirs, *args, **kwargs)
 
+    def _equal_shape(self) -> bool:
+        return self._ours.shape == self._theirs.shape
+
     def is_close(self) -> bool:
-        return torch.all(torch.abs(self._ours - self._theirs) < self._tolerance)
+        return self._equal_shape() and torch.all(
+            torch.abs(self._ours - self._theirs) < self._tolerance
+        )
 
     def is_equal(self) -> bool:
-        return torch.equal(self._ours, self._theirs)
+        return self._equal_shape() and torch.equal(self._ours, self._theirs)

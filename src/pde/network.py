@@ -1,4 +1,8 @@
+import logging
+
 import torch
+
+logger = logging.getLogger(__name__)
 
 
 class Network(torch.nn.Module):
@@ -37,6 +41,15 @@ class Network(torch.nn.Module):
         return torch.nn.ModuleList(layers)
 
     def forward(self, lhs: torch.Tensor) -> torch.Tensor:
+        if len(lhs.shape) == 1:
+            length = lhs.shape[0]
+            msg = (
+                f"Received one-dimensional lhs of length {length}, "
+                "the returned rhs will be one-dimensional as well. "
+                f"Consider making lhs two-dimensional of shape [1, {length}] with: "
+                f"lhs.view(-1, {length}) or lhs.expand(1, -1)"
+            )
+            logger.warning(msg)
         res = self._activation()(self._layers[0](lhs))
         for layer in self._layers[1:-1]:
             res = self._activation()(layer(res))
