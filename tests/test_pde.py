@@ -271,3 +271,9 @@ class TestGridTime:
         ):
             assert idx_val_actual[0] == idx_val_expected[0]
             assert math.isclose(idx_val_actual[1], idx_val_expected[1])
+
+    def test_is_init(self):
+        gr = GridTime(n_pts=5, stepsize=0.1)
+
+        assert gr.is_init(0)
+        assert not gr.is_init(0.1)

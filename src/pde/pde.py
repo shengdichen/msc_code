@@ -210,6 +210,9 @@ class GridTime(Grid):
     ) -> Iterable[tuple[int, float]]:
         return super().step_with_index(with_start, with_end)
 
+    def is_init(self, val: float) -> bool:
+        return math.isclose(val, self._start)
+
 
 class PDEPoisson:
     def __init__(self):
