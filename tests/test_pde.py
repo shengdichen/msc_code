@@ -4,7 +4,7 @@ import pytest
 import torch
 
 from src.pde.pde import Distance, Grid, Grids, GridTime, GridTwoD
-from src.util.equality import EqualityBuiltin
+from src.util.equality import EqualityBuiltin, EqualityTorch
 
 
 class TestDistance:
@@ -27,6 +27,38 @@ class TestDistance:
             ).mse(),
             torch.tensor(20 / 3),  # (0 + 4 + 16) / 3
         )
+
+    def test_msc_relative(self):
+        assert torch.equal(
+            Distance(
+                torch.tensor([1, 2, 3], dtype=torch.float),
+                torch.tensor([1, 2, 3], dtype=torch.float),
+            ).mse_relative(),
+            torch.tensor(0),
+        )
+        assert torch.equal(
+            Distance(
+                torch.tensor([0, 0, 0], dtype=torch.float),
+                torch.tensor([1, 2, 3], dtype=torch.float),
+            ).mse_relative(),
+            torch.tensor(1.0),
+        )
+
+        assert torch.equal(
+            Distance(
+                torch.tensor([0, 0, 1], dtype=torch.float),
+                torch.tensor([0, 0, 2], dtype=torch.float),
+            ).mse_relative(),
+            torch.tensor(0.5),
+        )
+
+        assert EqualityTorch(
+            Distance(
+                torch.tensor([1, 4, 7], dtype=torch.float),
+                torch.tensor([1, 2, 3], dtype=torch.float),
+            ).mse_relative(),
+            torch.tensor(1.1952),
+        ).is_close()
 
 
 class TestGrid:

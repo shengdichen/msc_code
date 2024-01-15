@@ -50,6 +50,9 @@ class Distance:
     def mse(self) -> torch.Tensor:
         return torch.mean((self._ours - self._theirs) ** 2)
 
+    def mse_relative(self) -> torch.Tensor:
+        return (self.mse() / torch.mean(self._theirs**2)) ** 0.5
+
     def norm_lp(self, p: int) -> torch.Tensor:
         if p % 2:
             diffs = torch.abs(self._ours - self._theirs)
