@@ -109,8 +109,17 @@ class Grid:
                 return True
         return False
 
+    def is_in(self, value: float) -> bool:
+        for pt in self._pts:
+            if math.isclose(pt, value, abs_tol=1e-4):
+                return True
+        return False
+
     def index_of(self, value: float) -> int:
-        return self._pts.index(value)
+        for idx, pt in enumerate(self._pts):
+            if math.isclose(pt, value, abs_tol=1e-4):
+                return idx
+        raise ValueError(f"value {value} not found")
 
 
 class GridTwoD:

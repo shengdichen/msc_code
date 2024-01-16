@@ -304,6 +304,30 @@ class TestGridTime:
             assert idx_val_actual[0] == idx_val_expected[0]
             assert math.isclose(idx_val_actual[1], idx_val_expected[1])
 
+    def test_is_in(self):
+        gr = GridTime(n_pts=5, stepsize=0.1)
+
+        for val in [
+            0.0,
+            0.1,
+            0.2,
+            0.3,
+            0.4,
+        ]:
+            assert gr.is_in(val)
+
+    def test_index_of(self):
+        gr = GridTime(n_pts=5, stepsize=0.1)
+
+        for idx_theirs, val in [
+            (0, 0.0),
+            (1, 0.1),
+            (2, 0.2),
+            (3, 0.3),
+            (4, 0.4),
+        ]:
+            assert gr.index_of(val) == idx_theirs
+
     def test_is_init(self):
         gr = GridTime(n_pts=5, stepsize=0.1)
 
