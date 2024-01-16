@@ -75,6 +75,12 @@ class Grid:
         self._pts = [self._start + i * self._stepsize for i in range(self._n_pts)]
         self._boundaries = [self._start, self._end]
 
+    def __repr__(self):
+        return (
+            "grid: (start, end, stepsize, n_pts): "
+            f"({self._start}, {self._end}, {self._stepsize}, {self._n_pts})"
+        )
+
     @property
     def n_pts(self) -> int:
         return self._n_pts
