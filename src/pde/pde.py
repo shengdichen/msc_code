@@ -318,7 +318,12 @@ class PDEHeat:
 
         self._alpha = alpha
 
-        self._output_dir = DEFINITION.BIN_DIR / "pde/heat"
+        self._output_dir = (
+            DEFINITION.BIN_DIR / f"pde/heat-"
+            f"{grid_time.n_pts}_{grid_time._stepsize}-"
+            f"{grid_x1.n_pts}_{grid_x1._stepsize}-"
+            f"{grid_x2.n_pts}_{grid_x2._stepsize}"
+        )
         os.makedirs(self._output_dir, exist_ok=True)
 
     def solve(self) -> None:
