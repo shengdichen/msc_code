@@ -11,6 +11,7 @@ import numpy as np
 import torch
 
 from src.definition import DEFINITION
+from src.pde.saveload import Saveload
 from src.util.gif import MakerGif
 
 logger = logging.getLogger(__name__)
@@ -274,8 +275,10 @@ class PDEPoisson:
 
         self._source_term = self._make_source_term(as_laplace)
 
-        self._lhss: list[torch.Tensor] = []
-        self._rhss: list[float] = []
+        self._lhss_bound: list[torch.Tensor] = []
+        self._rhss_bound: list[float] = []
+        self._lhss_internal: list[torch.Tensor] = []
+        self._rhss_internal: list[float] = []
         self._sol = self._grids.zeroes_like()
 
         self._n_iters_max = int(5e3)
@@ -298,15 +301,16 @@ class PDEPoisson:
 
         self._solve_boundary()
         self._solve_internal()
+        self._register_internal()
 
     def _solve_boundary(self) -> None:
         for (
             (idx_x1, val_x1),
             (idx_x2, val_x2),
         ) in self._grids.boundaries_with_index():
-            self._lhss.append(torch.tensor([val_x1, val_x2]))
-            rhs = -1
-            self._rhss.append(rhs)
+            self._lhss_bound.append(torch.tensor([val_x1, val_x2]))
+            rhs = -1.0
+            self._rhss_bound.append(rhs)
             self._sol[idx_x1, idx_x2] = rhs
 
     def _solve_internal(self) -> None:
@@ -314,7 +318,7 @@ class PDEPoisson:
         #   https://ubcmath.github.io/MATH316/fd/laplace.html#exercises-for-laplace-s-equation
         for i in range(self._n_iters_max):
             sol_current = np.copy(self._sol)
-            self._solve_iter_current()
+            self._solve_internal_current()
 
             max_update = torch.max(torch.abs(self._sol - sol_current))
             if max_update < self._error_threshold:
@@ -331,26 +335,45 @@ class PDEPoisson:
                 f"update at termination [{max_update}]"
             )
 
-    def _solve_iter_current(self) -> None:
+    def _solve_internal_current(self) -> None:
         for (
             (idx_x1, val_x1),
             (idx_x2, val_x2),
         ) in self._grids.internals_with_index():
-            self._lhss.append(torch.tensor([val_x1, val_x2]))
-
-            rhs = 0.25 * (
+            self._sol[idx_x1, idx_x2] = 0.25 * (
                 self._sol[idx_x1 + 1, idx_x2]
                 + self._sol[idx_x1 - 1, idx_x2]
                 + self._sol[idx_x1, idx_x2 + 1]
                 + self._sol[idx_x1, idx_x2 - 1]
                 - self._sum_of_squares * self._source_term[idx_x1, idx_x2]
             )
-            self._sol[idx_x1, idx_x2] = rhs
-            self._rhss.append(rhs)
+
+    def _register_internal(self) -> None:
+        for (
+            (idx_x1, val_x1),
+            (idx_x2, val_x2),
+        ) in self._grids.internals_with_index():
+            self._lhss_internal.append(torch.tensor([val_x1, val_x2]))
+            self._rhss_internal.append(self._sol[idx_x1, idx_x2])
+
+    def as_dataset(
+        self,
+    ) -> tuple[
+        torch.utils.data.dataset.TensorDataset, torch.utils.data.dataset.TensorDataset
+    ]:
+        folder = DEFINITION.BIN_DIR / "poisson"
+        saveload = Saveload(folder)
+        if not (saveload.exists_boundary() and saveload.exists_internal()):
+            self.solve()
+        dataset_boundary = saveload.dataset_boundary(self._lhss_bound, self._rhss_bound)
+        dataset_internal = saveload.dataset_internal(
+            self._lhss_internal, self._rhss_internal
+        )
+        return dataset_boundary, dataset_internal
 
     def plot_2d(self) -> None:
         plt.figure(figsize=(8, 6))
-        plt.contourf(*self._grids.as_mesh(), self._sol, cmap="viridis")
+        plt.contourf(*self._grids.coords_as_mesh(), self._sol, cmap="viridis")
         plt.colorbar(label="u(x, y)")
         plt.title("Poisson 2D")
         plt.xlabel("x")
@@ -362,7 +385,7 @@ class PDEPoisson:
         fig = plt.figure(figsize=(10, 8))
         ax = fig.add_subplot(111, projection="3d")
         surf = ax.plot_surface(
-            *self._grids.as_mesh(),
+            *self._grids.coords_as_mesh(),
             self._sol,
             cmap="viridis",
             edgecolor="k",
