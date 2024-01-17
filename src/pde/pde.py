@@ -182,21 +182,51 @@ class Grids:
         for vals in itertools.product(*(gr.step() for gr in self._grids)):
             yield vals
 
+    def steps_with_index(self) -> Generator[Iterable[tuple[int, float]], None, None]:
+        for idxs_vals in itertools.product(
+            *(gr.step_with_index() for gr in self._grids)
+        ):
+            yield idxs_vals
+
     def boundaries(self) -> Generator[Iterable[float], None, None]:
         for vals in itertools.product(*(gr.step() for gr in self._grids)):
             if self.is_on_boundary(vals):
                 yield vals
+
+    def boundaries_with_index(
+        self,
+    ) -> Generator[Iterable[tuple[int, float]], None, None]:
+        for idxs_vals in itertools.product(
+            *(gr.step_with_index() for gr in self._grids)
+        ):
+            if self.is_on_boundary([val for idx, val in idxs_vals]):
+                yield idxs_vals
 
     def internals(self) -> Generator[Iterable[float], None, None]:
         for vals in itertools.product(*(gr.step() for gr in self._grids)):
             if not self.is_on_boundary(vals):
                 yield vals
 
+    def internals_with_index(
+        self,
+    ) -> Generator[Iterable[tuple[int, float]], None, None]:
+        for idxs_vals in itertools.product(
+            *(gr.step_with_index() for gr in self._grids)
+        ):
+            if not self.is_on_boundary([val for idx, val in idxs_vals]):
+                yield idxs_vals
+
     def is_on_boundary(self, vals: Iterable[float]) -> bool:
         for val, grid in zip(vals, self._grids):
             if grid.is_on_boundary(val):
                 return True
         return False
+
+    def zeroes_like(self) -> torch.Tensor:
+        return torch.zeros(([gr.n_pts for gr in self._grids]))
+
+    def coords_as_mesh(self) -> list[np.ndarray]:
+        return np.meshgrid(*(gr.step() for gr in self._grids))
 
 
 class GridTime(Grid):

@@ -1,5 +1,6 @@
 import math
 
+import numpy as np
 import pytest
 import torch
 
@@ -153,7 +154,7 @@ class TestGrid:
 
 
 class TestGrids:
-    def test_grids(self):
+    def test_steps_no_index(self):
         gr_1 = Grid(n_pts=4, stepsize=0.1, start=3)
         gr_2 = Grid(n_pts=4, stepsize=0.1, start=4)
         gr_3 = Grid(n_pts=4, stepsize=0.1, start=5)
@@ -183,6 +184,51 @@ class TestGrids:
         ]:
             assert vals in internals
 
+    def test_steps_with_index(self):
+        gr_1 = Grid(n_pts=4, stepsize=0.1, start=3)
+        gr_2 = Grid(n_pts=4, stepsize=0.1, start=4)
+        grs = Grids([gr_1, gr_2])
+
+        assert list(grs.steps_with_index()) == [
+            ((0, 3.0), (0, 4.0)),
+            ((0, 3.0), (1, 4.1)),
+            ((0, 3.0), (2, 4.2)),
+            ((0, 3.0), (3, 4.3)),
+            ((1, 3.1), (0, 4.0)),
+            ((1, 3.1), (1, 4.1)),
+            ((1, 3.1), (2, 4.2)),
+            ((1, 3.1), (3, 4.3)),
+            ((2, 3.2), (0, 4.0)),
+            ((2, 3.2), (1, 4.1)),
+            ((2, 3.2), (2, 4.2)),
+            ((2, 3.2), (3, 4.3)),
+            ((3, 3.3), (0, 4.0)),
+            ((3, 3.3), (1, 4.1)),
+            ((3, 3.3), (2, 4.2)),
+            ((3, 3.3), (3, 4.3)),
+        ]
+
+        assert list(grs.boundaries_with_index()) == [
+            ((0, 3.0), (0, 4.0)),
+            ((0, 3.0), (1, 4.1)),
+            ((0, 3.0), (2, 4.2)),
+            ((0, 3.0), (3, 4.3)),
+            ((1, 3.1), (0, 4.0)),
+            ((1, 3.1), (3, 4.3)),
+            ((2, 3.2), (0, 4.0)),
+            ((2, 3.2), (3, 4.3)),
+            ((3, 3.3), (0, 4.0)),
+            ((3, 3.3), (1, 4.1)),
+            ((3, 3.3), (2, 4.2)),
+            ((3, 3.3), (3, 4.3)),
+        ]
+        assert list(grs.internals_with_index()) == [
+            ((1, 3.1), (1, 4.1)),
+            ((1, 3.1), (2, 4.2)),
+            ((2, 3.2), (1, 4.1)),
+            ((2, 3.2), (2, 4.2)),
+        ]
+
     def test_is_on_boundary(self):
         gr_1 = Grid(n_pts=4, stepsize=0.1, start=3)
         gr_2 = Grid(n_pts=4, stepsize=0.1, start=4)
@@ -200,6 +246,38 @@ class TestGrids:
         assert not grs.is_on_boundary([3.2, 4.1, 5.1])
         assert not grs.is_on_boundary([3.1, 4.2, 5.1])
         assert not grs.is_on_boundary([3.1, 4.1, 5.2])
+
+    def test_zeroes(self):
+        gr_1 = Grid(n_pts=4, stepsize=0.1)
+        gr_2 = Grid(n_pts=5, stepsize=0.1)
+        grs = Grids([gr_1, gr_2])
+
+        assert torch.equal(grs.zeroes_like(), torch.zeros((4, 5)))
+
+    def test_as_mesh(self):
+        gr_1 = Grid(n_pts=4, stepsize=0.1, start=3)
+        gr_2 = Grid(n_pts=4, stepsize=0.1, start=4)
+        grs = Grids([gr_1, gr_2])
+
+        coords = grs.coords_as_mesh()
+        assert np.allclose(
+            coords[0],
+            [
+                [3.0, 3.1, 3.2, 3.3],
+                [3.0, 3.1, 3.2, 3.3],
+                [3.0, 3.1, 3.2, 3.3],
+                [3.0, 3.1, 3.2, 3.3],
+            ],
+        )
+        assert np.allclose(
+            coords[1],
+            [
+                [4.0, 4.0, 4.0, 4.0],
+                [4.1, 4.1, 4.1, 4.1],
+                [4.2, 4.2, 4.2, 4.2],
+                [4.3, 4.3, 4.3, 4.3],
+            ],
+        )
 
 
 class TestGridTwoD:
