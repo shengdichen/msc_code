@@ -263,46 +263,60 @@ class GridTime(Grid):
 
 
 class PDEPoisson:
-    def __init__(self):
-        self._grid = GridTwoD(
-            n_gridpts_x=50, n_gridpts_y=40, stepsize_x=0.1, step_size_y=0.15
-        )
+    def __init__(self, grid_x1: Grid, grid_x2: Grid, as_laplace: bool = False):
+        self._grid_x1, self._grid_x2 = grid_x1, grid_x2
+        self._grids = Grids([grid_x1, grid_x2])
+        # TODO:
+        #   check if we should divide this by 2
+        self._sum_of_squares = (
+            self._grid_x1.stepsize**2 + self._grid_x2.stepsize**2
+        ) / 2
 
-        self._source_f = self._apply_source_function()
+        self._source_term = self._make_source_term(as_laplace)
 
-        self._sol = self._grid.init_solution_zeros()
-        PDEUtil.boundary_space(self._sol, -1)
+        self._lhss: list[torch.Tensor] = []
+        self._rhss: list[float] = []
+        self._sol = self._grids.zeroes_like()
 
         self._n_iters_max = int(5e3)
         self._error_threshold = 1e-4
 
-    def _apply_source_function(self) -> np.ndarray:
-        return np.sin(np.pi * self._grid.coords_x) * np.sin(np.pi * self._grid.coords_y)
+    def _make_source_term(self, as_laplace: bool) -> torch.Tensor:
+        if as_laplace:
+            return np.zeros((self._grid_x1.n_pts, self._grid_x2.n_pts))
+
+        res = self._grids.zeroes_like()
+        for (
+            (idx_x1, val_x1),
+            (idx_x2, val_x2),
+        ) in self._grids.steps_with_index():
+            res[idx_x1, idx_x2] = np.sin(np.pi * val_x1) * np.sin(np.pi * val_x2)
+        return res
 
     def solve(self) -> None:
         logger.info("Poisson.solve()")
 
-        # TODO:
-        #   check if we should divide this by 2
-        sum_of_squares = (self._grid.stepsize_x**2 + self._grid.stepsize_y**2) / 2
+        self._solve_boundary()
+        self._solve_internal()
 
+    def _solve_boundary(self) -> None:
+        for (
+            (idx_x1, val_x1),
+            (idx_x2, val_x2),
+        ) in self._grids.boundaries_with_index():
+            self._lhss.append(torch.tensor([val_x1, val_x2]))
+            rhs = -1
+            self._rhss.append(rhs)
+            self._sol[idx_x1, idx_x2] = rhs
+
+    def _solve_internal(self) -> None:
         # REF:
         #   https://ubcmath.github.io/MATH316/fd/laplace.html#exercises-for-laplace-s-equation
         for i in range(self._n_iters_max):
             sol_current = np.copy(self._sol)
+            self._solve_iter_current()
 
-            # exploit row-major ordering (x-loop within y-loop)
-            for idx_y in range(1, self._grid.n_gridpts_y - 1):
-                for idx_x in range(1, self._grid.n_gridpts_x - 1):
-                    self._sol[idx_y, idx_x] = 0.25 * (
-                        self._sol[idx_y + 1, idx_x]
-                        + self._sol[idx_y - 1, idx_x]
-                        + self._sol[idx_y, idx_x + 1]
-                        + self._sol[idx_y, idx_x - 1]
-                        - sum_of_squares * self._source_f[idx_y, idx_x]
-                    )
-
-            max_update = np.max(np.absolute(self._sol - sol_current))
+            max_update = torch.max(torch.abs(self._sol - sol_current))
             if max_update < self._error_threshold:
                 logger.info(
                     f"normal termination at iteration [{i}/{self._n_iters_max}]"
@@ -317,13 +331,26 @@ class PDEPoisson:
                 f"update at termination [{max_update}]"
             )
 
-    def plot_2d(self) -> None:
-        self.solve()
+    def _solve_iter_current(self) -> None:
+        for (
+            (idx_x1, val_x1),
+            (idx_x2, val_x2),
+        ) in self._grids.internals_with_index():
+            self._lhss.append(torch.tensor([val_x1, val_x2]))
 
+            rhs = 0.25 * (
+                self._sol[idx_x1 + 1, idx_x2]
+                + self._sol[idx_x1 - 1, idx_x2]
+                + self._sol[idx_x1, idx_x2 + 1]
+                + self._sol[idx_x1, idx_x2 - 1]
+                - self._sum_of_squares * self._source_term[idx_x1, idx_x2]
+            )
+            self._sol[idx_x1, idx_x2] = rhs
+            self._rhss.append(rhs)
+
+    def plot_2d(self) -> None:
         plt.figure(figsize=(8, 6))
-        plt.contourf(
-            self._grid.coords_x, self._grid.coords_y, self._sol, cmap="viridis"
-        )
+        plt.contourf(*self._grids.as_mesh(), self._sol, cmap="viridis")
         plt.colorbar(label="u(x, y)")
         plt.title("Poisson 2D")
         plt.xlabel("x")
@@ -332,13 +359,10 @@ class PDEPoisson:
         plt.savefig("poisson-2d")
 
     def plot_3d(self) -> None:
-        self.solve()
-
         fig = plt.figure(figsize=(10, 8))
         ax = fig.add_subplot(111, projection="3d")
         surf = ax.plot_surface(
-            self._grid.coords_x,
-            self._grid.coords_y,
+            *self._grids.as_mesh(),
             self._sol,
             cmap="viridis",
             edgecolor="k",
