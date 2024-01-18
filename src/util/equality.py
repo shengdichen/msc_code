@@ -1,5 +1,6 @@
 import math
-from typing import Any
+from collections.abc import Iterable
+from typing import Any, Union
 
 import torch
 
@@ -17,7 +18,18 @@ class EqualityFloatlike:
 
 
 class EqualityBuiltin(EqualityFloatlike):
-    def __init__(self, ours: list, theirs: list, *args, **kwargs):
+    def __init__(
+        self,
+        ours: Union[float, Iterable[float]],
+        theirs: Union[float, Iterable[float]],
+        *args,
+        **kwargs
+    ):
+        if not isinstance(ours, Iterable):
+            ours = [ours]
+        if not isinstance(theirs, Iterable):
+            theirs = [theirs]
+
         super().__init__(ours, theirs, *args, **kwargs)
 
     def _equal_lengths(self) -> bool:

@@ -61,6 +61,38 @@ class TestDistance:
             torch.tensor(1.1952),
         ).is_close()
 
+    def test_mse_percentage(self):
+        assert (
+            Distance(
+                torch.tensor([1, 2, 3], dtype=torch.float),
+                torch.tensor([1, 2, 3], dtype=torch.float),
+            ).mse_percentage()
+            == "0.0000%"
+        )
+        assert (
+            Distance(
+                torch.tensor([0, 0, 0], dtype=torch.float),
+                torch.tensor([1, 2, 3], dtype=torch.float),
+            ).mse_percentage()
+            == "100.0000%"
+        )
+
+        assert (
+            Distance(
+                torch.tensor([0, 0, 1], dtype=torch.float),
+                torch.tensor([0, 0, 2], dtype=torch.float),
+            ).mse_percentage()
+            == "50.0000%"
+        )
+
+        assert (
+            Distance(
+                torch.tensor([1, 4, 7], dtype=torch.float),
+                torch.tensor([1, 2, 3], dtype=torch.float),
+            ).mse_percentage()
+            == "119.5229%"
+        )
+
 
 class TestGrid:
     def test_init_error(self):
