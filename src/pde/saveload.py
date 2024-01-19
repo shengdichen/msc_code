@@ -1,27 +1,96 @@
 import logging
 import os
+from collections.abc import Callable
 from pathlib import Path
+from typing import Any, Union
 
 import torch
+
+from src.definition import DEFINITION
 
 logger = logging.getLogger(__name__)
 
 
-class Saveload:
+class Saveloader:
+    def __init__(self, base: Path = DEFINITION.BIN_DIR):
+        self._base = base
+
+    def rebase_location(self, location: Union[Path, str]) -> Path:
+        return Path(self._base, location)
+
+    def exists(self, location: Path) -> bool:
+        return location.exists()
+
+    def load(self, location: Path) -> Any:
+        if not self.exists(location):
+            raise FileNotFoundError
+        else:
+            logger.info(f"target found at {location}")
+            return self._load(location)
+
+    def _load(self, location: Path) -> Any:
+        pass
+
+    def save(self, target: Any, location: Path, overwrite: bool = False) -> None:
+        if self.exists(location):
+            if not overwrite:
+                raise FileExistsError
+            else:
+                location.unlink()
+        else:
+            logger.info(f"target saved at {location}")
+            self._make_folder_containing(location)
+            self._save(target, location)
+
+    def _save(self, target: Any, location: Path) -> None:
+        pass
+
+    def _make_folder_containing(self, location: Path) -> None:
+        location.parent.mkdir(parents=True, exist_ok=True)
+
+    def load_or_make(self, location: Path, make_target: Callable[[], Any]) -> Any:
+        if self.exists(location):
+            return self.load(location)
+
+        logger.info(f"target NOT found at {location}; making it now")
+        target = make_target()
+        self.save(target, location)
+        return target
+
+
+class SaveloadTorch(Saveloader):
+    def __init__(self, folder: Union[Path, str], torch_suffix: str = "pth"):
+        super().__init__(Path(DEFINITION.BIN_DIR, folder))
+
+        self._torch_suffix = torch_suffix
+
+    def rebase_location(self, location: Union[Path, str]) -> Path:
+        return Path(self._base, f"{location}.{self._torch_suffix}")
+
+    def _load(self, location: Path) -> None:
+        return torch.load(location)
+
+    def _save(self, target: Any, location: Path) -> None:
+        torch.save(target, location)
+
+
+class SaveloadPde(SaveloadTorch):
     def __init__(
         self,
-        folder: Path,
+        folder: Union[Path, str],
         torch_suffix: str = "pth",
         name_init: str = "init",
         name_boundary: str = "boundary",
         name_internal: str = "internal",
     ):
+        super().__init__(folder, torch_suffix)
+
         self._folder = folder
         os.makedirs(self._folder, exist_ok=True)
         self._torch_suffix = torch_suffix
 
         self._mode_to_path: dict[str, Path] = {
-            mode: self._folder / f"{name}.{self._torch_suffix}"
+            mode: self.rebase_location(name)
             for mode, name in zip(
                 ["init", "boundary", "internal"],
                 [name_init, name_boundary, name_internal],

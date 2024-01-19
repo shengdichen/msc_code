@@ -11,7 +11,7 @@ import numpy as np
 import torch
 
 from src.definition import DEFINITION
-from src.pde.saveload import Saveload
+from src.pde.saveload import SaveloadPde
 from src.util.gif import MakerGif
 
 logger = logging.getLogger(__name__)
@@ -311,7 +311,7 @@ class PDEPoisson:
             (idx_x1, val_x1),
             (idx_x2, val_x2),
         ) in self._grids.boundaries_with_index():
-            self._lhss_bound.append(torch.tensor([val_x1, val_x2]))
+            self._lhss_bound.append([val_x1, val_x2])
             rhs = -1.0
             self._rhss_bound.append(rhs)
             self._sol[idx_x1, idx_x2] = rhs
@@ -356,7 +356,7 @@ class PDEPoisson:
             (idx_x1, val_x1),
             (idx_x2, val_x2),
         ) in self._grids.internals_with_index():
-            self._lhss_internal.append(torch.tensor([val_x1, val_x2]))
+            self._lhss_internal.append([val_x1, val_x2])
             self._rhss_internal.append(self._sol[idx_x1, idx_x2])
 
     def as_dataset(
@@ -364,8 +364,7 @@ class PDEPoisson:
     ) -> tuple[
         torch.utils.data.dataset.TensorDataset, torch.utils.data.dataset.TensorDataset
     ]:
-        folder = DEFINITION.BIN_DIR / "poisson"
-        saveload = Saveload(folder)
+        saveload = SaveloadPde("poisson")
         if not (saveload.exists_boundary() and saveload.exists_internal()):
             self.solve()
         dataset_boundary = saveload.dataset_boundary(self._lhss_bound, self._rhss_bound)

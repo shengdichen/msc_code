@@ -3,9 +3,11 @@ from collections.abc import Callable, Iterable
 
 import torch
 
+from src.pde.dataset import DatasetPde, Filter
 from src.pde.multidiff import MultidiffNetwork
 from src.pde.network import Network
 from src.pde.pde import Distance, Grid, PDEPoisson
+from src.pde.saveload import SaveloadTorch
 
 logger = logging.getLogger(__name__)
 
@@ -40,7 +42,8 @@ class MultiEval:
     ) -> torch.Tensor:
         losses = torch.tensor([0.0])
         for weight, (lhss, rhss) in zip(weights, batches):
-            losses += weight * Distance(self._eval_network(lhss), rhss).mse()
+            if len(lhss) > 0 and len(rhss) > 0:
+                losses += weight * Distance(self._eval_network(lhss), rhss).mse()
 
         return losses
 
@@ -56,20 +59,17 @@ class MultiEval:
         )[0]
 
 
-class Masking:
-    def __init__(self):
-        torch.manual_seed(42)
-
-        grid_x1 = Grid(n_pts=50, stepsize=0.1, start=0.0)
-        grid_x2 = Grid(n_pts=50, stepsize=0.1, start=0.0)
-
-        self._network = Network(dim_x=2, with_time=False)
+class SolverPoisson:
+    def __init__(
+        self,
+        network: torch.nn.Module,
+        batch_boundary: list[torch.Tensor],
+        batch_internal: list[torch.Tensor],
+    ):
+        self._network = network
         self._optimiser = torch.optim.Adam(self._network.parameters())
 
-        self._batch_boundary, self._batch_internal = [
-            MultiEval.one_big_batch(dataset)
-            for dataset in PDEPoisson(grid_x1, grid_x2, as_laplace=True).as_dataset()
-        ]
+        self._batch_boundary, self._batch_internal = batch_boundary, batch_internal
         self._eval_network = self._make_eval_network()
 
     def _make_eval_network(self) -> Callable[[torch.Tensor], torch.Tensor]:
@@ -100,17 +100,73 @@ class Masking:
 
         return loss.item()
 
-    def inspect(self) -> list[str]:
-        percentages = []
-        for lhss, rhss in [self._batch_boundary, self._batch_internal]:
-            perc = (
-                Distance(self._eval_network(lhss), torch.tensor(rhss, dtype=float))
-                .mse_relative()
-                .item()
-                * 100
-            )
-            percentages.append(f"{perc:.4}%")
-        return percentages
+    def inspect(self) -> dict[str, str]:
+        mode_to_percentage: dict[str, str] = {}
+        for mode, (lhss, rhss) in zip(
+            ["boundary", "internal"], [self._batch_boundary, self._batch_internal]
+        ):
+            if len(lhss) > 0 and len(rhss) > 0:
+                mode_to_percentage[mode] = Distance(
+                    self._eval_network(lhss), rhss
+                ).mse_percentage()
+            else:
+                mode_to_percentage[mode] = f"0 (no {mode}-datapts)"
+        return mode_to_percentage
+
+
+class Masking:
+    def __init__(self):
+        self._grid_x1 = Grid(n_pts=50, stepsize=0.1, start=0.0)
+        self._grid_x2 = Grid(n_pts=50, stepsize=0.1, start=0.0)
+
+        self._dataset_boundary, self._dataset_internal = PDEPoisson(
+            self._grid_x1, self._grid_x2, as_laplace=True
+        ).as_dataset()
+
+        self._boundary_full = MultiEval.one_big_batch(self._dataset_boundary)
+        self._internal_full = MultiEval.one_big_batch(self._dataset_internal)
+
+    def train(self) -> None:
+        perc_x1, perc_x2 = (0.1, 0.1), (0.1, 0.1)
+        boundary_masked, internal_masked = self._make_batch_masked(perc_x1, perc_x2)
+
+        saveload = SaveloadTorch("poisson")
+        location = saveload.rebase_location(f"network-{perc_x1}-{perc_x2}")
+
+        def make_network() -> torch.nn.Module:
+            network = Network(dim_x=2, with_time=False)
+            SolverPoisson(network, boundary_masked, internal_masked).train()
+            return network
+
+        network = saveload.load_or_make(location, make_network)
+
+        inspect_mask = SolverPoisson(
+            network, boundary_masked, internal_masked
+        ).inspect()
+        inspect_full = SolverPoisson(
+            network, self._boundary_full, self._internal_full
+        ).inspect()
+        logger.info(f"error (mask) {inspect_mask}")
+        logger.info(f"error (full) {inspect_full}")
+
+    def _make_batch_masked(
+        self, perc_x1: tuple[float, float], perc_x2: tuple[float, float]
+    ) -> tuple[list[torch.Tensor], list[torch.Tensor]]:
+        range_x1 = self._make_range(self._grid_x1, *perc_x1)
+        range_x2 = self._make_range(self._grid_x2, *perc_x2)
+
+        boundary, internal = Filter(
+            DatasetPde.from_datasets(self._dataset_boundary, self._dataset_internal)
+        ).filter(range_x1, range_x2)
+
+        return [boundary.lhss, boundary.rhss], [internal.lhss, internal.rhss]
+
+    def _make_range(
+        self, grid: Grid, from_start: float, to_end: float
+    ) -> tuple[float, float]:
+        min = grid.start + from_start * grid.n_pts * grid.stepsize
+        max = grid.end - to_end * grid.n_pts * grid.stepsize
+        return min, max
 
 
 if __name__ == "__main__":
@@ -118,4 +174,5 @@ if __name__ == "__main__":
         format="%(module)s [%(levelname)s]> %(message)s", level=logging.INFO
     )
 
+    torch.manual_seed(42)
     Masking().train()
