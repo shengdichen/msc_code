@@ -116,19 +116,19 @@ class Pinn:
                 self._plot_progress(timestep)
 
     def _loss_boundary_time(self) -> tuple[torch.Tensor, torch.Tensor]:
-        mdn = MultidiffNetwork(self._network, self._gridpts_boundary, order=1)
+        mdn = MultidiffNetwork(self._network, self._gridpts_boundary)
 
         return (
-            Distance(mdn.diff(0), self._solver_exact.u_d0()).mse(),
-            Distance(mdn.diff(1), self._solver_exact.u_d1()).mse(),
+            Distance(mdn.diff_0(), self._solver_exact.u_d0()).mse(),
+            Distance(mdn.diff(0, 1), self._solver_exact.u_d1()).mse(),
         )
 
     def _loss_pde(self) -> torch.Tensor:
-        mdn = MultidiffNetwork(self._network, self._gridpts_pde, order=2)
+        mdn = MultidiffNetwork(self._network, self._gridpts_pde)
         network_pde = (
-            self._constant_k * mdn.diff(0)
-            + self._constant_mu * mdn.diff(1)
-            + mdn.diff(2)
+            self._constant_k * mdn.diff_0()
+            + self._constant_mu * mdn.diff(0, 1)
+            + mdn.diff(0, 2)
         )
         return Distance(network_pde, 0).mse()
 

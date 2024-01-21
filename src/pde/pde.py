@@ -1,5 +1,8 @@
+import itertools
 import logging
+import math
 import os
+import pathlib
 from collections.abc import Iterable
 from typing import Generator, Union
 
@@ -8,6 +11,7 @@ import numpy as np
 import torch
 
 from src.definition import DEFINITION
+from src.pde.saveload import SaveloadPde
 from src.util.gif import MakerGif
 
 logger = logging.getLogger(__name__)
@@ -47,6 +51,12 @@ class Distance:
     def mse(self) -> torch.Tensor:
         return torch.mean((self._ours - self._theirs) ** 2)
 
+    def mse_relative(self) -> torch.Tensor:
+        return (self.mse() / torch.mean(self._theirs**2)) ** 0.5
+
+    def mse_percentage(self, precision: int = 4) -> str:
+        return f"{self.mse_relative().item():.{precision}%}"
+
     def norm_lp(self, p: int) -> torch.Tensor:
         if p % 2:
             diffs = torch.abs(self._ours - self._theirs)
@@ -54,6 +64,96 @@ class Distance:
             diffs = self._ours - self._theirs
 
         return torch.sum(diffs**p) ** (1 / p)
+
+
+class Grid:
+    def __init__(self, n_pts: int, stepsize: float, start: float = 0.0):
+        if n_pts < 1:
+            raise ValueError("grid must have at least one grid-point")
+        if stepsize <= 0.0:
+            raise ValueError("stepsize must be positive")
+        self._n_pts, self._stepsize = n_pts, stepsize
+
+        self._start = start
+        self._length = (n_pts - 1) * stepsize
+        self._end = start + self._length
+        self._pts = [self._start + i * self._stepsize for i in range(self._n_pts)]
+        self._boundaries = [self._start, self._end]
+
+    def __repr__(self):
+        return (
+            "grid: (start, end, stepsize, n_pts): "
+            f"({self._start}, {self._end}, {self._stepsize}, {self._n_pts})"
+        )
+
+    @property
+    def n_pts(self) -> int:
+        return self._n_pts
+
+    @property
+    def stepsize(self) -> float:
+        return self._stepsize
+
+    @property
+    def start(self) -> float:
+        return self._start
+
+    @property
+    def end(self) -> float:
+        return self._end
+
+    def step(self, with_start: bool = True, with_end: bool = True) -> list[float]:
+        start = 0 if with_start else 1
+        if not with_end:
+            return self._pts[start:-1]
+        return self._pts[start:]
+
+    def step_with_index(
+        self, with_start: bool = True, with_end: bool = True
+    ) -> Iterable[tuple[int, float]]:
+        start = 0 if with_start else 1
+        return enumerate(self.step(with_start, with_end), start=start)
+
+    def is_on_boundary(self, val: float) -> bool:
+        for boundary in self._boundaries:
+            if math.isclose(val, boundary):
+                return True
+        return False
+
+    def is_in(self, value: float) -> bool:
+        for pt in self._pts:
+            if math.isclose(pt, value, abs_tol=1e-4):
+                return True
+        return False
+
+    def index_of(self, value: float) -> int:
+        for idx, pt in enumerate(self._pts):
+            if math.isclose(pt, value, abs_tol=1e-4):
+                return idx
+        raise ValueError(f"value {value} not found")
+
+    def min_max_perc(
+        self, from_start: float = 0, to_end: float = 0
+    ) -> tuple[float, float]:
+        if from_start + to_end > 1.0:
+            raise ValueError("requested range is empty")
+        min = self._start + from_start * self._length
+        max = self._end - to_end * self._length
+        return min, max
+
+    def min_max_n_pts(
+        self, from_start: Union[int, float] = 0, to_end: Union[int, float] = 0
+    ) -> tuple[float, float]:
+        if isinstance(from_start, float):
+            from_start = math.ceil(self._n_pts * from_start)
+        if isinstance(to_end, float):
+            to_end = math.floor(self._n_pts * to_end)
+
+        min = self._start + from_start * self._stepsize
+        max = self._end - to_end * self._stepsize
+        if min > max:
+            raise ValueError("requested range is empty")
+        return min, max
 
 
 class GridTwoD:
@@ -102,78 +202,152 @@ class GridTwoD:
         return np.zeros((self._n_gridpts_y, self._n_gridpts_x))
 
 
-class GridTime:
-    def __init__(self, n_steps: int, stepsize: float):
-        self._n_steps = n_steps
-        self._stepsize = stepsize
+class Grids:
+    def __init__(self, grids: list[Grid]):
+        self._grids = grids
 
-        # (pre-)pad (just) enough zeros to make all timesteps uniform length
+    def steps(self) -> Generator[Iterable[float], None, None]:
+        for vals in itertools.product(*(gr.step() for gr in self._grids)):
+            yield vals
+
+    def steps_with_index(self) -> Generator[Iterable[tuple[int, float]], None, None]:
+        for idxs_vals in itertools.product(
+            *(gr.step_with_index() for gr in self._grids)
+        ):
+            yield idxs_vals
+
+    def boundaries(self) -> Generator[Iterable[float], None, None]:
+        for vals in itertools.product(*(gr.step() for gr in self._grids)):
+            if self.is_on_boundary(vals):
+                yield vals
+
+    def boundaries_with_index(
+        self,
+    ) -> Generator[Iterable[tuple[int, float]], None, None]:
+        for idxs_vals in itertools.product(
+            *(gr.step_with_index() for gr in self._grids)
+        ):
+            if self.is_on_boundary([val for idx, val in idxs_vals]):
+                yield idxs_vals
+
+    def internals(self) -> Generator[Iterable[float], None, None]:
+        for vals in itertools.product(*(gr.step() for gr in self._grids)):
+            if not self.is_on_boundary(vals):
+                yield vals
+
+    def internals_with_index(
+        self,
+    ) -> Generator[Iterable[tuple[int, float]], None, None]:
+        for idxs_vals in itertools.product(
+            *(gr.step_with_index() for gr in self._grids)
+        ):
+            if not self.is_on_boundary([val for idx, val in idxs_vals]):
+                yield idxs_vals
+
+    def is_on_boundary(self, vals: Iterable[float]) -> bool:
+        for val, grid in zip(vals, self._grids):
+            if grid.is_on_boundary(val):
+                return True
+        return False
+
+    def zeroes_like(self) -> torch.Tensor:
+        return torch.zeros(([gr.n_pts for gr in self._grids]))
+
+    def coords_as_mesh(self) -> list[np.ndarray]:
+        return np.meshgrid(*(gr.step() for gr in self._grids))
+
+
+class GridTime(Grid):
+    def __init__(self, n_pts: int, stepsize: float, start=0.0):
+        # NOTE:
+        #   the zeroth timestep, containing in particular the
+        #   initial-condition, should be handled separately by user
         # NOTE:
         #   add 1 to n-steps since we might want to track states before AND
         #   after time-stepping, which yields a total of (n-steps + 1) states
         #   in total
-        self._formatter_timestep = f"{{:0{int(np.ceil(np.log10(self._n_steps+1)))}}}"
+        super().__init__(n_pts=n_pts + 1, stepsize=stepsize, start=start)
+
+        # (pre-)pad (just) enough zeros to make all timesteps uniform length
+        self._formatter_timestep = f"{{:0{int(np.ceil(np.log10(self._n_pts)))}}}"
 
     @property
-    def n_steps(self) -> int:
-        return self._n_steps
-
-    @property
-    def stepsize(self) -> float:
-        return self._stepsize
+    def n_pts(self) -> int:
+        return self._n_pts - 1
 
     def timestep_formatted(self, timestep: int) -> str:
         return f"{self._formatter_timestep}".format(timestep)
 
-    def step(self) -> Generator[int, None, None]:
-        # NOTE:
-        #   the zeroth timestep, containing in particular the
-        #   initial-condition, should be handled separately by user
-        for timestep in range(1, self._n_steps + 1):
-            yield timestep
+    def step(self, with_start: bool = False, with_end: bool = True) -> list[float]:
+        return super().step(with_start, with_end)
+
+    def step_with_index(
+        self, with_start: bool = False, with_end: bool = True
+    ) -> Iterable[tuple[int, float]]:
+        return super().step_with_index(with_start, with_end)
+
+    def is_init(self, val: float) -> bool:
+        return math.isclose(val, self._start)
 
 
 class PDEPoisson:
-    def __init__(self):
-        self._grid = GridTwoD(
-            n_gridpts_x=50, n_gridpts_y=40, stepsize_x=0.1, step_size_y=0.15
-        )
+    def __init__(self, grid_x1: Grid, grid_x2: Grid, as_laplace: bool = False):
+        self._grid_x1, self._grid_x2 = grid_x1, grid_x2
+        self._grids = Grids([grid_x1, grid_x2])
+        # TODO:
+        #   check if we should divide this by 2
+        self._sum_of_squares = (
+            self._grid_x1.stepsize**2 + self._grid_x2.stepsize**2
+        ) / 2
 
-        self._source_f = self._apply_source_function()
+        self._source_term = self._make_source_term(as_laplace)
 
-        self._sol = self._grid.init_solution_zeros()
-        PDEUtil.boundary_space(self._sol, -1)
+        self._lhss_bound: list[torch.Tensor] = []
+        self._rhss_bound: list[float] = []
+        self._lhss_internal: list[torch.Tensor] = []
+        self._rhss_internal: list[float] = []
+        self._sol = self._grids.zeroes_like()
 
         self._n_iters_max = int(5e3)
         self._error_threshold = 1e-4
 
-    def _apply_source_function(self) -> np.ndarray:
-        return np.sin(np.pi * self._grid.coords_x) * np.sin(np.pi * self._grid.coords_y)
+    def _make_source_term(self, as_laplace: bool) -> torch.Tensor:
+        if as_laplace:
+            return np.zeros((self._grid_x1.n_pts, self._grid_x2.n_pts))
+
+        res = self._grids.zeroes_like()
+        for (
+            (idx_x1, val_x1),
+            (idx_x2, val_x2),
+        ) in self._grids.steps_with_index():
+            res[idx_x1, idx_x2] = np.sin(np.pi * val_x1) * np.sin(np.pi * val_x2)
+        return res
 
     def solve(self) -> None:
         logger.info("Poisson.solve()")
 
-        # TODO:
-        #   check if we should divide this by 2
-        sum_of_squares = (self._grid.stepsize_x**2 + self._grid.stepsize_y**2) / 2
+        self._solve_boundary()
+        self._solve_internal()
+        self._register_internal()
 
+    def _solve_boundary(self) -> None:
+        for (
+            (idx_x1, val_x1),
+            (idx_x2, val_x2),
+        ) in self._grids.boundaries_with_index():
+            self._lhss_bound.append([val_x1, val_x2])
+            rhs = -1.0
+            self._rhss_bound.append(rhs)
+            self._sol[idx_x1, idx_x2] = rhs
+
+    def _solve_internal(self) -> None:
         # REF:
         #   https://ubcmath.github.io/MATH316/fd/laplace.html#exercises-for-laplace-s-equation
         for i in range(self._n_iters_max):
             sol_current = np.copy(self._sol)
+            self._solve_internal_current()
 
-            # exploit row-major ordering (x-loop within y-loop)
-            for idx_y in range(1, self._grid.n_gridpts_y - 1):
-                for idx_x in range(1, self._grid.n_gridpts_x - 1):
-                    self._sol[idx_y, idx_x] = 0.25 * (
-                        self._sol[idx_y + 1, idx_x]
-                        + self._sol[idx_y - 1, idx_x]
-                        + self._sol[idx_y, idx_x + 1]
-                        + self._sol[idx_y, idx_x - 1]
-                        - sum_of_squares * self._source_f[idx_y, idx_x]
-                    )
-
-            max_update = np.max(np.absolute(self._sol - sol_current))
+            max_update = torch.max(torch.abs(self._sol - sol_current))
             if max_update < self._error_threshold:
                 logger.info(
                     f"normal termination at iteration [{i}/{self._n_iters_max}]"
@@ -188,13 +362,44 @@ class PDEPoisson:
                 f"update at termination [{max_update}]"
             )
 
-    def plot_2d(self) -> None:
-        self.solve()
+    def _solve_internal_current(self) -> None:
+        for (
+            (idx_x1, val_x1),
+            (idx_x2, val_x2),
+        ) in self._grids.internals_with_index():
+            self._sol[idx_x1, idx_x2] = 0.25 * (
+                self._sol[idx_x1 + 1, idx_x2]
+                + self._sol[idx_x1 - 1, idx_x2]
+                + self._sol[idx_x1, idx_x2 + 1]
+                + self._sol[idx_x1, idx_x2 - 1]
+                - self._sum_of_squares * self._source_term[idx_x1, idx_x2]
+            )
 
-        plt.figure(figsize=(8, 6))
-        plt.contourf(
-            self._grid.coords_x, self._grid.coords_y, self._sol, cmap="viridis"
+    def _register_internal(self) -> None:
+        for (
+            (idx_x1, val_x1),
+            (idx_x2, val_x2),
+        ) in self._grids.internals_with_index():
+            self._lhss_internal.append([val_x1, val_x2])
+            self._rhss_internal.append(self._sol[idx_x1, idx_x2])
+
+    def as_dataset(
+        self,
+    ) -> tuple[
+        torch.utils.data.dataset.TensorDataset, torch.utils.data.dataset.TensorDataset
+    ]:
+        saveload = SaveloadPde("poisson")
+        if not (saveload.exists_boundary() and saveload.exists_internal()):
+            self.solve()
+        dataset_boundary = saveload.dataset_boundary(self._lhss_bound, self._rhss_bound)
+        dataset_internal = saveload.dataset_internal(
+            self._lhss_internal, self._rhss_internal
         )
+        return dataset_boundary, dataset_internal
+
+    def plot_2d(self) -> None:
+        plt.figure(figsize=(8, 6))
+        plt.contourf(*self._grids.coords_as_mesh(), self._sol, cmap="viridis")
         plt.colorbar(label="u(x, y)")
         plt.title("Poisson 2D")
         plt.xlabel("x")
@@ -203,13 +408,10 @@ class PDEPoisson:
         plt.savefig("poisson-2d")
 
     def plot_3d(self) -> None:
-        self.solve()
-
         fig = plt.figure(figsize=(10, 8))
         ax = fig.add_subplot(111, projection="3d")
         surf = ax.plot_surface(
-            self._grid.coords_x,
-            self._grid.coords_y,
+            *self._grids.coords_as_mesh(),
             self._sol,
             cmap="viridis",
             edgecolor="k",
@@ -223,50 +425,153 @@ class PDEPoisson:
 
 
 class PDEHeat:
-    def __init__(self, alpha: float = 0.1):
-        self._grid = GridTwoD(
-            n_gridpts_x=50, n_gridpts_y=50, stepsize_x=0.1, step_size_y=0.1
-        )
-        self._sol = self._grid.init_solution_zeros()
+    def __init__(
+        self, grid_time: GridTime, grid_x1: Grid, grid_x2: Grid, alpha: float = 0.01
+    ):
+        self._grid_time, self._grid_x1, self._grid_x2 = grid_time, grid_x1, grid_x2
 
-        self._gridtime = GridTime(n_steps=100, stepsize=0.01)
-
-        # initial-condition: heat-source at center
-        self._sol[self._grid.n_gridpts_x // 2, self._grid.n_gridpts_y // 2] = 100.0
+        self._lhss: list[torch.Tensor] = []
+        self._rhss: list[float] = []
+        self._snapshot = torch.zeros((self._grid_x1.n_pts, self._grid_x2.n_pts))
 
         self._alpha = alpha
 
-        self._output_dir = DEFINITION.BIN_DIR / "pde/heat"
+        self._output_dir = (
+            DEFINITION.BIN_DIR / f"pde/heat-"
+            f"{grid_time.n_pts}_{grid_time._stepsize}-"
+            f"{grid_x1.n_pts}_{grid_x1._stepsize}-"
+            f"{grid_x2.n_pts}_{grid_x2._stepsize}"
+        )
         os.makedirs(self._output_dir, exist_ok=True)
 
     def solve(self) -> None:
-        self.plot_3d(0)  # initial-state
+        for lhs, rhs in self._solve_init():
+            self._lhss.append(lhs)
+            self._rhss.append(rhs)
+        self._plot_snapshot(0)
 
-        for timestep in self._gridtime.step():
-            sol_curr = self._sol.copy()
-            for i in range(1, self._grid.n_gridpts_x - 1):
-                for j in range(1, self._grid.n_gridpts_y - 1):
-                    self._sol[i, j] = sol_curr[
-                        i, j
-                    ] + self._alpha * self._gridtime.stepsize * (
-                        (sol_curr[i + 1, j] - 2 * sol_curr[i, j] + sol_curr[i - 1, j])
-                        / self._grid.stepsize_x**2
-                        + (sol_curr[i, j + 1] - 2 * sol_curr[i, j] + sol_curr[i, j - 1])
-                        / self._grid.stepsize_y**2
+        for idx_t, val_t in self._grid_time.step_with_index():
+            for lhs, rhs in self._solve_internal(val_t):
+                self._lhss.append(lhs)
+                self._rhss.append(rhs)
+            for lhs, rhs in self._solve_bound(val_t):
+                self._lhss.append(lhs)
+                self._rhss.append(rhs)
+            self._plot_snapshot(idx_t)
+
+        self.save_raw()
+
+    def _solve_init(self) -> Generator[tuple[torch.Tensor, float], None, None]:
+        for idx_x1, val_x1 in self._grid_x1.step_with_index():
+            for idx_x2, val_x2 in self._grid_x2.step_with_index():
+                lhs = torch.tensor([self._grid_time.start, val_x1, val_x2])
+                if (
+                    idx_x1 == self._grid_x1.n_pts / 2
+                    and idx_x2 == self._grid_x2.n_pts / 2
+                ):
+                    # initial-condition: heat-source at center
+                    rhs = 100.0
+                else:
+                    rhs = 0
+
+                self._snapshot[idx_x1, idx_x2] = rhs
+                yield lhs, rhs
+
+    def _solve_internal(
+        self, val_t: float
+    ) -> Generator[tuple[torch.Tensor, float], None, None]:
+        sol_curr = self._snapshot.clone()
+
+        for idx_x1, val_x1 in self._grid_x1.step_with_index(
+            with_start=False, with_end=False
+        ):
+            for idx_x2, val_x2 in self._grid_x2.step_with_index(
+                with_start=False, with_end=False
+            ):
+                lhs = torch.tensor([val_t, val_x1, val_x2])
+                rhs = sol_curr[
+                    idx_x1, idx_x2
+                ] + self._alpha * self._grid_time.stepsize * (
+                    (
+                        sol_curr[idx_x1 + 1, idx_x2]
+                        - 2 * sol_curr[idx_x1, idx_x2]
+                        + sol_curr[idx_x1 - 1, idx_x2]
                     )
+                    / self._grid_x1.stepsize**2
+                    + (
+                        sol_curr[idx_x1, idx_x2 + 1]
+                        - 2 * sol_curr[idx_x1, idx_x2]
+                        + sol_curr[idx_x1, idx_x2 - 1]
+                    )
+                    / self._grid_x2.stepsize**2
+                )
 
-            self.plot_3d(timestep)
+                self._snapshot[idx_x1, idx_x2] = rhs
+                yield lhs, rhs
 
-    def plot_3d(self, timestep: int) -> None:
-        timestep_formatted = self._gridtime.timestep_formatted(timestep)
+    def _solve_bound(
+        self, val_t: float
+    ) -> Generator[tuple[torch.Tensor, float], None, None]:
+        # not efficient, but readable & foolproof
+        for idx_x1, val_x1 in self._grid_x1.step_with_index():
+            for idx_x2, val_x2 in self._grid_x2.step_with_index():
+                if self._grid_x1.is_on_boundary(val_x1) or self._grid_x2.is_on_boundary(
+                    val_x2
+                ):
+                    yield torch.tensor([val_t, val_x1, val_x2]), 0.0
+
+    def as_dataset(self, save_raw: bool = False) -> torch.utils.data.TensorDataset:
+        out = self._output_dir / "dataset.torch"
+        if not pathlib.Path(out).exists():
+            logger.info("head2d: no saved data found, building data")
+
+            self.solve()
+            dataset = self.save_dataset(out)
+            if save_raw:
+                self.save_raw()
+
+            logger.info("head2d: dataset saved; returning it now")
+            return dataset
+        else:
+            logger.info(f"head2d: dataset found at {out}; returning it now")
+            return torch.load(out)
+
+    def save_raw(self) -> None:
+        for tensor, f in zip([self._lhss, self._rhss], ["lhss", "rhss"]):
+            filename = f"{f}.torch"
+            if not pathlib.Path(filename).exists():
+                torch.save(tensor, self._output_dir / filename)
+
+    def save_dataset(self, out: pathlib.Path) -> torch.utils.data.TensorDataset:
+        dataset = torch.utils.data.TensorDataset(
+            torch.stack(self._lhss), torch.tensor(self._rhss).view(-1, 1)
+        )
+        torch.save(dataset, out)
+        return dataset
+
+    def _to_frame(self, lhss: torch.Tensor, rhss: torch.Tensor) -> torch.Tensor:
+        res = torch.empty((self._grid_x1.n_pts, self._grid_x2.n_pts))
+
+        for lhs, rhs in zip(lhss, rhss):
+            res[self._grid_x1.index_of(lhs[1]), self._grid_x2.index_of(lhs[2])] = rhs
+        return res
+
+    def _plot_snapshot(self, timestep: int) -> None:
+        timestep_formatted = self._grid_time.timestep_formatted(timestep)
 
         fig = plt.figure()
         ax = fig.add_subplot(111, projection="3d")
         ax.plot_surface(
-            self._grid.coords_x, self._grid.coords_y, self._sol, cmap="viridis"
+            self._grid_x1.step(),
+            self._grid_x2.step(),
+            self._snapshot,
+            cmap="viridis",
         )
+        ax.set_xlim(*self._grid_x1._boundaries)
+        ax.set_ylim(*self._grid_x2._boundaries)
+        ax.set_zlim(0, 120)
         ax.set_title(
-            "Heat [time-step " f"{timestep_formatted}/{self._gridtime.n_steps}" "]"
+            "Heat [time-step " f"{timestep_formatted}/{self._grid_time.n_pts}" "]"
         )
         ax.set_xlabel("X")
         ax.set_ylabel("Y")
@@ -285,6 +590,9 @@ if __name__ == "__main__":
         format="%(module)s [%(levelname)s]> %(message)s", level=logging.INFO
     )
 
-    pde = PDEHeat()
-    pde.solve()
-    pde.plot_gif()
+    pde = PDEHeat(
+        GridTime(n_pts=100, stepsize=0.01),
+        Grid(n_pts=50, stepsize=0.1, start=0.0),
+        Grid(n_pts=50, stepsize=0.1, start=0.0),
+    )
+    pde.as_dataset()
