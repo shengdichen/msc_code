@@ -75,7 +75,8 @@ class Grid:
         self._n_pts, self._stepsize = n_pts, stepsize
 
         self._start = start
-        self._end = start + (n_pts - 1) * stepsize
+        self._length = (n_pts - 1) * stepsize
+        self._end = start + self._length
         self._pts = [self._start + i * self._stepsize for i in range(self._n_pts)]
         self._boundaries = [self._start, self._end]
 
@@ -130,6 +131,29 @@ class Grid:
             if math.isclose(pt, value, abs_tol=1e-4):
                 return idx
         raise ValueError(f"value {value} not found")
+
+    def min_max_perc(
+        self, from_start: float = 0, to_end: float = 0
+    ) -> tuple[float, float]:
+        if from_start + to_end > 1.0:
+            raise ValueError("requested range is empty")
+        min = self._start + from_start * self._length
+        max = self._end - to_end * self._length
+        return min, max
+
+    def min_max_n_pts(
+        self, from_start: Union[int, float] = 0, to_end: Union[int, float] = 0
+    ) -> tuple[float, float]:
+        if isinstance(from_start, float):
+            from_start = math.ceil(self._n_pts * from_start)
+        if isinstance(to_end, float):
+            to_end = math.floor(self._n_pts * to_end)
+
+        min = self._start + from_start * self._stepsize
+        max = self._end - to_end * self._stepsize
+        if min > max:
+            raise ValueError("requested range is empty")
+        return min, max
 
 
 class GridTwoD:

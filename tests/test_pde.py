@@ -184,6 +184,58 @@ class TestGrid:
         assert not gr.is_on_boundary(3.2)
         assert not gr.is_on_boundary(3.3)
 
+    def test_min_max_perc(self):
+        gr = Grid(n_pts=50, stepsize=0.1, start=3)
+
+        assert (
+            gr.min_max_perc() == gr.min_max_perc(from_start=0, to_end=0) == (3.0, 7.9)
+        )
+
+        assert gr.min_max_perc(from_start=0.1) == (3.49, 7.9)
+        assert gr.min_max_perc(to_end=0.1) == (3.0, 7.41)
+        assert gr.min_max_perc(from_start=0.5) == (5.45, 7.9)
+        assert gr.min_max_perc(to_end=0.5) == (3.0, 5.45)
+
+        assert EqualityBuiltin(
+            gr.min_max_perc(from_start=0.1, to_end=0.1), (3.49, 7.41)
+        ).is_close()
+        assert gr.min_max_perc(from_start=0.5, to_end=0.5) == (5.45, 5.45)
+
+        with pytest.raises(ValueError):
+            gr.min_max_perc(from_start=0.6, to_end=0.5)
+            gr.min_max_perc(from_start=0.5, to_end=0.6)
+
+    def test_min_max_n_pts(self):
+        gr = Grid(n_pts=50, stepsize=0.1, start=3)
+
+        assert (
+            gr.min_max_n_pts() == gr.min_max_n_pts(from_start=0, to_end=0) == (3.0, 7.9)
+        )
+
+        assert (
+            gr.min_max_n_pts(from_start=5)
+            == gr.min_max_n_pts(from_start=0.1)
+            == (3.5, 7.9)
+        )
+        assert gr.min_max_n_pts(to_end=5) == gr.min_max_n_pts(to_end=0.1) == (3.0, 7.4)
+        assert (
+            gr.min_max_n_pts(from_start=25)
+            == gr.min_max_n_pts(from_start=0.5)
+            == (5.5, 7.9)
+        )
+        assert gr.min_max_n_pts(to_end=25) == gr.min_max_n_pts(to_end=0.5) == (3.0, 5.4)
+
+        assert (
+            gr.min_max_n_pts(from_start=5, to_end=5)
+            == gr.min_max_n_pts(from_start=0.1, to_end=0.1)
+            == (3.5, 7.4)
+        )
+
+        with pytest.raises(ValueError):
+            gr.min_max_n_pts(from_start=25, to_end=25)
+            gr.min_max_n_pts(from_start=30, to_end=25)
+            gr.min_max_n_pts(from_start=25, to_end=30)
+
 
 class TestGrids:
     def test_steps_no_index(self):

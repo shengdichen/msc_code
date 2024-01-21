@@ -1,6 +1,9 @@
 import math
+from collections.abc import Callable, Iterable
 
 import torch
+
+from src.pde.pde import Distance
 
 
 class DatasetPde:
@@ -46,6 +49,9 @@ class DatasetPde:
     def n_dims(self) -> int:
         return self._n_dims
 
+    def is_empty(self) -> bool:
+        return self._n_datapts == 0
+
     @classmethod
     def from_lhss_rhss_raw(
         cls, lhss: list[list[float]], rhss: list[float]
@@ -59,11 +65,11 @@ class DatasetPde:
         cls, lhss: list[torch.Tensor], rhss: list[torch.Tensor]
     ) -> "DatasetPde":
         if not lhss:
-            lhss, rhss = torch.tensor([]), torch.tensor([])
+            lhss_torch, rhss_torch = torch.tensor([]), torch.tensor([])
         else:
-            lhss, rhss = torch.stack(lhss), torch.stack(rhss).view(-1, 1)
+            lhss_torch, rhss_torch = torch.stack(lhss), torch.stack(rhss).view(-1, 1)
 
-        return cls(lhss, rhss)
+        return cls(lhss_torch, rhss_torch)
 
     @classmethod
     def from_datasets(
@@ -93,7 +99,7 @@ class Filter:
         lhss_internal, rhss_internal = [], []
         for lhs, rhs in self._dataset.dataset:
             if self._in_range(lhs, *ranges):
-                if self._is_boundary(lhs, rhs, *ranges):
+                if self._is_boundary(lhs, *ranges):
                     lhss_boundary.append(lhs)
                     rhss_boundary.append(rhs)
                 else:
@@ -105,13 +111,6 @@ class Filter:
             DatasetPde.from_lhss_rhss_torch(lhss_internal, rhss_internal),
         )
 
-    def _convert_to_torch(
-        self, lhss: list[torch.Tensor], rhss: list[torch.Tensor]
-    ) -> tuple[torch.Tensor, torch.Tensor]:
-        if not lhss:
-            return torch.tensor([]), torch.tensor([])
-        return torch.stack(lhss), torch.stack(rhss).view(-1, 1)
-
     def _check_ranges(self, *ranges: tuple[float, float]) -> None:
         if self._dataset.n_dims != len(ranges):
             raise ValueError("number of ranges do NOT match number of dimensions")
@@ -122,7 +121,6 @@ class Filter:
     def _is_boundary(
         self,
         lhs: torch.Tensor,
-        rhs: torch.Tensor,
         *ranges: tuple[float, float],
     ) -> bool:
         for val, (min, max) in zip(lhs, ranges):
@@ -131,3 +129,24 @@ class Filter:
             ):
                 return True
         return False
+
+
+class MultiEval:
+    def __init__(
+        self,
+        eval_network: Callable[[torch.Tensor], torch.Tensor],
+    ):
+        self._eval_network = eval_network
+
+    def loss_weighted(
+        self, datasets: Iterable[DatasetPde], weights: Iterable[float]
+    ) -> torch.Tensor:
+        losses = torch.tensor([0.0])
+        for weight, dataset in zip(weights, datasets):
+            if not dataset.is_empty():
+                losses += (
+                    weight
+                    * Distance(self._eval_network(dataset.lhss), dataset.rhss).mse()
+                )
+
+        return losses
