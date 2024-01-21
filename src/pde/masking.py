@@ -36,6 +36,8 @@ class SolverPoisson:
         network: torch.nn.Module,
         dataset_boundary: DatasetPde,
         dataset_internal: DatasetPde,
+        weight_boundary: float = 5.0,
+        weight_internal: float = 1.0,
     ):
         self._network = network
         self._optimiser = torch.optim.Adam(self._network.parameters())
@@ -45,6 +47,7 @@ class SolverPoisson:
             dataset_internal,
         )
         self._eval_network = self._make_eval_network()
+        self._weight_boundary, self._weight_internal = weight_boundary, weight_internal
 
     def _make_eval_network(self) -> Callable[[torch.Tensor], torch.Tensor]:
         def f(lhss: torch.Tensor) -> torch.Tensor:
@@ -65,7 +68,7 @@ class SolverPoisson:
         self._optimiser.zero_grad()
         loss = MultiEval(self._eval_network).loss_weighted(
             [self._dataset_boundary, self._dataset_internal],
-            [5.0, 1.0],
+            [self._weight_boundary, self._weight_internal],
         )
         loss.backward()
         self._optimiser.step()
@@ -116,7 +119,9 @@ class Masking:
 
         def make_network() -> torch.nn.Module:
             network = Network(dim_x=2, with_time=False)
-            SolverPoisson(network, dataset_boundary, dataset_internal).train()
+            SolverPoisson(
+                network, dataset_boundary, dataset_internal, weight_boundary=10.0
+            ).train()
             return network
 
         saveload = SaveloadTorch("poisson")
