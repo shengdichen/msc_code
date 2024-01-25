@@ -205,6 +205,27 @@ class GridTwoD:
 class Grids:
     def __init__(self, grids: list[Grid]):
         self._grids = grids
+        self._n_dims = len(self._grids)
+
+        self._engine = torch.quasirandom.SobolEngine(self._n_dims)
+
+    @property
+    def n_dims(self) -> int:
+        return self._n_dims
+
+    def samples_sobol(self, n_samples: int) -> torch.Tensor:
+        starts, ends = (
+            torch.tensor(list(self.starts()), dtype=torch.float),
+            torch.tensor(list(self.ends()), dtype=torch.float),
+        )
+
+        return self._engine.draw(n_samples) * (ends - starts) + starts
+
+    def starts(self) -> Iterable[float]:
+        return (gr.start for gr in self._grids)
+
+    def ends(self) -> Iterable[float]:
+        return (gr.end for gr in self._grids)
 
     def steps(self) -> Generator[Iterable[float], None, None]:
         for vals in itertools.product(*(gr.step() for gr in self._grids)):
