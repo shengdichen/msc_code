@@ -156,52 +156,6 @@ class Grid:
         return min, max
 
 
-class GridTwoD:
-    def __init__(
-        self, n_gridpts_x: int, n_gridpts_y: int, stepsize_x: float, step_size_y: float
-    ):
-        self._n_gridpts_x, self._n_gridpts_y = n_gridpts_x, n_gridpts_y
-        self._stepsize_x, self._stepsize_y = stepsize_x, step_size_y
-
-        self._coords_x, self._coords_y = np.meshgrid(
-            np.linspace(
-                0, self._stepsize_x * (self._n_gridpts_x - 1), self._n_gridpts_x
-            ),
-            np.linspace(
-                0, self._stepsize_y * (self._n_gridpts_y - 1), self._n_gridpts_y
-            ),
-        )
-
-    @property
-    def n_gridpts_x(self) -> int:
-        return self._n_gridpts_x
-
-    @property
-    def n_gridpts_y(self) -> int:
-        return self._n_gridpts_y
-
-    @property
-    def stepsize_x(self) -> float:
-        return self._stepsize_x
-
-    @property
-    def stepsize_y(self) -> float:
-        return self._stepsize_y
-
-    @property
-    def coords_x(self) -> np.ndarray:
-        return self._coords_x
-
-    @property
-    def coords_y(self) -> np.ndarray:
-        return self._coords_y
-
-    def init_solution_zeros(self) -> np.ndarray:
-        # np's 0th axis := human's y
-        # np's 1st axis := human's x
-        return np.zeros((self._n_gridpts_y, self._n_gridpts_x))
-
-
 class Grids:
     def __init__(self, grids: list[Grid]):
         self._grids = grids

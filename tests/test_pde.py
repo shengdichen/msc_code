@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 import torch
 
-from src.pde.pde import Distance, Grid, Grids, GridTime, GridTwoD
+from src.pde.pde import Distance, Grid, Grids, GridTime
 from src.util.equality import EqualityBuiltin, EqualityTorch
 
 
@@ -384,17 +384,6 @@ class TestGrids:
                 [4.2, 4.2, 4.2, 4.2],
                 [4.3, 4.3, 4.3, 4.3],
             ],
-        )
-
-
-class TestGridTwoD:
-    def test_dim(self):
-        gr = GridTwoD(n_gridpts_x=50, n_gridpts_y=40, stepsize_x=0.1, step_size_y=0.15)
-        assert (
-            gr.coords_x.shape
-            == gr.coords_y.shape
-            == gr.init_solution_zeros().shape
-            == (40, 50)
         )
 
 
