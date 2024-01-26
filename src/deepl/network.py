@@ -21,7 +21,7 @@ class Network(torch.nn.Module):
             self._size_input += 1
 
         self._size_hidden, self._n_hiddens = size_hidden, n_hiddens
-        self._activation = torch.nn.Tanh
+        self._activation = activation
 
         self._layers = self._make_layers()
 
