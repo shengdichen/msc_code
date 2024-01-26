@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import torch
 
-from src.pde.pde import Distance
+from src.util import distance
 from src.util.multidiff import MultidiffNetwork
 
 logger = logging.getLogger(__name__)
@@ -119,8 +119,8 @@ class Pinn:
         mdn = MultidiffNetwork(self._network, self._gridpts_boundary)
 
         return (
-            Distance(mdn.diff_0(), self._solver_exact.u_d0()).mse(),
-            Distance(mdn.diff(0, 1), self._solver_exact.u_d1()).mse(),
+            distance.Distance(mdn.diff_0(), self._solver_exact.u_d0()).mse(),
+            distance.Distance(mdn.diff(0, 1), self._solver_exact.u_d1()).mse(),
         )
 
     def _loss_pde(self) -> torch.Tensor:
@@ -130,7 +130,7 @@ class Pinn:
             + self._constant_mu * mdn.diff(0, 1)
             + mdn.diff(0, 2)
         )
-        return Distance(network_pde, 0).mse()
+        return distance.Distance(network_pde, 0).mse()
 
     def _plot_progress(self, timestep: int) -> None:
         prediction = self._network(self._gridpts_test).detach()

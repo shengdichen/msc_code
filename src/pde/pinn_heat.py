@@ -6,8 +6,8 @@ import numpy as np
 import torch
 
 from src.pde.network import Network
-from src.pde.pde import Distance, PDEHeat
-from src.util import grid
+from src.pde.pde import PDEHeat
+from src.util import distance, grid
 from src.util.multidiff import MultidiffNetwork
 
 logger = logging.getLogger(__name__)
@@ -125,7 +125,7 @@ class SolverHeat2d:
         ]:
             curr = (
                 weight
-                * Distance(
+                * distance.Distance(
                     self._eval_network(torch.stack(lhss)),
                     torch.stack(rhss),
                 ).mse()
@@ -138,7 +138,7 @@ class SolverHeat2d:
 
     def inspect(self) -> None:
         mse_pecentage = (
-            Distance(
+            distance.Distance(
                 self._eval_network(torch.stack(self._lhss)),
                 torch.stack(self._rhss),
             ).mse_relative()
@@ -223,7 +223,7 @@ class SolverHeat2d:
         self._network.eval()
         rhss_ours = self._eval_network(lhss).view(-1)
 
-        mse_percentage = Distance(rhss_ours, rhss).mse_relative() * 100
+        mse_percentage = distance.Distance(rhss_ours, rhss).mse_relative() * 100
         logger.info(f"[{grid_x1}; {grid_x2}] loss%: {mse_percentage}")
 
 

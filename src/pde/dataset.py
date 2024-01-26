@@ -3,7 +3,7 @@ from collections.abc import Callable, Iterable
 
 import torch
 
-from src.pde.pde import Distance
+from src.util import distance
 
 
 class DatasetPde:
@@ -146,7 +146,9 @@ class MultiEval:
             if not dataset.is_empty():
                 losses += (
                     weight
-                    * Distance(self._eval_network(dataset.lhss), dataset.rhss).mse()
+                    * distance.Distance(
+                        self._eval_network(dataset.lhss), dataset.rhss
+                    ).mse()
                 )
 
         return losses

@@ -5,9 +5,9 @@ import torch
 
 from src.pde.dataset import DatasetPde, Filter, MultiEval
 from src.pde.network import Network
-from src.pde.pde import Distance, PDEPoisson
+from src.pde.pde import PDEPoisson
 from src.pde.saveload import SaveloadTorch
-from src.util import grid
+from src.util import distance, grid
 from src.util.multidiff import MultidiffNetwork
 
 logger = logging.getLogger(__name__)
@@ -82,7 +82,7 @@ class SolverPoisson:
             ["boundary", "internal"], [self._dataset_boundary, self._dataset_internal]
         ):
             if not dataset.is_empty():
-                mode_to_percentage[mode] = Distance(
+                mode_to_percentage[mode] = distance.Distance(
                     self._eval_network(dataset.lhss), dataset.rhss
                 ).mse_percentage()
             else:

@@ -4,26 +4,27 @@ import numpy as np
 import pytest
 import torch
 
-from src.pde.pde import Distance
-from src.util import grid
+from src.util import distance, grid
 from src.util.equality import EqualityBuiltin, EqualityTorch
 
 
 class TestDistance:
     def test_mse(self):
-        assert torch.equal(Distance(5).mse(), torch.tensor(25))
-        assert torch.equal(Distance(5, 0).mse(), torch.tensor(25))
+        assert torch.equal(distance.Distance(5).mse(), torch.tensor(25))
+        assert torch.equal(distance.Distance(5, 0).mse(), torch.tensor(25))
 
-        assert torch.equal(Distance(5, 1).mse(), torch.tensor(16))
-        assert torch.equal(Distance(5, -1).mse(), torch.tensor(36))
+        assert torch.equal(distance.Distance(5, 1).mse(), torch.tensor(16))
+        assert torch.equal(distance.Distance(5, -1).mse(), torch.tensor(36))
 
-        assert torch.equal(Distance(torch.tensor([1] * 3), 1).mse(), torch.tensor(0))
         assert torch.equal(
-            Distance(torch.tensor([2, 3, 4, 5], dtype=torch.float), 1).mse(),
+            distance.Distance(torch.tensor([1] * 3), 1).mse(), torch.tensor(0)
+        )
+        assert torch.equal(
+            distance.Distance(torch.tensor([2, 3, 4, 5], dtype=torch.float), 1).mse(),
             torch.tensor(7.5),  # (1 + 4 + 9 + 16) / 4
         )
         assert torch.equal(
-            Distance(
+            distance.Distance(
                 torch.tensor([1, 4, 7], dtype=torch.float),
                 torch.tensor([1, 2, 3], dtype=torch.float),
             ).mse(),
@@ -32,14 +33,14 @@ class TestDistance:
 
     def test_msc_relative(self):
         assert torch.equal(
-            Distance(
+            distance.Distance(
                 torch.tensor([1, 2, 3], dtype=torch.float),
                 torch.tensor([1, 2, 3], dtype=torch.float),
             ).mse_relative(),
             torch.tensor(0),
         )
         assert torch.equal(
-            Distance(
+            distance.Distance(
                 torch.tensor([0, 0, 0], dtype=torch.float),
                 torch.tensor([1, 2, 3], dtype=torch.float),
             ).mse_relative(),
@@ -47,7 +48,7 @@ class TestDistance:
         )
 
         assert torch.equal(
-            Distance(
+            distance.Distance(
                 torch.tensor([0, 0, 1], dtype=torch.float),
                 torch.tensor([0, 0, 2], dtype=torch.float),
             ).mse_relative(),
@@ -55,7 +56,7 @@ class TestDistance:
         )
 
         assert EqualityTorch(
-            Distance(
+            distance.Distance(
                 torch.tensor([1, 4, 7], dtype=torch.float),
                 torch.tensor([1, 2, 3], dtype=torch.float),
             ).mse_relative(),
@@ -64,14 +65,14 @@ class TestDistance:
 
     def test_mse_percentage(self):
         assert (
-            Distance(
+            distance.Distance(
                 torch.tensor([1, 2, 3], dtype=torch.float),
                 torch.tensor([1, 2, 3], dtype=torch.float),
             ).mse_percentage()
             == "0.0000%"
         )
         assert (
-            Distance(
+            distance.Distance(
                 torch.tensor([0, 0, 0], dtype=torch.float),
                 torch.tensor([1, 2, 3], dtype=torch.float),
             ).mse_percentage()
@@ -79,7 +80,7 @@ class TestDistance:
         )
 
         assert (
-            Distance(
+            distance.Distance(
                 torch.tensor([0, 0, 1], dtype=torch.float),
                 torch.tensor([0, 0, 2], dtype=torch.float),
             ).mse_percentage()
@@ -87,7 +88,7 @@ class TestDistance:
         )
 
         assert (
-            Distance(
+            distance.Distance(
                 torch.tensor([1, 4, 7], dtype=torch.float),
                 torch.tensor([1, 2, 3], dtype=torch.float),
             ).mse_percentage()
