@@ -22,8 +22,7 @@ class IntegralMontecarlo:
         for rg in self._ranges:
             if rg[1] <= rg[0]:
                 raise ValueError
-            else:
-                volume *= rg[1] - rg[0]
+            volume *= rg[1] - rg[0]
         return volume
 
     def _make_samples(self) -> torch.Tensor:

@@ -56,8 +56,8 @@ class NetworkDense(torch.nn.Module):
 
         return torch.nn.ModuleList(layers)
 
-    def forward(self, input: torch.Tensor) -> torch.Tensor:
-        res = self._activation()(self._layers[0](input))
+    def forward(self, lhss: torch.Tensor) -> torch.Tensor:
+        res = self._activation()(self._layers[0](lhss))
         for layer in self._layers[1:-1]:
             res = self._activation()(layer(res))
         return self._layers[-1](res)

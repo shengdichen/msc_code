@@ -86,10 +86,7 @@ class PDEPoisson:
             )
 
     def _solve_internal_current(self) -> None:
-        for (
-            (idx_x1, val_x1),
-            (idx_x2, val_x2),
-        ) in self._grids.internals_with_index():
+        for (idx_x1, _), (idx_x2, _) in self._grids.internals_with_index():
             self._sol[idx_x1, idx_x2] = 0.25 * (
                 self._sol[idx_x1 + 1, idx_x2]
                 + self._sol[idx_x1 - 1, idx_x2]
@@ -120,8 +117,8 @@ class PDEPoisson:
         )
         return dataset_boundary, dataset_internal
 
-        def as_interpolator(self) -> RectBivariateSpline:
-            return RectBivariateSpline(self._grids.coords_as_mesh(), self._sol)
+    def as_interpolator(self) -> RectBivariateSpline:
+        return RectBivariateSpline(self._grids.coords_as_mesh(), self._sol)
 
     def plot_2d(self) -> None:
         plt.figure(figsize=(8, 6))

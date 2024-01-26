@@ -148,8 +148,7 @@ class Masking:
         dataset = DatasetPde.from_datasets(
             self._dataset_boundary, self._dataset_internal
         )
-        filter = Filter(dataset)
-        res = filter.filter(range_x1, range_x2)
+        res = Filter(dataset).filter(range_x1, range_x2)
 
         return res
 

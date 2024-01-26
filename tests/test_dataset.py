@@ -119,9 +119,9 @@ class TestFilter:
 
     def test_filter(self):
         _, internal = self._make_dataset()
-        filter = Filter(internal)
+        ft = Filter(internal)
 
-        boundary, internal = filter.filter((3.2, 3.5), (4.3, 4.6))
+        boundary, internal = ft.filter((3.2, 3.5), (4.3, 4.6))
         assert EqualityTorch(
             boundary.lhss,
             torch.tensor(

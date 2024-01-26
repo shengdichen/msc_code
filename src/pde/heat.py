@@ -106,8 +106,8 @@ class PDEHeat:
         self, val_t: float
     ) -> Generator[tuple[torch.Tensor, float], None, None]:
         # not efficient, but readable & foolproof
-        for idx_x1, val_x1 in self._grid_x1.step_with_index():
-            for idx_x2, val_x2 in self._grid_x2.step_with_index():
+        for val_x1 in self._grid_x1.step():
+            for val_x2 in self._grid_x2.step():
                 if self._grid_x1.is_on_boundary(val_x1) or self._grid_x2.is_on_boundary(
                     val_x2
                 ):
@@ -125,9 +125,8 @@ class PDEHeat:
 
             logger.info("head2d: dataset saved; returning it now")
             return dataset
-        else:
-            logger.info(f"head2d: dataset found at {out}; returning it now")
-            return torch.load(out)
+        logger.info(f"head2d: dataset found at {out}; returning it now")
+        return torch.load(out)
 
     def save_raw(self) -> None:
         for tensor, f in zip([self._lhss, self._rhss], ["lhss", "rhss"]):
@@ -160,8 +159,8 @@ class PDEHeat:
             self._snapshot,
             cmap="viridis",
         )
-        ax.set_xlim(*self._grid_x1._boundaries)
-        ax.set_ylim(*self._grid_x2._boundaries)
+        ax.set_xlim(self._grid_x1.start, self._grid_x2.end)
+        ax.set_ylim(self._grid_x2.start, self._grid_x2.end)
         ax.set_zlim(0, 120)
         ax.set_title(
             "Heat [time-step " f"{timestep_formatted}/{self._grid_time.n_pts}" "]"

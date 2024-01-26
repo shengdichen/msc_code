@@ -163,10 +163,10 @@ class SolverHeat2d:
         for time in time_to_rhs:
             time_to_rhs[time] = torch.stack(time_to_rhs[time])
 
-        for time, lhs in time_to_space.items():
-            self._plot_snapshot(time, lhs)
+        for time in time_to_space:
+            self._plot_snapshot(time)
 
-    def _plot_snapshot(self, pt_time: int, pt_space: torch.Tensor) -> None:
+    def _plot_snapshot(self, pt_time: int) -> None:
         snapshot = np.zeros((self._grid_x1.n_pts, self._grid_x2.n_pts))
         for idx_x1, val_x1 in self._grid_x1.step_with_index():
             for idx_x2, val_x2 in self._grid_x2.step_with_index():
@@ -183,8 +183,8 @@ class SolverHeat2d:
             snapshot,
             cmap="viridis",
         )
-        ax.set_xlim(*self._grid_x1._boundaries)
-        ax.set_ylim(*self._grid_x2._boundaries)
+        ax.set_xlim(self._grid_x1.start, self._grid_x1.end)
+        ax.set_ylim(self._grid_x2.start, self._grid_x2.end)
         ax.set_zlim(0, 120)
         ax.set_title(
             "Heat [time-step " f"{timestep_formatted}/{self._grid_time.n_pts}" "]"

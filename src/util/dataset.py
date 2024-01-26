@@ -84,7 +84,8 @@ class DatasetPde:
 
         return cls.from_lhss_rhss_torch(lhss, rhss)
 
-    def one_big_batch(cls, dataset: torch.utils.data.dataset.TensorDataset) -> list:
+    @staticmethod
+    def one_big_batch(dataset: torch.utils.data.dataset.TensorDataset) -> list:
         return list(torch.utils.data.DataLoader(dataset, batch_size=len(dataset)))[0]
 
 
@@ -123,9 +124,9 @@ class Filter:
         lhs: torch.Tensor,
         *ranges: tuple[float, float],
     ) -> bool:
-        for val, (min, max) in zip(lhs, ranges):
-            if math.isclose(val, min, abs_tol=0.0001) or math.isclose(
-                val, max, abs_tol=0.0001
+        for val, (pt_min, pt_max) in zip(lhs, ranges):
+            if math.isclose(val, pt_min, abs_tol=0.0001) or math.isclose(
+                val, pt_max, abs_tol=0.0001
             ):
                 return True
         return False

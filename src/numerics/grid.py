@@ -78,9 +78,9 @@ class Grid:
     ) -> tuple[float, float]:
         if from_start + to_end > 1.0:
             raise ValueError("requested range is empty")
-        min = self._start + from_start * self._length
-        max = self._end - to_end * self._length
-        return min, max
+        pt_min = self._start + from_start * self._length
+        pt_max = self._end - to_end * self._length
+        return pt_min, pt_max
 
     def min_max_n_pts(
         self, from_start: Union[int, float] = 0, to_end: Union[int, float] = 0
@@ -90,11 +90,11 @@ class Grid:
         if isinstance(to_end, float):
             to_end = math.floor(self._n_pts * to_end)
 
-        min = self._start + from_start * self._stepsize
-        max = self._end - to_end * self._stepsize
-        if min > max:
+        pt_min = self._start + from_start * self._stepsize
+        pt_max = self._end - to_end * self._stepsize
+        if pt_min > pt_max:
             raise ValueError("requested range is empty")
-        return min, max
+        return pt_min, pt_max
 
 
 class GridTime(Grid):
