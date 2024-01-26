@@ -5,10 +5,10 @@ import matplotlib.pyplot as plt
 import numpy as np
 import torch
 
-from src.pde.multidiff import MultidiffNetwork
 from src.pde.network import Network
 from src.pde.pde import Distance, PDEHeat
 from src.util import grid
+from src.util.multidiff import MultidiffNetwork
 
 logger = logging.getLogger(__name__)
 

@@ -4,11 +4,11 @@ from collections.abc import Callable
 import torch
 
 from src.pde.dataset import DatasetPde, Filter, MultiEval
-from src.pde.multidiff import MultidiffNetwork
 from src.pde.network import Network
 from src.pde.pde import Distance, PDEPoisson
 from src.pde.saveload import SaveloadTorch
 from src.util import grid
+from src.util.multidiff import MultidiffNetwork
 
 logger = logging.getLogger(__name__)
 
