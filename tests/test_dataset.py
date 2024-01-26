@@ -2,7 +2,7 @@ import torch
 
 from src.numerics import grid
 from src.numerics.equality import EqualityTorch
-from src.pde.dataset import DatasetPde, Filter
+from src.util.dataset import DatasetPde, Filter
 
 
 class _Data:

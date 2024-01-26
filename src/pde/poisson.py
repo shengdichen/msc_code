@@ -6,7 +6,7 @@ import torch
 from scipy.interpolate import RectBivariateSpline
 
 from src.numerics import grid
-from src.pde.saveload import SaveloadPde
+from src.util.saveload import SaveloadPde
 
 logger = logging.getLogger(__name__)
 
