@@ -9,6 +9,7 @@ from typing import Generator, Union
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
+from scipy.interpolate import RectBivariateSpline
 
 from src.definition import DEFINITION
 from src.pde.saveload import SaveloadPde
@@ -371,6 +372,9 @@ class PDEPoisson:
             self._lhss_internal, self._rhss_internal
         )
         return dataset_boundary, dataset_internal
+
+        def as_interpolator(self) -> RectBivariateSpline:
+            return RectBivariateSpline(self._grids.coords_as_mesh(), self._sol)
 
     def plot_2d(self) -> None:
         plt.figure(figsize=(8, 6))
