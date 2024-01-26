@@ -3,9 +3,9 @@ from collections.abc import Callable
 
 import torch
 
+from src.pde import poisson
 from src.pde.dataset import DatasetPde, Filter, MultiEval
 from src.pde.network import Network
-from src.pde.pde import PDEPoisson
 from src.pde.saveload import SaveloadTorch
 from src.util import distance, grid
 from src.util.multidiff import MultidiffNetwork
@@ -95,7 +95,7 @@ class Masking:
         self._grid_x1 = grid.Grid(n_pts=50, stepsize=0.1, start=0.0)
         self._grid_x2 = grid.Grid(n_pts=50, stepsize=0.1, start=0.0)
 
-        self._dataset_boundary, self._dataset_internal = PDEPoisson(
+        self._dataset_boundary, self._dataset_internal = poisson.PDEPoisson(
             self._grid_x1, self._grid_x2, as_laplace=True
         ).as_dataset()
 

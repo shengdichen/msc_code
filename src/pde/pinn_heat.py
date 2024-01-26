@@ -5,8 +5,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 import torch
 
+from src.pde import heat
 from src.pde.network import Network
-from src.pde.pde import PDEHeat
 from src.util import distance, grid
 from src.util.multidiff import MultidiffNetwork
 
@@ -35,7 +35,7 @@ class SolverHeat2d:
         self._grid_x2 = grid.Grid(n_pts=50, stepsize=0.1, start=0.0)
         self._grid_space = grid.Grids([self._grid_x1, self._grid_x2])
 
-        self._dataset = PDEHeat(
+        self._dataset = heat.PDEHeat(
             self._grid_time, self._grid_x1, self._grid_x2
         ).as_dataset()
         self._dataloader = torch.utils.data.DataLoader(self._dataset, batch_size=20)
@@ -213,7 +213,7 @@ class SolverHeat2d:
         lhss: list[torch.Tensor] = []
         rhss: list[float] = []
 
-        for lhs, rhs in PDEHeat(self._grid_time, grid_x1, grid_x2).as_dataset():
+        for lhs, rhs in heat.PDEHeat(self._grid_time, grid_x1, grid_x2).as_dataset():
             lhss.append(lhs)
             rhss.append(rhs)
         lhss = torch.stack(lhss)
