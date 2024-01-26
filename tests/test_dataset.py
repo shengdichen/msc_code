@@ -1,7 +1,7 @@
 import torch
 
 from src.pde.dataset import DatasetPde, Filter
-from src.pde.pde import Grid, Grids
+from src.util import grid
 from src.util.equality import EqualityTorch
 
 
@@ -97,9 +97,9 @@ class TestDatasetPde:
 
 class TestFilter:
     def _make_dataset(self) -> torch.utils.data.dataset.TensorDataset:
-        gr1 = Grid(10, stepsize=0.1, start=3.0)
-        gr2 = Grid(10, stepsize=0.1, start=4.0)
-        grids = Grids([gr1, gr2])
+        gr1 = grid.Grid(10, stepsize=0.1, start=3.0)
+        gr2 = grid.Grid(10, stepsize=0.1, start=4.0)
+        grids = grid.Grids([gr1, gr2])
 
         lhss_boundary, rhss_boundary = [], []
         lhss_internal, rhss_internal = [], []

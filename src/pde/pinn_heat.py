@@ -7,7 +7,8 @@ import torch
 
 from src.pde.multidiff import MultidiffNetwork
 from src.pde.network import Network
-from src.pde.pde import Distance, Grid, Grids, GridTime, PDEHeat
+from src.pde.pde import Distance, PDEHeat
+from src.util import grid
 
 logger = logging.getLogger(__name__)
 
@@ -29,10 +30,10 @@ class SolverHeat2d:
 
         self._optimiser = torch.optim.Adam(self._network.parameters())
 
-        self._grid_time = GridTime(n_pts=100, stepsize=0.01)
-        self._grid_x1 = Grid(n_pts=50, stepsize=0.1, start=0.0)
-        self._grid_x2 = Grid(n_pts=50, stepsize=0.1, start=0.0)
-        self._grid_space = Grids([self._grid_x1, self._grid_x2])
+        self._grid_time = grid.GridTime(n_pts=100, stepsize=0.01)
+        self._grid_x1 = grid.Grid(n_pts=50, stepsize=0.1, start=0.0)
+        self._grid_x2 = grid.Grid(n_pts=50, stepsize=0.1, start=0.0)
+        self._grid_space = grid.Grids([self._grid_x1, self._grid_x2])
 
         self._dataset = PDEHeat(
             self._grid_time, self._grid_x1, self._grid_x2
@@ -198,16 +199,16 @@ class SolverHeat2d:
 
     def masking(self) -> None:
         for n_pts in [50, 60, 70, 80, 90, 100]:
-            grid_x1 = Grid(n_pts=n_pts, stepsize=0.1, start=0.0)
-            grid_x2 = Grid(n_pts=n_pts, stepsize=0.1, start=0.0)
+            grid_x1 = grid.Grid(n_pts=n_pts, stepsize=0.1, start=0.0)
+            grid_x2 = grid.Grid(n_pts=n_pts, stepsize=0.1, start=0.0)
             self._masking_one(grid_x1, grid_x2)
 
         for stepsize in [0.09, 0.08, 0.07, 0.06, 0.05]:
-            grid_x1 = Grid(n_pts=50, stepsize=stepsize, start=0.0)
-            grid_x2 = Grid(n_pts=50, stepsize=stepsize, start=0.0)
+            grid_x1 = grid.Grid(n_pts=50, stepsize=stepsize, start=0.0)
+            grid_x2 = grid.Grid(n_pts=50, stepsize=stepsize, start=0.0)
             self._masking_one(grid_x1, grid_x2)
 
-    def _masking_one(self, grid_x1: Grid, grid_x2: Grid):
+    def _masking_one(self, grid_x1: grid.Grid, grid_x2: grid.Grid):
         logger.info("exact> solving")
         lhss: list[torch.Tensor] = []
         rhss: list[float] = []

@@ -6,8 +6,9 @@ import torch
 from src.pde.dataset import DatasetPde, Filter, MultiEval
 from src.pde.multidiff import MultidiffNetwork
 from src.pde.network import Network
-from src.pde.pde import Distance, Grid, PDEPoisson
+from src.pde.pde import Distance, PDEPoisson
 from src.pde.saveload import SaveloadTorch
+from src.util import grid
 
 logger = logging.getLogger(__name__)
 
@@ -91,8 +92,8 @@ class SolverPoisson:
 
 class Masking:
     def __init__(self):
-        self._grid_x1 = Grid(n_pts=50, stepsize=0.1, start=0.0)
-        self._grid_x2 = Grid(n_pts=50, stepsize=0.1, start=0.0)
+        self._grid_x1 = grid.Grid(n_pts=50, stepsize=0.1, start=0.0)
+        self._grid_x2 = grid.Grid(n_pts=50, stepsize=0.1, start=0.0)
 
         self._dataset_boundary, self._dataset_internal = PDEPoisson(
             self._grid_x1, self._grid_x2, as_laplace=True
