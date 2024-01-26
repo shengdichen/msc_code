@@ -1,7 +1,6 @@
 import logging
 import os
 import pathlib
-from collections.abc import Iterable
 from typing import Generator, Union
 
 import matplotlib.pyplot as plt
@@ -15,21 +14,6 @@ from src.util import grid
 from src.util.gif import MakerGif
 
 logger = logging.getLogger(__name__)
-
-
-class PDEUtil:
-    @staticmethod
-    def boundary_space(sol: np.ndarray, val: float | Iterable = 0) -> np.ndarray:
-        if isinstance(val, Iterable):
-            v_bottom, v_top, v_left, v_right = val
-        else:
-            v_bottom, v_top, v_left, v_right = [val] * 4
-
-        sol[:, 0] = v_bottom
-        sol[:, -1] = v_top
-        sol[0, :] = v_left
-        sol[-1, :] = v_right
-        return sol
 
 
 class Distance:
