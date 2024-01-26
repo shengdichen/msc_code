@@ -4,8 +4,8 @@ import numpy as np
 import pytest
 import torch
 
-from src.util import distance, grid
-from src.util.equality import EqualityBuiltin, EqualityTorch
+from src.numerics import distance, grid
+from src.numerics.equality import EqualityBuiltin, EqualityTorch
 
 
 class TestDistance:

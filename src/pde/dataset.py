@@ -3,7 +3,7 @@ from collections.abc import Callable, Iterable
 
 import torch
 
-from src.util import distance
+from src.numerics import distance
 
 
 class DatasetPde:

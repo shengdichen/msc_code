@@ -5,8 +5,8 @@ import numpy as np
 import torch
 from scipy.interpolate import RectBivariateSpline
 
+from src.numerics import grid
 from src.pde.saveload import SaveloadPde
-from src.util import grid
 
 logger = logging.getLogger(__name__)
 

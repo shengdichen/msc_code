@@ -7,7 +7,7 @@ import matplotlib.pyplot as plt
 import torch
 
 from src.definition import DEFINITION
-from src.util import grid
+from src.numerics import grid
 from src.util.gif import MakerGif
 
 logger = logging.getLogger(__name__)

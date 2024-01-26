@@ -1,8 +1,8 @@
 import torch
 
+from src.numerics import grid
+from src.numerics.equality import EqualityTorch
 from src.pde.dataset import DatasetPde, Filter
-from src.util import grid
-from src.util.equality import EqualityTorch
 
 
 class _Data:

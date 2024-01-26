@@ -4,8 +4,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 import torch
 
-from src.util import distance
-from src.util.multidiff import MultidiffNetwork
+from src.numerics import distance
+from src.numerics.multidiff import MultidiffNetwork
 
 logger = logging.getLogger(__name__)
 
