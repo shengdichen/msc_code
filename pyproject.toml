@@ -15,6 +15,7 @@ numpy = "*"
 torch = "*"
 torchvision = "*"
 torchaudio = "*"
+scipy = "*"
 matplotlib = "*"
 imageio = "*"
 
