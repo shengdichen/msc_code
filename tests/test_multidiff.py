@@ -3,8 +3,8 @@ from typing import Callable
 import pytest
 import torch
 
-from src.pde.multidiff import Multidiff, MultidiffNetwork
-from src.util.equality import EqualityTorch
+from src.numerics.equality import EqualityTorch
+from src.numerics.multidiff import Multidiff, MultidiffNetwork
 
 
 class _Data:

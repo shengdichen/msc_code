@@ -24,9 +24,8 @@ class Saveloader:
     def load(self, location: Path) -> Any:
         if not self.exists(location):
             raise FileNotFoundError
-        else:
-            logger.info(f"target found at {location}")
-            return self._load(location)
+        logger.info(f"target found at {location}")
+        return self._load(location)
 
     def _load(self, location: Path) -> Any:
         pass
@@ -35,8 +34,7 @@ class Saveloader:
         if self.exists(location):
             if not overwrite:
                 raise FileExistsError
-            else:
-                location.unlink()
+            location.unlink()
         else:
             logger.info(f"target saved at {location}")
             self._make_folder_containing(location)

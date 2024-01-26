@@ -15,9 +15,13 @@ numpy = "*"
 torch = "*"
 torchvision = "*"
 torchaudio = "*"
+scipy = "*"
 matplotlib = "*"
 imageio = "*"
 
+[tool.poetry.group.dev.dependencies]
+pynvim = "*"
+ropevim = "*"
 
 [build-system]
 requires = ["poetry-core"]

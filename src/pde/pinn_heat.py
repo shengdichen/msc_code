@@ -5,9 +5,10 @@ import matplotlib.pyplot as plt
 import numpy as np
 import torch
 
-from src.pde.multidiff import MultidiffNetwork
-from src.pde.network import Network
-from src.pde.pde import Distance, Grid, Grids, GridTime, PDEHeat
+from src.deepl.network import Network
+from src.numerics import distance, grid
+from src.numerics.multidiff import MultidiffNetwork
+from src.pde import heat
 
 logger = logging.getLogger(__name__)
 
@@ -29,12 +30,12 @@ class SolverHeat2d:
 
         self._optimiser = torch.optim.Adam(self._network.parameters())
 
-        self._grid_time = GridTime(n_pts=100, stepsize=0.01)
-        self._grid_x1 = Grid(n_pts=50, stepsize=0.1, start=0.0)
-        self._grid_x2 = Grid(n_pts=50, stepsize=0.1, start=0.0)
-        self._grid_space = Grids([self._grid_x1, self._grid_x2])
+        self._grid_time = grid.GridTime(n_pts=100, stepsize=0.01)
+        self._grid_x1 = grid.Grid(n_pts=50, stepsize=0.1, start=0.0)
+        self._grid_x2 = grid.Grid(n_pts=50, stepsize=0.1, start=0.0)
+        self._grid_space = grid.Grids([self._grid_x1, self._grid_x2])
 
-        self._dataset = PDEHeat(
+        self._dataset = heat.PDEHeat(
             self._grid_time, self._grid_x1, self._grid_x2
         ).as_dataset()
         self._dataloader = torch.utils.data.DataLoader(self._dataset, batch_size=20)
@@ -124,7 +125,7 @@ class SolverHeat2d:
         ]:
             curr = (
                 weight
-                * Distance(
+                * distance.Distance(
                     self._eval_network(torch.stack(lhss)),
                     torch.stack(rhss),
                 ).mse()
@@ -137,7 +138,7 @@ class SolverHeat2d:
 
     def inspect(self) -> None:
         mse_pecentage = (
-            Distance(
+            distance.Distance(
                 self._eval_network(torch.stack(self._lhss)),
                 torch.stack(self._rhss),
             ).mse_relative()
@@ -162,10 +163,10 @@ class SolverHeat2d:
         for time in time_to_rhs:
             time_to_rhs[time] = torch.stack(time_to_rhs[time])
 
-        for time, lhs in time_to_space.items():
-            self._plot_snapshot(time, lhs)
+        for time in time_to_space:
+            self._plot_snapshot(time)
 
-    def _plot_snapshot(self, pt_time: int, pt_space: torch.Tensor) -> None:
+    def _plot_snapshot(self, pt_time: int) -> None:
         snapshot = np.zeros((self._grid_x1.n_pts, self._grid_x2.n_pts))
         for idx_x1, val_x1 in self._grid_x1.step_with_index():
             for idx_x2, val_x2 in self._grid_x2.step_with_index():
@@ -182,8 +183,8 @@ class SolverHeat2d:
             snapshot,
             cmap="viridis",
         )
-        ax.set_xlim(*self._grid_x1._boundaries)
-        ax.set_ylim(*self._grid_x2._boundaries)
+        ax.set_xlim(self._grid_x1.start, self._grid_x1.end)
+        ax.set_ylim(self._grid_x2.start, self._grid_x2.end)
         ax.set_zlim(0, 120)
         ax.set_title(
             "Heat [time-step " f"{timestep_formatted}/{self._grid_time.n_pts}" "]"
@@ -198,21 +199,21 @@ class SolverHeat2d:
 
     def masking(self) -> None:
         for n_pts in [50, 60, 70, 80, 90, 100]:
-            grid_x1 = Grid(n_pts=n_pts, stepsize=0.1, start=0.0)
-            grid_x2 = Grid(n_pts=n_pts, stepsize=0.1, start=0.0)
+            grid_x1 = grid.Grid(n_pts=n_pts, stepsize=0.1, start=0.0)
+            grid_x2 = grid.Grid(n_pts=n_pts, stepsize=0.1, start=0.0)
             self._masking_one(grid_x1, grid_x2)
 
         for stepsize in [0.09, 0.08, 0.07, 0.06, 0.05]:
-            grid_x1 = Grid(n_pts=50, stepsize=stepsize, start=0.0)
-            grid_x2 = Grid(n_pts=50, stepsize=stepsize, start=0.0)
+            grid_x1 = grid.Grid(n_pts=50, stepsize=stepsize, start=0.0)
+            grid_x2 = grid.Grid(n_pts=50, stepsize=stepsize, start=0.0)
             self._masking_one(grid_x1, grid_x2)
 
-    def _masking_one(self, grid_x1: Grid, grid_x2: Grid):
+    def _masking_one(self, grid_x1: grid.Grid, grid_x2: grid.Grid):
         logger.info("exact> solving")
         lhss: list[torch.Tensor] = []
         rhss: list[float] = []
 
-        for lhs, rhs in PDEHeat(self._grid_time, grid_x1, grid_x2).as_dataset():
+        for lhs, rhs in heat.PDEHeat(self._grid_time, grid_x1, grid_x2).as_dataset():
             lhss.append(lhs)
             rhss.append(rhs)
         lhss = torch.stack(lhss)
@@ -222,7 +223,7 @@ class SolverHeat2d:
         self._network.eval()
         rhss_ours = self._eval_network(lhss).view(-1)
 
-        mse_percentage = Distance(rhss_ours, rhss).mse_relative() * 100
+        mse_percentage = distance.Distance(rhss_ours, rhss).mse_relative() * 100
         logger.info(f"[{grid_x1}; {grid_x2}] loss%: {mse_percentage}")
 
 

@@ -1,7 +1,7 @@
 import torch
 
-from src.pde.network import Network
-from src.util.equality import EqualityTorch
+from src.deepl.network import Network
+from src.numerics.equality import EqualityTorch
 
 
 class TestNetwork:

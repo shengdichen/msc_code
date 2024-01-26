@@ -3,7 +3,7 @@ import math
 import pytest
 import torch
 
-from src.pde.integral import IntegralMontecarlo
+from src.numerics.integral import IntegralMontecarlo
 
 
 class Integrand:
