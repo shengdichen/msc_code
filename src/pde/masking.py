@@ -3,9 +3,9 @@ from collections.abc import Callable
 
 import torch
 
+from src.deepl.network import Network
 from src.pde import poisson
 from src.pde.dataset import DatasetPde, Filter, MultiEval
-from src.pde.network import Network
 from src.pde.saveload import SaveloadTorch
 from src.util import distance, grid
 from src.util.multidiff import MultidiffNetwork

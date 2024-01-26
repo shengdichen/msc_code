@@ -5,8 +5,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 import torch
 
+from src.deepl.network import Network
 from src.pde import heat
-from src.pde.network import Network
 from src.util import distance, grid
 from src.util.multidiff import MultidiffNetwork
 

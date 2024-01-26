@@ -1,6 +1,6 @@
 import torch
 
-from src.pde.network import Network
+from src.deepl.network import Network
 from src.util.equality import EqualityTorch
 
 
