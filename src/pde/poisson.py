@@ -163,7 +163,7 @@ if __name__ == "__main__":
     )
 
     pde = PDEPoisson(
-        grid.GridTime(n_pts=100, stepsize=0.01),
+        grid.Grid(n_pts=50, stepsize=0.1, start=0.0),
         grid.Grid(n_pts=50, stepsize=0.1, start=0.0),
     )
     pde.as_dataset()
