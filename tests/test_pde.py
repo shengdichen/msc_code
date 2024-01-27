@@ -372,6 +372,26 @@ class TestGrids:
         assert np.allclose(
             coords[0],
             [
+                [3.0, 3.0, 3.0, 3.0],
+                [3.1, 3.1, 3.1, 3.1],
+                [3.2, 3.2, 3.2, 3.2],
+                [3.3, 3.3, 3.3, 3.3],
+            ],
+        )
+        assert np.allclose(
+            coords[1],
+            [
+                [4.0, 4.1, 4.2, 4.3],
+                [4.0, 4.1, 4.2, 4.3],
+                [4.0, 4.1, 4.2, 4.3],
+                [4.0, 4.1, 4.2, 4.3],
+            ],
+        )
+
+        coords = grs.coords_as_mesh(indexing_machine_like=False)
+        assert np.allclose(
+            coords[0],
+            [
                 [3.0, 3.1, 3.2, 3.3],
                 [3.0, 3.1, 3.2, 3.3],
                 [3.0, 3.1, 3.2, 3.3],

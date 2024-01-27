@@ -1,7 +1,7 @@
 import itertools
 import math
 from collections.abc import Iterable
-from typing import Generator, Union
+from typing import Generator, Literal, Union
 
 import numpy as np
 import torch
@@ -202,5 +202,7 @@ class Grids:
     def zeroes_like(self) -> torch.Tensor:
         return torch.zeros(([gr.n_pts for gr in self._grids]))
 
-    def coords_as_mesh(self) -> list[np.ndarray]:
-        return np.meshgrid(*(gr.step() for gr in self._grids))
+    def coords_as_mesh(self, indexing_machine_like: bool = True) -> list[np.ndarray]:
+        indexing: Literal["ij", "xy"]
+        indexing = "ij" if indexing_machine_like else "xy"
+        return np.meshgrid(*(gr.step() for gr in self._grids), indexing=indexing)
