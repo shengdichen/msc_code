@@ -1,7 +1,7 @@
 import itertools
 import math
 from collections.abc import Iterable
-from typing import Generator, Literal, Union
+from typing import Generator, Literal, Optional, Union
 
 import numpy as np
 import torch
@@ -135,19 +135,18 @@ class Grids:
         self._grids = grids
         self._n_dims = len(self._grids)
 
-        self._engine = torch.quasirandom.SobolEngine(self._n_dims)
+        self._starts, self._ends = (
+            torch.tensor(list(self.starts()), dtype=torch.float),
+            torch.tensor(list(self.ends()), dtype=torch.float),
+        )
 
     @property
     def n_dims(self) -> int:
         return self._n_dims
 
-    def samples_sobol(self, n_samples: int) -> torch.Tensor:
-        starts, ends = (
-            torch.tensor(list(self.starts()), dtype=torch.float),
-            torch.tensor(list(self.ends()), dtype=torch.float),
-        )
-
-        return self._engine.draw(n_samples) * (ends - starts) + starts
+    def samples_sobol(self, n_samples: int, seed: Optional[int] = None) -> torch.Tensor:
+        engine = torch.quasirandom.SobolEngine(self._n_dims, seed=seed)
+        return engine.draw(n_samples) * (self._ends - self._starts) + self._starts
 
     def starts(self) -> Iterable[float]:
         return (gr.start for gr in self._grids)
