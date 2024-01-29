@@ -18,6 +18,7 @@ torchaudio = "*"
 scipy = "*"
 matplotlib = "*"
 imageio = "*"
+neuraloperator = "*"
 
 [tool.poetry.group.dev.dependencies]
 pynvim = "*"
