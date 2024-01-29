@@ -201,6 +201,9 @@ class Grids:
     def zeroes_like(self) -> torch.Tensor:
         return torch.zeros(([gr.n_pts for gr in self._grids]))
 
+    def zeroes_like_numpy(self) -> torch.Tensor:
+        return np.zeros(([gr.n_pts for gr in self._grids]))
+
     def coords_as_mesh(self, indexing_machine_like: bool = True) -> list[np.ndarray]:
         indexing: Literal["ij", "xy"]
         indexing = "ij" if indexing_machine_like else "xy"
