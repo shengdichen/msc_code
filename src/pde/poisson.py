@@ -167,12 +167,16 @@ class LearnerPoisson:
 
         self._network = network.Network(dim_x=2, with_time=False)
         self._optimiser = torch.optim.Adam(self._network.parameters())
-        self._eval_network = self._make_eval_network()
+        self._eval_network = self._make_eval_network(use_multidiff=False)
 
-    def _make_eval_network(self) -> Callable[[torch.Tensor], torch.Tensor]:
+    def _make_eval_network(
+        self, use_multidiff: bool = True
+    ) -> Callable[[torch.Tensor], torch.Tensor]:
         def f(lhss: torch.Tensor) -> torch.Tensor:
-            mdn = multidiff.MultidiffNetwork(self._network, lhss, ["x1", "x2"])
-            return mdn.diff("x1", 2) + mdn.diff("x2", 2)
+            if use_multidiff:
+                mdn = multidiff.MultidiffNetwork(self._network, lhss, ["x1", "x2"])
+                return mdn.diff("x1", 2) + mdn.diff("x2", 2)
+            return self._network(lhss)
 
         return f
 
