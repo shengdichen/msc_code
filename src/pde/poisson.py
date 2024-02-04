@@ -6,6 +6,7 @@ import torch
 from scipy.interpolate import RectBivariateSpline
 
 from src.deepl import network
+from src.definition import DEFINITION
 from src.numerics import distance, grid, multidiff
 from src.util import plot
 from src.util.saveload import SaveloadPde, SaveloadTorch
@@ -143,6 +144,8 @@ class PDEPoisson:
 
 class LearnerPoisson:
     def __init__(self):
+        self._device = DEFINITION.device_preferred
+
         grid_x1 = grid.Grid(n_pts=50, stepsize=0.1, start=0.0)
         grid_x2 = grid.Grid(n_pts=50, stepsize=0.1, start=0.0)
         self._grids_full = grid.Grids([grid_x1, grid_x2])
@@ -153,6 +156,10 @@ class LearnerPoisson:
         self._rhss_exact_eval = torch.from_numpy(
             self._solver.ev(self._lhss_eval[:, 0], self._lhss_eval[:, 1])
         ).view(-1, 1)
+        self._lhss_eval, self._rhss_exact_eval = (
+            self._lhss_eval.to(self._device),
+            self._rhss_exact_eval.to(self._device),
+        )
 
         self._grids_train = grid.Grids(
             [
@@ -164,8 +171,12 @@ class LearnerPoisson:
         self._rhss_exact_train = torch.from_numpy(
             self._solver.ev(self._lhss_train[:, 0], self._lhss_train[:, 1])
         ).view(-1, 1)
+        self._lhss_train, self._rhss_exact_train = (
+            self._lhss_train.to(self._device),
+            self._rhss_exact_train.to(self._device),
+        )
 
-        self._network = network.Network(dim_x=2, with_time=False)
+        self._network = network.Network(dim_x=2, with_time=False).to(self._device)
         self._optimiser = torch.optim.Adam(self._network.parameters())
         self._eval_network = self._make_eval_network(use_multidiff=False)
 
@@ -217,7 +228,7 @@ class LearnerPoisson:
             (idx_x1, val_x1),
             (idx_x2, val_x2),
         ) in self._grids_full.steps_with_index():
-            lhs = torch.tensor([val_x1, val_x2]).view(1, 2)
+            lhs = torch.tensor([val_x1, val_x2]).view(1, 2).to(self._device)
             res[idx_x1, idx_x2] = self._eval_network(lhs)
 
         plotter = plot.PlotFrame(self._grids_full, res, "poisson-ours")
