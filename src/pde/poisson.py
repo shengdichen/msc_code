@@ -143,21 +143,26 @@ class PDEPoisson:
 
 class LearnerPoisson:
     def __init__(self):
-        self._grid_x1 = grid.Grid(n_pts=50, stepsize=0.1, start=0.0)
-        self._grid_x2 = grid.Grid(n_pts=50, stepsize=0.1, start=0.0)
-        self._grids = grid.Grids([self._grid_x1, self._grid_x2])
+        grid_x1 = grid.Grid(n_pts=50, stepsize=0.1, start=0.0)
+        grid_x2 = grid.Grid(n_pts=50, stepsize=0.1, start=0.0)
+        self._grids_full = grid.Grids([grid_x1, grid_x2])
 
-        self._solver = PDEPoisson(
-            self._grid_x1, self._grid_x2, as_laplace=True
-        ).as_interpolator()
+        self._solver = PDEPoisson(grid_x1, grid_x2, as_laplace=True).as_interpolator()
 
-        self._lhss = self._grids.samples_sobol(5000)
-        self._rhss_exact = torch.from_numpy(
-            self._solver.ev(self._lhss[:, 0], self._lhss[:, 1])
-        ).view(-1, 1)
-        self._lhss_eval = self._grids.samples_sobol(5000)
+        self._lhss_eval = self._grids_full.samples_sobol(5000)
         self._rhss_exact_eval = torch.from_numpy(
             self._solver.ev(self._lhss_eval[:, 0], self._lhss_eval[:, 1])
+        ).view(-1, 1)
+
+        self._grids_train = grid.Grids(
+            [
+                grid.Grid(n_pts=40, stepsize=0.1, start=0.0),
+                grid.Grid(n_pts=40, stepsize=0.1, start=0.0),
+            ]
+        )
+        self._lhss_train = self._grids_train.samples_sobol(4000)
+        self._rhss_exact_train = torch.from_numpy(
+            self._solver.ev(self._lhss_train[:, 0], self._lhss_train[:, 1])
         ).view(-1, 1)
 
         self._network = network.Network(dim_x=2, with_time=False)
@@ -184,7 +189,9 @@ class LearnerPoisson:
     def _train_epoch(self) -> float:
         self._optimiser.zero_grad()
 
-        loss = distance.Distance(self._eval_network(self._lhss), self._rhss_exact).mse()
+        loss = distance.Distance(
+            self._eval_network(self._lhss_train), self._rhss_exact_train
+        ).mse()
         loss.backward()
         self._optimiser.step()
 
@@ -200,16 +207,16 @@ class LearnerPoisson:
         saveload = SaveloadTorch("poisson")
         self._network = saveload.load(saveload.rebase_location("network"))
 
-        res = self._grids.zeroes_like_numpy()
+        res = self._grids_full.zeroes_like_numpy()
 
         for (
             (idx_x1, val_x1),
             (idx_x2, val_x2),
-        ) in self._grids.steps_with_index():
+        ) in self._grids_full.steps_with_index():
             lhs = torch.tensor([val_x1, val_x2]).view(1, 2)
             res[idx_x1, idx_x2] = self._eval_network(lhs)
 
-        plotter = plot.PlotFrame(self._grids, res, "poisson-ours")
+        plotter = plot.PlotFrame(self._grids_full, res, "poisson-ours")
         plotter.plot_2d()
         plotter.plot_3d()
 
