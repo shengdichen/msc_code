@@ -19,6 +19,8 @@ scipy = "*"
 matplotlib = "*"
 imageio = "*"
 neuraloperator = "*"
+wandb = "*"
+torch-harmonics = "*"
 
 [tool.poetry.group.dev.dependencies]
 pynvim = "*"
