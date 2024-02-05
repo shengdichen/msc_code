@@ -357,12 +357,18 @@ class TestGrids:
         assert not grs.is_on_boundary([3.1, 4.2, 5.1])
         assert not grs.is_on_boundary([3.1, 4.1, 5.2])
 
-    def test_zeroes(self):
+    def test_constants(self):
         gr_1 = grid.Grid(n_pts=4, stepsize=0.1)
         gr_2 = grid.Grid(n_pts=5, stepsize=0.1)
         grs = grid.Grids([gr_1, gr_2])
 
         assert torch.equal(grs.zeroes_like(), torch.zeros((4, 5)))
+        assert torch.equal(grs.constants_like(0.0), torch.zeros((4, 5)))
+
+        assert torch.equal(grs.constants_like(), torch.ones((4, 5)))
+        assert torch.equal(grs.constants_like(42), 42 * torch.ones((4, 5)))
+
+        assert np.allclose(grs.zeroes_like_numpy(), np.zeros((4, 5)))
 
     def test_as_mesh(self):
         gr_1 = grid.Grid(n_pts=4, stepsize=0.1, start=3)
