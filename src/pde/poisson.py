@@ -1,7 +1,9 @@
 import logging
-from typing import Callable
+import math
+import typing
 
 import numpy as np
+import scipy
 import torch
 from scipy.interpolate import RectBivariateSpline
 
@@ -15,9 +17,7 @@ logger = logging.getLogger(__name__)
 
 
 class PDEPoisson:
-    def __init__(
-        self, grid_x1: grid.Grid, grid_x2: grid.Grid, as_laplace: bool = False
-    ):
+    def __init__(self, grid_x1: grid.Grid, grid_x2: grid.Grid, source: torch.Tensor):
         self._grid_x1, self._grid_x2 = grid_x1, grid_x2
         self._grids = grid.Grids([grid_x1, grid_x2])
         # TODO:
@@ -26,7 +26,7 @@ class PDEPoisson:
             self._grid_x1.stepsize**2 + self._grid_x2.stepsize**2
         ) / 2
 
-        self._source_term = self._make_source_term(as_laplace)
+        self._source_term = source
 
         self._lhss_bound: list[torch.Tensor] = []
         self._rhss_bound: list[float] = []
@@ -51,20 +51,23 @@ class PDEPoisson:
             res[idx_x1, idx_x2] = np.sin(np.pi * val_x1) * np.sin(np.pi * val_x2)
         return res
 
-    def solve(self) -> None:
+    def solve(self, boundary_mean: float = -1.0, boundary_sigma: float = 0.0) -> None:
         logger.info("Poisson.solve()")
 
-        self._solve_boundary()
+        self._solve_boundary(mean=boundary_mean, sigma=boundary_sigma)
         self._solve_internal()
         self._register_internal()
 
-    def _solve_boundary(self) -> None:
+    def _solve_boundary(self, mean: float, sigma: float) -> None:
         for (
             (idx_x1, val_x1),
             (idx_x2, val_x2),
         ) in self._grids.boundaries_with_index():
             self._lhss_bound.append([val_x1, val_x2])
-            rhs = -1.0
+            if math.isclose(sigma, 0.0):
+                rhs = mean
+            else:
+                rhs = scipy.stats.norm.rvs(loc=mean, scale=sigma)
             self._rhss_bound.append(rhs)
             self._sol[idx_x1, idx_x2] = rhs
 
@@ -150,7 +153,9 @@ class LearnerPoisson:
         grid_x2 = grid.Grid(n_pts=50, stepsize=0.1, start=0.0)
         self._grids_full = grid.Grids([grid_x1, grid_x2])
 
-        self._solver = PDEPoisson(grid_x1, grid_x2, as_laplace=True).as_interpolator()
+        self._solver = PDEPoisson(
+            grid_x1, grid_x2, source=self._grids_full.constants_like(100)
+        ).as_interpolator()
 
         self._lhss_eval = self._grids_full.samples_sobol(5000)
         self._rhss_exact_eval = torch.from_numpy(
@@ -182,7 +187,7 @@ class LearnerPoisson:
 
     def _make_eval_network(
         self, use_multidiff: bool = True
-    ) -> Callable[[torch.Tensor], torch.Tensor]:
+    ) -> typing.Callable[[torch.Tensor], torch.Tensor]:
         def f(lhss: torch.Tensor) -> torch.Tensor:
             if use_multidiff:
                 mdn = multidiff.MultidiffNetwork(self._network, lhss, ["x1", "x2"])
