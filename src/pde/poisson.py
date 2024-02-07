@@ -162,12 +162,15 @@ class DatasetFNO:
         grid_x1: grid.Grid,
         grid_x2: grid.Grid,
         source: torch.Tensor,
+        boundary_mean: float,
+        boundary_sigma: float,
         n_instances_train: int = 9,
         n_instances_test: int = 1,
     ):
         self._grid_x1, self._grid_x2 = grid_x1, grid_x2
         self._grids_full = grid.Grids([self._grid_x1, self._grid_x2])
         self._source = source
+        self._boundary_mean, self._boundary_sigma = boundary_mean, boundary_sigma
 
         self._n_instances, self._n_instances_train, self._n_instances_test = (
             n_instances_train + n_instances_test,
@@ -204,6 +207,8 @@ class DatasetFNOMesh(DatasetFNO):
         grid_x1: grid.Grid,
         grid_x2: grid.Grid,
         source: torch.Tensor,
+        boundary_mean: float,
+        boundary_sigma: float,
         n_instances_train: int = 9,
         n_instances_test: int = 1,
     ):
@@ -211,6 +216,8 @@ class DatasetFNOMesh(DatasetFNO):
             grid_x1,
             grid_x2,
             source,
+            boundary_mean=boundary_mean,
+            boundary_sigma=boundary_sigma,
             n_instances_train=n_instances_train,
             n_instances_test=n_instances_test,
         )
@@ -241,7 +248,9 @@ class DatasetFNOMesh(DatasetFNO):
         bounds_all, rhss_all = [], []
         for __ in range(self._n_instances):
             solver = PDEPoisson(self._grid_x1, self._grid_x2, source=self._source)
-            solver.solve(boundary_mean=20, boundary_sigma=1)
+            solver.solve(
+                boundary_mean=self._boundary_mean, boundary_sigma=self._boundary_sigma
+            )
             bounds_all.append(solver.rhss_bound_in_mesh)
             rhss_all.append(solver.rhss_in_mesh)
 
@@ -257,6 +266,8 @@ class DatasetFNOInterpolation(DatasetFNO):
         grid_x1: grid.Grid,
         grid_x2: grid.Grid,
         source: torch.Tensor,
+        boundary_mean: float,
+        boundary_sigma: float,
         n_gridpts_per_instance: int = 5000,
         n_instances_train: int = 9,
         n_instances_test: int = 1,
@@ -265,6 +276,8 @@ class DatasetFNOInterpolation(DatasetFNO):
             grid_x1,
             grid_x2,
             source,
+            boundary_mean=boundary_mean,
+            boundary_sigma=boundary_sigma,
             n_instances_train=n_instances_train,
             n_instances_test=n_instances_test,
         )
@@ -293,7 +306,9 @@ class DatasetFNOInterpolation(DatasetFNO):
 
     def _generate_rhss_instance(self) -> torch.Tensor:
         solver = PDEPoisson(self._grid_x1, self._grid_x2, source=self._source)
-        solver.solve(boundary_mean=20, boundary_sigma=1)
+        solver.solve(
+            boundary_mean=self._boundary_mean, boundary_sigma=self._boundary_sigma
+        )
         rhss = torch.from_numpy(
             solver.as_interpolator().ev(self._lhss[:, 0], self._lhss[:, 1])
         ).view(-1, 1)
@@ -354,7 +369,9 @@ class LearnerPoissonFNO:
         ds_fno = DatasetFNOMesh(
             self._grid_x1,
             self._grid_x2,
-            source=grid.Grids([self._grid_x1, self._grid_x2]).constants_like(50),
+            source=grid.Grids([self._grid_x1, self._grid_x2]).constants_like(-200),
+            boundary_mean=-20,
+            boundary_sigma=1,
         )
         self._dataset_full = ds_fno.as_dataset()
         self._dataset_mask = MaskingDataset(self._dataset_full).mask(
