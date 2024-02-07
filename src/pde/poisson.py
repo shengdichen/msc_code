@@ -1,3 +1,4 @@
+import itertools
 import logging
 import math
 import typing
@@ -299,6 +300,50 @@ class DatasetFNOInterpolation(DatasetFNO):
         return rhss
 
 
+class MaskingDataset:
+    def __init__(self, dataset: torch.utils.data.dataset.TensorDataset):
+        self._dataset = dataset
+
+        self._n_batches = len(self._dataset)
+        self._shape_lhs, self._shape_rhs = (
+            self._dataset[0][0].shape,
+            self._dataset[0][1].shape,
+        )
+        self._n_gridpts_x1, self._n_gridpts_x2 = self._shape_lhs[0], self._shape_lhs[1]
+
+    def mask(
+        self, val_min: float, val_max: float, val_mask: float = 0.0
+    ) -> torch.utils.data.dataset.TensorDataset:
+        lhss_all, rhss_all = self._init_lhss_rhss_masked(val_mask)
+
+        for i, (lhss, rhss) in enumerate(self._dataset):
+            for idx_x1, idx_x2 in itertools.product(
+                range(self._n_gridpts_x1), range(self._n_gridpts_x2)
+            ):
+                lhs, rhs = lhss[idx_x1, idx_x2, :], rhss[idx_x1, idx_x2, :]
+                val_x1, val_x2 = lhs[2], lhs[3]
+                if val_min < val_x1 < val_max and val_min < val_x2 < val_max:
+                    lhss_all[i, idx_x1, idx_x2, :] = lhs
+                    rhss_all[i, idx_x1, idx_x2, :] = rhs
+
+        return torch.utils.data.TensorDataset(lhss_all, rhss_all)
+
+    def _init_lhss_rhss_masked(
+        self, val_mask: float
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        if val_mask == 0.0:
+            lhss_all, rhss_all = (
+                torch.zeros((self._n_batches, *self._shape_lhs)),
+                torch.zeros((self._n_batches, *self._shape_rhs)),
+            )
+        else:
+            lhss_all, rhss_all = (
+                val_mask * torch.ones((self._n_batches, *self._shape_lhs)),
+                val_mask * torch.ones((self._n_batches, *self._shape_rhs)),
+            )
+        return lhss_all, rhss_all
+
+
 class LearnerPoissonFNO:
     def __init__(self):
         self._device = DEFINITION.device_preferred
@@ -311,9 +356,10 @@ class LearnerPoissonFNO:
             self._grid_x2,
             source=grid.Grids([self._grid_x1, self._grid_x2]).constants_like(50),
         )
-        self._dataset = ds_fno.as_dataset()
-        self._dataloader = torch.utils.data.DataLoader(self._dataset, batch_size=2)
-        self._n_batches = len(self._dataloader)
+        self._dataset_full = ds_fno.as_dataset()
+        self._dataset_mask = MaskingDataset(self._dataset_full).mask(
+            val_min=0.0, val_max=5.0
+        )
 
         self._network = fno_2d.FNO2d(n_channels_lhs=4).to(self._device)
 
@@ -326,7 +372,9 @@ class LearnerPoissonFNO:
 
         for epoch in range(n_epochs):
             loss_all = []
-            for lhss_batch, rhss_batch in self._dataloader:
+            for lhss_batch, rhss_batch in torch.utils.data.DataLoader(
+                self._dataset_mask, batch_size=2
+            ):
                 lhss_batch, rhss_batch = (
                     lhss_batch.to(device=self._device, dtype=torch.float),
                     rhss_batch.to(device=self._device, dtype=torch.float),
@@ -353,7 +401,9 @@ class LearnerPoissonFNO:
         mse_rel_all = []
         with torch.no_grad():
             self._network.eval()
-            for lhss_batch, rhss_batch in torch.utils.data.DataLoader(self._dataset):
+            for lhss_batch, rhss_batch in torch.utils.data.DataLoader(
+                self._dataset_full
+            ):
                 lhss_batch, rhss_batch = (
                     lhss_batch.to(device=self._device, dtype=torch.float),
                     rhss_batch.to(device=self._device, dtype=torch.float),
@@ -366,7 +416,7 @@ class LearnerPoissonFNO:
         print(f"eval> mse%: {mse_rel_avg}")
 
     def plot(self) -> None:
-        for lhss_batch, rhss_batch in torch.utils.data.DataLoader(self._dataset):
+        for lhss_batch, rhss_batch in torch.utils.data.DataLoader(self._dataset_full):
             lhss_batch, rhss_batch = (
                 lhss_batch.to(device=self._device, dtype=torch.float),
                 rhss_batch.to(device=self._device, dtype=torch.float),
