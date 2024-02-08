@@ -1,3 +1,4 @@
+import abc
 import itertools
 import logging
 import math
@@ -8,7 +9,7 @@ import scipy
 import torch
 from scipy.interpolate import RectBivariateSpline
 
-from src.deepl import fno_2d, network
+from src.deepl import fno_1d, fno_2d, network
 from src.definition import DEFINITION
 from src.numerics import distance, grid, multidiff
 from src.util import plot
@@ -119,8 +120,16 @@ class PDEPoisson:
         return self._rhss_bound_in_mesh
 
     @property
+    def rhss_bound_flattened(self) -> torch.Tensor:
+        return self._grids.flattten(self._rhss_bound_in_mesh)
+
+    @property
     def rhss_in_mesh(self) -> torch.Tensor:
         return self._sol
+
+    @property
+    def rhss_flattened(self) -> torch.Tensor:
+        return self._grids.flattten(self._sol)
 
     def as_dataset(
         self,
@@ -156,6 +165,68 @@ class PDEPoisson:
         plotter.plot_3d()
 
 
+class DatasetFNO1D:
+    def __init__(
+        self,
+        grid_x1: grid.Grid,
+        grid_x2: grid.Grid,
+        source: torch.Tensor,
+        boundary_mean: float,
+        boundary_sigma: float,
+        n_instances_train: int = 9,
+        n_instances_test: int = 1,
+    ):
+        self._grid_x1, self._grid_x2 = grid_x1, grid_x2
+        self._grids_full = grid.Grids([self._grid_x1, self._grid_x2])
+        self._source = source
+        self._boundary_mean, self._boundary_sigma = boundary_mean, boundary_sigma
+
+        self._n_instances, self._n_instances_train, self._n_instances_test = (
+            n_instances_train + n_instances_test,
+            n_instances_train,
+            n_instances_test,
+        )
+        self._saveload = SaveloadTorch("poisson")
+
+    def make(self) -> torch.utils.data.dataset.TensorDataset:
+        grids = torch.tensor(list(self._grids_full.steps()))
+        grids_x1, grids_x2 = (
+            self._repeat(grids[:, 0], self._n_instances),
+            self._repeat(grids[:, 1], self._n_instances),
+        )
+        sources = self._repeat(
+            self._grids_full.flattten(self._source), self._n_instances
+        )
+
+        bounds_all, rhss_all = [], []
+        for __ in range(self._n_instances):
+            solver = PDEPoisson(self._grid_x1, self._grid_x2, source=self._source)
+            solver.solve(
+                boundary_mean=self._boundary_mean, boundary_sigma=self._boundary_sigma
+            )
+            bounds_all.append(solver.rhss_bound_flattened)
+            rhss_all.append(solver.rhss_flattened)
+
+        bounds_all_torch, rhss_all_torch = (
+            torch.stack(bounds_all),
+            torch.stack(rhss_all),
+        )
+        lhss_all_torch = torch.stack(
+            [bounds_all_torch, sources, grids_x1, grids_x2], dim=-1
+        )
+        rhss_all_torch = rhss_all_torch.unsqueeze(-1)
+        return torch.utils.data.TensorDataset(lhss_all_torch, rhss_all_torch)
+
+    def dataset(self) -> None:
+        location = self._saveload.rebase_location("dataset-fno-1d")
+        if not self._saveload.exists(location):
+            self._saveload.save(self.make(), location)
+        return self._saveload.load(location)
+
+    def _repeat(self, target: torch.Tensor, count: int) -> torch.Tensor:
+        return target.repeat(count, 1)
+
+
 class DatasetFNO:
     def __init__(
         self,
@@ -183,7 +254,7 @@ class DatasetFNO:
         def make_target() -> torch.utils.data.dataset.TensorDataset:
             return self.make()
 
-        location = self._saveload.rebase_location("dataset-fno")
+        location = self._saveload.rebase_location("dataset-fno-2d")
         return self._saveload.load_or_make(location, make_target)
 
     def make(self) -> torch.utils.data.dataset.TensorDataset:
@@ -378,28 +449,23 @@ class MaskingDatasetShrink:
 
 
 class LearnerPoissonFNO:
-    def __init__(self):
+    def __init__(
+        self,
+        grid_x1: grid.Grid,
+        grid_x2: grid.Grid,
+        network_fno: torch.nn.Module,
+        dataset_full: torch.utils.data.dataset.TensorDataset,
+        dataset_mask: torch.utils.data.dataset.TensorDataset,
+        saveload_location: str,
+    ):
         self._device = DEFINITION.device_preferred
 
-        self._grid_x1 = grid.Grid(n_pts=50, stepsize=0.1, start=0.0)
-        self._grid_x2 = grid.Grid(n_pts=50, stepsize=0.1, start=0.0)
-
-        ds_fno = DatasetFNOMesh(
-            self._grid_x1,
-            self._grid_x2,
-            source=grid.Grids([self._grid_x1, self._grid_x2]).constants_like(-200),
-            boundary_mean=-20,
-            boundary_sigma=1,
-        )
-        self._dataset_full = ds_fno.as_dataset()
-        self._dataset_mask = MaskingDatasetShrink(self._dataset_full).mask(
-            idx_min=10, idx_max=40
-        )
-
-        self._network = fno_2d.FNO2d(n_channels_lhs=4).to(self._device)
+        self._grid_x1, self._grid_x2 = grid_x1, grid_x2
+        self._network = network_fno.to(self._device)
+        self._dataset_full, self._dataset_mask = dataset_full, dataset_mask
 
         self._saveload = SaveloadTorch("poisson")
-        self._location = self._saveload.rebase_location("network-fno")
+        self._location = self._saveload.rebase_location(saveload_location)
 
     def train(self, n_epochs: int = 2001, freq_eval: int = 100) -> None:
         optimizer = torch.optim.Adam(self._network.parameters(), weight_decay=1e-5)
@@ -450,6 +516,94 @@ class LearnerPoissonFNO:
         mse_rel_avg = np.average(mse_rel_all)
         print(f"eval> mse%: {mse_rel_avg}")
 
+    @abc.abstractmethod
+    def plot(self) -> None:
+        pass
+
+    def _plot_save(self, rhss_ours: torch.Tensor, save_as: str) -> None:
+        plotter = plot.PlotFrame(
+            grid.Grids([self._grid_x1, self._grid_x2]), rhss_ours, save_as
+        )
+        plotter.plot_2d()
+        plotter.plot_3d()
+
+    def _separate_lhss_rhss(
+        self, dataset: torch.utils.data.dataset.TensorDataset
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        lhss, rhss = [], []
+        for lhs, rhs in dataset:
+            lhss.append(lhs)
+            rhss.append(rhs)
+        return torch.stack(lhss), torch.stack(rhss)
+
+    def _one_lhss_rhss(
+        self,
+        dataset: torch.utils.data.dataset.TensorDataset,
+        index: int = 0,
+        flatten_first_dimension: bool = False,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        lhss, rhss = list(dataset)[index]
+        if not flatten_first_dimension:
+            return lhss.unsqueeze(0), rhss.unsqueeze(0)
+        return lhss, rhss
+
+
+class LearnerPoissonFNO1d(LearnerPoissonFNO):
+    def __init__(self):
+        grid_x1 = grid.Grid(n_pts=50, stepsize=0.1, start=0.0)
+        grid_x2 = grid.Grid(n_pts=50, stepsize=0.1, start=0.0)
+        dataset = DatasetFNO1D(
+            grid_x1,
+            grid_x2,
+            source=grid.Grids([grid_x1, grid_x2]).constants_like(-200),
+            boundary_mean=-20,
+            boundary_sigma=1,
+        ).dataset()
+        dataset_full = dataset
+        dataset_mask = dataset
+
+        super().__init__(
+            grid_x1,
+            grid_x2,
+            fno_1d.FNO1d(n_channels_lhs=4),
+            dataset_full=dataset_full,
+            dataset_mask=dataset_mask,
+            saveload_location="network-fno-1d",
+        )
+
+    def plot(self) -> None:
+        lhss, rhss = self._one_lhss_rhss(self._dataset_full)
+        lhss, rhss = lhss.to(self._device), rhss.to(self._device)
+
+        rhss_ours_unflattened = grid.Grids([self._grid_x1, self._grid_x2]).unflatten_2d(
+            self._network(lhss).squeeze().detach().to("cpu")
+        )
+        self._plot_save(rhss_ours_unflattened, "poisson-fno-1d")
+
+
+class LearnerPoissonFNO2d(LearnerPoissonFNO):
+    def __init__(self):
+        grid_x1 = grid.Grid(n_pts=50, stepsize=0.1, start=0.0)
+        grid_x2 = grid.Grid(n_pts=50, stepsize=0.1, start=0.0)
+        dataset = DatasetFNOMesh(
+            grid_x1,
+            grid_x2,
+            source=grid.Grids([grid_x1, grid_x2]).constants_like(-200),
+            boundary_mean=-20,
+            boundary_sigma=1,
+        )
+        dataset_full = dataset.as_dataset()
+        dataset_mask = MaskingDatasetShrink(dataset_full).mask(idx_min=10, idx_max=40)
+
+        super().__init__(
+            grid_x1,
+            grid_x2,
+            fno_2d.FNO2d(n_channels_lhs=4),
+            dataset_full=dataset_full,
+            dataset_mask=dataset_mask,
+            saveload_location="network-fno-2d",
+        )
+
     def plot(self) -> None:
         for lhss_batch, rhss_batch in torch.utils.data.DataLoader(self._dataset_full):
             lhss_batch, rhss_batch = (
@@ -459,11 +613,7 @@ class LearnerPoissonFNO:
             rhss_ours = self._network(lhss_batch)[0, :, :, 0].detach().to("cpu")
             break
 
-        plotter = plot.PlotFrame(
-            grid.Grids([self._grid_x1, self._grid_x2]), rhss_ours, "poisson-fno"
-        )
-        plotter.plot_2d()
-        plotter.plot_3d()
+        self._plot_save(rhss_ours, "poisson-fno-2d")
 
 
 class LearnerPoisson:
