@@ -499,7 +499,7 @@ class LearnerPoissonFNO:
         self._network = self._saveload.load(self._location)
 
     def eval(self) -> None:
-        mse_rel_all = []
+        mse_abs_all, mse_rel_all = [], []
         with torch.no_grad():
             self._network.eval()
             for lhss_batch, rhss_batch in torch.utils.data.DataLoader(
@@ -510,11 +510,11 @@ class LearnerPoissonFNO:
                     rhss_batch.to(device=self._device, dtype=torch.float),
                 )
                 rhss_ours = self._network(lhss_batch)
-                mse_rel_all.append(
-                    distance.Distance(rhss_ours, rhss_batch).mse_relative().item()
-                )
-        mse_rel_avg = np.average(mse_rel_all)
-        print(f"eval> mse%: {mse_rel_avg}")
+                dst = distance.Distance(rhss_ours, rhss_batch)
+                mse_abs_all.append(dst.mse().item())
+                mse_rel_all.append(dst.mse_relative().item())
+        mse_abs_avg, mse_rel_avg = np.average(mse_abs_all), np.average(mse_rel_all)
+        print(f"eval> (mse, mse%): {mse_abs_avg}, {mse_rel_avg}")
 
     @abc.abstractmethod
     def plot(self) -> None:
