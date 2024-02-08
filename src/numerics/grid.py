@@ -213,3 +213,19 @@ class Grids:
         indexing: Literal["ij", "xy"]
         indexing = "ij" if indexing_machine_like else "xy"
         return np.meshgrid(*(gr.step() for gr in self._grids), indexing=indexing)
+
+    def flattten(self, target: torch.Tensor) -> torch.Tensor:
+        res = []
+        for coords in itertools.product(*(range(gr.n_pts) for gr in self._grids)):
+            res.append(target[coords])
+        return torch.tensor(res)
+
+    def unflatten_2d(self, target: torch.Tensor) -> torch.Tensor:
+        if len(self._grids) != 2:
+            raise ValueError("expected 2d grid")
+        n_gridpts = [gr.n_pts for gr in self._grids]
+        res = torch.zeros(n_gridpts, dtype=target.dtype)
+        for i, val in enumerate(target):
+            row, col = divmod(i, n_gridpts[1])
+            res[row, col] = val
+        return res

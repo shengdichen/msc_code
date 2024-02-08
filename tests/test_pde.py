@@ -415,6 +415,30 @@ class TestGrids:
             ],
         )
 
+    def test_flatten(self):
+        gr_1 = grid.Grid(n_pts=5, stepsize=0.1, start=3)
+        gr_2 = grid.Grid(n_pts=4, stepsize=0.1, start=4)
+        grs = grid.Grids([gr_1, gr_2])
+
+        target_unflattened = torch.tensor(
+            [
+                [1, 2, 3, 4],
+                [1, 2, 3, 4],
+                [10, 20, 30, 40],
+                [5, 6, 7, 8],
+                [50, 60, 70, 80],
+            ]
+        )
+        target_flattened = torch.tensor(
+            [1, 2, 3, 4, 1, 2, 3, 4, 10, 20, 30, 40, 5, 6, 7, 8, 50, 60, 70, 80]
+        )
+
+        assert torch.allclose(
+            grs.flattten(target_unflattened),
+            target_flattened,
+        )
+        assert torch.allclose(grs.unflatten_2d(target_flattened), target_unflattened)
+
 
 class TestGridTime:
     def test_n_pts(self):
