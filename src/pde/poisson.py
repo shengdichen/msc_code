@@ -315,7 +315,7 @@ class DatasetFNOInterpolation(DatasetFNO):
         return rhss
 
 
-class MaskingDataset:
+class MaskingDatasetPad:
     def __init__(self, dataset: torch.utils.data.dataset.TensorDataset):
         self._dataset = dataset
 
@@ -359,6 +359,24 @@ class MaskingDataset:
         return lhss_all, rhss_all
 
 
+class MaskingDatasetShrink:
+    def __init__(self, dataset: torch.utils.data.dataset.TensorDataset):
+        self._dataset = dataset
+
+        lhss, rhss = [], []
+        for lhs, rhs in self._dataset:
+            lhss.append(lhs)
+            rhss.append(rhs)
+        self._lhss, self._rhss = torch.stack(lhss), torch.stack(rhss)
+
+    def mask(
+        self, idx_min: int, idx_max: int
+    ) -> torch.utils.data.dataset.TensorDataset:
+        lhss = self._lhss[:, idx_min:idx_max, idx_min:idx_max, :]
+        rhss = self._rhss[:, idx_min:idx_max, idx_min:idx_max, :]
+        return torch.utils.data.TensorDataset(lhss, rhss)
+
+
 class LearnerPoissonFNO:
     def __init__(self):
         self._device = DEFINITION.device_preferred
@@ -374,8 +392,8 @@ class LearnerPoissonFNO:
             boundary_sigma=1,
         )
         self._dataset_full = ds_fno.as_dataset()
-        self._dataset_mask = MaskingDataset(self._dataset_full).mask(
-            val_min=0.0, val_max=5.0
+        self._dataset_mask = MaskingDatasetShrink(self._dataset_full).mask(
+            idx_min=10, idx_max=40
         )
 
         self._network = fno_2d.FNO2d(n_channels_lhs=4).to(self._device)
