@@ -605,14 +605,10 @@ class LearnerPoissonFNO2d(LearnerPoissonFNO):
         )
 
     def plot(self) -> None:
-        for lhss_batch, rhss_batch in torch.utils.data.DataLoader(self._dataset_full):
-            lhss_batch, rhss_batch = (
-                lhss_batch.to(device=self._device, dtype=torch.float),
-                rhss_batch.to(device=self._device, dtype=torch.float),
-            )
-            rhss_ours = self._network(lhss_batch)[0, :, :, 0].detach().to("cpu")
-            break
+        lhss, __ = self._one_lhss_rhss(self._dataset_full)
+        lhss = lhss.to(device=self._device, dtype=torch.float)
 
+        rhss_ours = self._network(lhss).detach().to("cpu")[0, :, :, 0]
         self._plot_save(rhss_ours, "poisson-fno-2d")
 
 
