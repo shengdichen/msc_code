@@ -461,6 +461,7 @@ class LearnerPoissonFNO:
         self._device = DEFINITION.device_preferred
 
         self._grid_x1, self._grid_x2 = grid_x1, grid_x2
+        self._grids = grid.Grids([self._grid_x1, self._grid_x2])
         self._network = network_fno.to(self._device)
         self._dataset_full, self._dataset_mask = dataset_full, dataset_mask
 
@@ -521,9 +522,7 @@ class LearnerPoissonFNO:
         pass
 
     def _plot_save(self, rhss_ours: torch.Tensor, save_as: str) -> None:
-        plotter = plot.PlotFrame(
-            grid.Grids([self._grid_x1, self._grid_x2]), rhss_ours, save_as
-        )
+        plotter = plot.PlotFrame(self._grids, rhss_ours, save_as)
         plotter.plot_2d()
         plotter.plot_3d()
 
@@ -573,12 +572,15 @@ class LearnerPoissonFNO1d(LearnerPoissonFNO):
 
     def plot(self) -> None:
         lhss, rhss = self._one_lhss_rhss(self._dataset_full)
-        lhss, rhss = lhss.to(self._device), rhss.to(self._device)
+        self._plot_save(
+            self._grids.unflatten_2d(rhss.squeeze()), "poisson-fno-1d-theirs"
+        )
 
-        rhss_ours_unflattened = grid.Grids([self._grid_x1, self._grid_x2]).unflatten_2d(
+        lhss = lhss.to(self._device)
+        rhss_ours = self._grids.unflatten_2d(
             self._network(lhss).squeeze().detach().to("cpu")
         )
-        self._plot_save(rhss_ours_unflattened, "poisson-fno-1d")
+        self._plot_save(rhss_ours, "poisson-fno-1d-ours")
 
 
 class LearnerPoissonFNO2d(LearnerPoissonFNO):
@@ -605,11 +607,12 @@ class LearnerPoissonFNO2d(LearnerPoissonFNO):
         )
 
     def plot(self) -> None:
-        lhss, __ = self._one_lhss_rhss(self._dataset_full)
-        lhss = lhss.to(device=self._device, dtype=torch.float)
+        lhss, rhss = self._one_lhss_rhss(self._dataset_full)
+        self._plot_save(rhss[0, :, :, 0], "poisson-fno-2d-theirs")
 
+        lhss = lhss.to(device=self._device, dtype=torch.float)
         rhss_ours = self._network(lhss).detach().to("cpu")[0, :, :, 0]
-        self._plot_save(rhss_ours, "poisson-fno-2d")
+        self._plot_save(rhss_ours, "poisson-fno-2d-ours")
 
 
 class LearnerPoisson:
