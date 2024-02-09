@@ -1,11 +1,14 @@
 import logging
+from typing import Callable
 
-import matplotlib.pyplot as plt
 import numpy as np
 import torch
 from scipy.interpolate import RectBivariateSpline
 
-from src.numerics import grid
+from src.deepl import network
+from src.definition import DEFINITION
+from src.numerics import distance, grid, multidiff
+from src.util import plot
 from src.util.saveload import SaveloadPde, SaveloadTorch
 
 logger = logging.getLogger(__name__)
@@ -34,9 +37,11 @@ class PDEPoisson:
         self._n_iters_max = int(5e3)
         self._error_threshold = 1e-4
 
+        self._saveload = SaveloadPde("poisson")
+
     def _make_source_term(self, as_laplace: bool) -> torch.Tensor:
         if as_laplace:
-            return np.zeros((self._grid_x1.n_pts, self._grid_x2.n_pts))
+            return 100 * np.ones((self._grid_x1.n_pts, self._grid_x2.n_pts))
 
         res = self._grids.zeroes_like()
         for (
@@ -108,11 +113,12 @@ class PDEPoisson:
     ) -> tuple[
         torch.utils.data.dataset.TensorDataset, torch.utils.data.dataset.TensorDataset
     ]:
-        saveload = SaveloadPde("poisson")
-        if not (saveload.exists_boundary() and saveload.exists_internal()):
+        if not (self._saveload.exists_boundary() and self._saveload.exists_internal()):
             self.solve()
-        dataset_boundary = saveload.dataset_boundary(self._lhss_bound, self._rhss_bound)
-        dataset_internal = saveload.dataset_internal(
+        dataset_boundary = self._saveload.dataset_boundary(
+            self._lhss_bound, self._rhss_bound
+        )
+        dataset_internal = self._saveload.dataset_internal(
             self._lhss_internal, self._rhss_internal
         )
         return dataset_boundary, dataset_internal
@@ -122,39 +128,112 @@ class PDEPoisson:
             self.solve()
             return self._sol
 
-        saveload = SaveloadTorch("poisson")
-        location = saveload.rebase_location("raw")
+        location = self._saveload.rebase_location("raw")
+        self._sol = self._saveload.load_or_make(location, make_target)
         return RectBivariateSpline(
             self._grid_x1.step(),
             self._grid_x2.step(),
-            saveload.load_or_make(location, make_target),
-        )
-
-    def plot_2d(self) -> None:
-        plt.figure(figsize=(8, 6))
-        plt.contourf(*self._grids.coords_as_mesh(), self._sol, cmap="viridis")
-        plt.colorbar(label="u(x, y)")
-        plt.title("Poisson 2D")
-        plt.xlabel("x")
-        plt.ylabel("y")
-        plt.grid(True)
-        plt.savefig("poisson-2d")
-
-    def plot_3d(self) -> None:
-        fig = plt.figure(figsize=(10, 8))
-        ax = fig.add_subplot(111, projection="3d")
-        surf = ax.plot_surface(
-            *self._grids.coords_as_mesh(),
             self._sol,
-            cmap="viridis",
-            edgecolor="k",
         )
-        ax.set_title("Poisson 3D")
-        ax.set_xlabel("X")
-        ax.set_ylabel("Y")
-        ax.set_zlabel("u(X, Y)")
-        fig.colorbar(surf, ax=ax, shrink=0.5, aspect=5)
-        plt.savefig("poisson-3d")
+
+    def plot(self) -> None:
+        plotter = plot.PlotFrame(self._grids, self._sol, "poisson")
+        plotter.plot_2d()
+        plotter.plot_3d()
+
+
+class LearnerPoisson:
+    def __init__(self):
+        self._device = DEFINITION.device_preferred
+
+        grid_x1 = grid.Grid(n_pts=50, stepsize=0.1, start=0.0)
+        grid_x2 = grid.Grid(n_pts=50, stepsize=0.1, start=0.0)
+        self._grids_full = grid.Grids([grid_x1, grid_x2])
+
+        self._solver = PDEPoisson(grid_x1, grid_x2, as_laplace=True).as_interpolator()
+
+        self._lhss_eval = self._grids_full.samples_sobol(5000)
+        self._rhss_exact_eval = torch.from_numpy(
+            self._solver.ev(self._lhss_eval[:, 0], self._lhss_eval[:, 1])
+        ).view(-1, 1)
+        self._lhss_eval, self._rhss_exact_eval = (
+            self._lhss_eval.to(self._device),
+            self._rhss_exact_eval.to(self._device),
+        )
+
+        self._grids_train = grid.Grids(
+            [
+                grid.Grid(n_pts=40, stepsize=0.1, start=0.0),
+                grid.Grid(n_pts=40, stepsize=0.1, start=0.0),
+            ]
+        )
+        self._lhss_train = self._grids_train.samples_sobol(4000)
+        self._rhss_exact_train = torch.from_numpy(
+            self._solver.ev(self._lhss_train[:, 0], self._lhss_train[:, 1])
+        ).view(-1, 1)
+        self._lhss_train, self._rhss_exact_train = (
+            self._lhss_train.to(self._device),
+            self._rhss_exact_train.to(self._device),
+        )
+
+        self._network = network.Network(dim_x=2, with_time=False).to(self._device)
+        self._optimiser = torch.optim.Adam(self._network.parameters())
+        self._eval_network = self._make_eval_network(use_multidiff=False)
+
+    def _make_eval_network(
+        self, use_multidiff: bool = True
+    ) -> Callable[[torch.Tensor], torch.Tensor]:
+        def f(lhss: torch.Tensor) -> torch.Tensor:
+            if use_multidiff:
+                mdn = multidiff.MultidiffNetwork(self._network, lhss, ["x1", "x2"])
+                return mdn.diff("x1", 2) + mdn.diff("x2", 2)
+            return self._network(lhss)
+
+        return f
+
+    def train(self, n_epochs: int = 10001) -> None:
+        for epoch in range(n_epochs):
+            loss = self._train_epoch()
+            if epoch % 100 == 0:
+                logger.info(f"epoch {epoch:04}> " f"loss [train]: {loss:.4} ")
+                self.evaluate_model()
+
+        saveload = SaveloadTorch("poisson")
+        saveload.save(self._network, saveload.rebase_location("network"))
+
+    def _train_epoch(self) -> float:
+        self._optimiser.zero_grad()
+
+        loss = distance.Distance(
+            self._eval_network(self._lhss_train), self._rhss_exact_train
+        ).mse()
+        loss.backward()
+        self._optimiser.step()
+
+        return loss.item()
+
+    def evaluate_model(self) -> None:
+        dist = distance.Distance(
+            self._eval_network(self._lhss_eval), self._rhss_exact_eval
+        )
+        logger.info(f"eval> (mse, mse%): {dist.mse()}, {dist.mse_percentage()}")
+
+    def plot(self) -> None:
+        saveload = SaveloadTorch("poisson")
+        self._network = saveload.load(saveload.rebase_location("network"))
+
+        res = self._grids_full.zeroes_like_numpy()
+
+        for (
+            (idx_x1, val_x1),
+            (idx_x2, val_x2),
+        ) in self._grids_full.steps_with_index():
+            lhs = torch.tensor([val_x1, val_x2]).view(1, 2).to(self._device)
+            res[idx_x1, idx_x2] = self._eval_network(lhs)
+
+        plotter = plot.PlotFrame(self._grids_full, res, "poisson-ours")
+        plotter.plot_2d()
+        plotter.plot_3d()
 
 
 if __name__ == "__main__":
@@ -162,8 +241,5 @@ if __name__ == "__main__":
         format="%(module)s [%(levelname)s]> %(message)s", level=logging.INFO
     )
 
-    pde = PDEPoisson(
-        grid.Grid(n_pts=50, stepsize=0.1, start=0.0),
-        grid.Grid(n_pts=50, stepsize=0.1, start=0.0),
-    )
-    pde.as_dataset()
+    lp = LearnerPoisson()
+    lp.plot()
