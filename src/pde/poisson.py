@@ -586,7 +586,7 @@ class LearnerPoissonFNO1d(LearnerPoissonFNO):
 
 
 class LearnerPoissonFNO2d(LearnerPoissonFNO):
-    def __init__(self):
+    def __init__(self, use_dataset_shrink: bool = True):
         grid_x1 = grid.Grid(n_pts=50, stepsize=0.1, start=0.0)
         grid_x2 = grid.Grid(n_pts=50, stepsize=0.1, start=0.0)
         dataset = DatasetFNOMesh(
@@ -597,7 +597,14 @@ class LearnerPoissonFNO2d(LearnerPoissonFNO):
             boundary_sigma=1,
         )
         dataset_full = dataset.as_dataset()
-        dataset_mask = MaskingDatasetShrink(dataset_full).mask(idx_min=10, idx_max=40)
+        if use_dataset_shrink:
+            dataset_mask = MaskingDatasetShrink(dataset_full).mask(
+                idx_min=10, idx_max=40
+            )
+        else:
+            dataset_mask = MaskingDatasetPad(dataset_full).mask(
+                val_min=1.0, val_max=4.0
+            )
 
         super().__init__(
             grid_x1,
