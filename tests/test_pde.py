@@ -245,23 +245,24 @@ class TestGrids:
         gr_2 = grid.Grid(n_pts=5, stepsize=0.1, start=4)
         grs = grid.Grids([gr_1, gr_2])
 
-        assert EqualityTorch(
-            (grs.samples_sobol(10)),
-            torch.tensor(
-                [
-                    [3.0000, 4.0000],
-                    [3.1500, 4.2000],
-                    [3.2250, 4.1000],
-                    [3.0750, 4.3000],
-                    [3.1125, 4.1500],
-                    [3.2625, 4.3500],
-                    [3.1875, 4.0500],
-                    [3.0375, 4.2500],
-                    [3.0563, 4.1250],
-                    [3.2062, 4.3250],
-                ]
-            ),
-        ).is_close()
+        for _ in range(3):  # also test auto engine-reset after every draw
+            assert EqualityTorch(
+                (grs.samples_sobol(10)),
+                torch.tensor(
+                    [
+                        [3.0000, 4.0000],
+                        [3.1500, 4.2000],
+                        [3.2250, 4.1000],
+                        [3.0750, 4.3000],
+                        [3.1125, 4.1500],
+                        [3.2625, 4.3500],
+                        [3.1875, 4.0500],
+                        [3.0375, 4.2500],
+                        [3.0563, 4.1250],
+                        [3.2062, 4.3250],
+                    ]
+                ),
+            ).is_close()
 
     def test_steps_no_index(self):
         gr_1 = grid.Grid(n_pts=4, stepsize=0.1, start=3)
@@ -369,6 +370,26 @@ class TestGrids:
         grs = grid.Grids([gr_1, gr_2])
 
         coords = grs.coords_as_mesh()
+        assert np.allclose(
+            coords[0],
+            [
+                [3.0, 3.0, 3.0, 3.0],
+                [3.1, 3.1, 3.1, 3.1],
+                [3.2, 3.2, 3.2, 3.2],
+                [3.3, 3.3, 3.3, 3.3],
+            ],
+        )
+        assert np.allclose(
+            coords[1],
+            [
+                [4.0, 4.1, 4.2, 4.3],
+                [4.0, 4.1, 4.2, 4.3],
+                [4.0, 4.1, 4.2, 4.3],
+                [4.0, 4.1, 4.2, 4.3],
+            ],
+        )
+
+        coords = grs.coords_as_mesh(indexing_machine_like=False)
         assert np.allclose(
             coords[0],
             [

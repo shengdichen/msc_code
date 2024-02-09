@@ -6,7 +6,7 @@ import torch
 from scipy.interpolate import RectBivariateSpline
 
 from src.numerics import grid
-from src.util.saveload import SaveloadPde
+from src.util.saveload import SaveloadPde, SaveloadTorch
 
 logger = logging.getLogger(__name__)
 
@@ -118,7 +118,17 @@ class PDEPoisson:
         return dataset_boundary, dataset_internal
 
     def as_interpolator(self) -> RectBivariateSpline:
-        return RectBivariateSpline(self._grids.coords_as_mesh(), self._sol)
+        def make_target() -> None:
+            self.solve()
+            return self._sol
+
+        saveload = SaveloadTorch("poisson")
+        location = saveload.rebase_location("raw")
+        return RectBivariateSpline(
+            self._grid_x1.step(),
+            self._grid_x2.step(),
+            saveload.load_or_make(location, make_target),
+        )
 
     def plot_2d(self) -> None:
         plt.figure(figsize=(8, 6))
@@ -153,7 +163,7 @@ if __name__ == "__main__":
     )
 
     pde = PDEPoisson(
-        grid.GridTime(n_pts=100, stepsize=0.01),
+        grid.Grid(n_pts=50, stepsize=0.1, start=0.0),
         grid.Grid(n_pts=50, stepsize=0.1, start=0.0),
     )
     pde.as_dataset()
