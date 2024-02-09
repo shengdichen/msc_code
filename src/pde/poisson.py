@@ -637,8 +637,8 @@ class LearnerPoissonFC:
 
         grids_mask = grid.Grids(
             [
-                grid.Grid(n_pts=40, stepsize=0.1, start=0.0),
-                grid.Grid(n_pts=40, stepsize=0.1, start=0.0),
+                grid.Grid(n_pts=30, stepsize=0.1, start=1.0),
+                grid.Grid(n_pts=30, stepsize=0.1, start=1.0),
             ]
         )
         self._lhss_train, self._rhss_exact_train = self._make_lhss_rhss_train(
@@ -666,7 +666,7 @@ class LearnerPoissonFC:
 
         return f
 
-    def train(self, n_epochs: int = 30001) -> None:
+    def train(self, n_epochs: int = 50001) -> None:
         optimiser = torch.optim.Adam(self._network.parameters())
         for epoch in range(n_epochs):
             optimiser.zero_grad()
