@@ -146,12 +146,14 @@ class PDEPoisson:
         )
         return dataset_boundary, dataset_internal
 
-    def as_interpolator(self) -> RectBivariateSpline:
+    def as_interpolator(
+        self, dataset_save_as: str = "dataset", **kwargs
+    ) -> RectBivariateSpline:
         def make_target() -> None:
-            self.solve()
+            self.solve(**kwargs)
             return self._sol
 
-        location = self._saveload.rebase_location("raw")
+        location = self._saveload.rebase_location(dataset_save_as)
         self._sol = self._saveload.load_or_make(location, make_target)
         return RectBivariateSpline(
             self._grid_x1.step(),
@@ -622,9 +624,13 @@ class LearnerPoissonFC:
         grid_x1 = grid.Grid(n_pts=50, stepsize=0.1, start=0.0)
         grid_x2 = grid.Grid(n_pts=50, stepsize=0.1, start=0.0)
         self._grids_full = grid.Grids([grid_x1, grid_x2])
-        self._solver = PDEPoisson(
-            grid_x1, grid_x2, source=self._grids_full.constants_like(100)
-        ).as_interpolator()
+
+        solver = PDEPoisson(
+            grid_x1, grid_x2, source=self._grids_full.constants_like(-200)
+        )
+        self._solver = solver.as_interpolator(
+            dataset_save_as="dataset-fc", boundary_mean=-20, boundary_sigma=1
+        )
         self._lhss_eval, self._rhss_exact_eval = self._make_lhss_rhss_train(
             self._grids_full, n_pts=5000
         )
@@ -660,7 +666,7 @@ class LearnerPoissonFC:
 
         return f
 
-    def train(self, n_epochs: int = 10001) -> None:
+    def train(self, n_epochs: int = 30001) -> None:
         optimiser = torch.optim.Adam(self._network.parameters())
         for epoch in range(n_epochs):
             optimiser.zero_grad()
@@ -698,7 +704,7 @@ class LearnerPoissonFC:
             lhs = torch.tensor([val_x1, val_x2]).view(1, 2).to(self._device)
             res[idx_x1, idx_x2] = self._eval_network(lhs)
 
-        plotter = plot.PlotFrame(self._grids_full, res, "poisson-ours")
+        plotter = plot.PlotFrame(self._grids_full, res, "poisson-fc")
         plotter.plot_2d()
         plotter.plot_3d()
 
