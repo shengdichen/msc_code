@@ -615,45 +615,39 @@ class LearnerPoissonFNO2d(LearnerPoissonFNO):
         self._plot_save(rhss_ours, "poisson-fno-2d-ours")
 
 
-class LearnerPoisson:
+class LearnerPoissonFC:
     def __init__(self):
         self._device = DEFINITION.device_preferred
 
         grid_x1 = grid.Grid(n_pts=50, stepsize=0.1, start=0.0)
         grid_x2 = grid.Grid(n_pts=50, stepsize=0.1, start=0.0)
         self._grids_full = grid.Grids([grid_x1, grid_x2])
-
         self._solver = PDEPoisson(
             grid_x1, grid_x2, source=self._grids_full.constants_like(100)
         ).as_interpolator()
-
-        self._lhss_eval = self._grids_full.samples_sobol(5000)
-        self._rhss_exact_eval = torch.from_numpy(
-            self._solver.ev(self._lhss_eval[:, 0], self._lhss_eval[:, 1])
-        ).view(-1, 1)
-        self._lhss_eval, self._rhss_exact_eval = (
-            self._lhss_eval.to(self._device),
-            self._rhss_exact_eval.to(self._device),
+        self._lhss_eval, self._rhss_exact_eval = self._make_lhss_rhss_train(
+            self._grids_full, n_pts=5000
         )
 
-        self._grids_train = grid.Grids(
+        grids_mask = grid.Grids(
             [
                 grid.Grid(n_pts=40, stepsize=0.1, start=0.0),
                 grid.Grid(n_pts=40, stepsize=0.1, start=0.0),
             ]
         )
-        self._lhss_train = self._grids_train.samples_sobol(4000)
-        self._rhss_exact_train = torch.from_numpy(
-            self._solver.ev(self._lhss_train[:, 0], self._lhss_train[:, 1])
-        ).view(-1, 1)
-        self._lhss_train, self._rhss_exact_train = (
-            self._lhss_train.to(self._device),
-            self._rhss_exact_train.to(self._device),
+        self._lhss_train, self._rhss_exact_train = self._make_lhss_rhss_train(
+            grids_mask, n_pts=4000
         )
 
         self._network = network.Network(dim_x=2, with_time=False).to(self._device)
-        self._optimiser = torch.optim.Adam(self._network.parameters())
         self._eval_network = self._make_eval_network(use_multidiff=False)
+
+    def _make_lhss_rhss_train(
+        self, grids: grid.Grids, n_pts: int
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        lhss = grids.samples_sobol(n_pts)
+        rhss = torch.from_numpy(self._solver.ev(lhss[:, 0], lhss[:, 1])).view(-1, 1)
+        return lhss.to(self._device), rhss.to(self._device)
 
     def _make_eval_network(
         self, use_multidiff: bool = True
@@ -667,25 +661,21 @@ class LearnerPoisson:
         return f
 
     def train(self, n_epochs: int = 10001) -> None:
+        optimiser = torch.optim.Adam(self._network.parameters())
         for epoch in range(n_epochs):
-            loss = self._train_epoch()
+            optimiser.zero_grad()
+            loss = distance.Distance(
+                self._eval_network(self._lhss_train), self._rhss_exact_train
+            ).mse()
+            loss.backward()
+            optimiser.step()
+
             if epoch % 100 == 0:
-                logger.info(f"epoch {epoch:04}> " f"loss [train]: {loss:.4} ")
+                logger.info(f"epoch {epoch:04}> " f"loss [train]: {loss.item():.4} ")
                 self.evaluate_model()
 
         saveload = SaveloadTorch("poisson")
-        saveload.save(self._network, saveload.rebase_location("network"))
-
-    def _train_epoch(self) -> float:
-        self._optimiser.zero_grad()
-
-        loss = distance.Distance(
-            self._eval_network(self._lhss_train), self._rhss_exact_train
-        ).mse()
-        loss.backward()
-        self._optimiser.step()
-
-        return loss.item()
+        saveload.save(self._network, saveload.rebase_location("network-fc"))
 
     def evaluate_model(self) -> None:
         dist = distance.Distance(
@@ -693,10 +683,12 @@ class LearnerPoisson:
         )
         logger.info(f"eval> (mse, mse%): {dist.mse()}, {dist.mse_percentage()}")
 
-    def plot(self) -> None:
+    def load(self) -> None:
         saveload = SaveloadTorch("poisson")
-        self._network = saveload.load(saveload.rebase_location("network"))
+        location = saveload.rebase_location("network-fc")
+        self._network = saveload.load(location)
 
+    def plot(self) -> None:
         res = self._grids_full.zeroes_like_numpy()
 
         for (
