@@ -199,12 +199,33 @@ class Grids:
         return False
 
     def zeroes_like(self) -> torch.Tensor:
-        return torch.zeros(([gr.n_pts for gr in self._grids]))
+        return torch.zeros([gr.n_pts for gr in self._grids])
+
+    def constants_like(self, constant: float = 1.0) -> torch.Tensor:
+        if math.isclose(constant, 0.0):
+            return self.zeroes_like()
+        return constant * torch.ones([gr.n_pts for gr in self._grids])
 
     def zeroes_like_numpy(self) -> torch.Tensor:
-        return np.zeros(([gr.n_pts for gr in self._grids]))
+        return np.zeros([gr.n_pts for gr in self._grids])
 
     def coords_as_mesh(self, indexing_machine_like: bool = True) -> list[np.ndarray]:
         indexing: Literal["ij", "xy"]
         indexing = "ij" if indexing_machine_like else "xy"
         return np.meshgrid(*(gr.step() for gr in self._grids), indexing=indexing)
+
+    def flattten(self, target: torch.Tensor) -> torch.Tensor:
+        res = []
+        for coords in itertools.product(*(range(gr.n_pts) for gr in self._grids)):
+            res.append(target[coords])
+        return torch.tensor(res)
+
+    def unflatten_2d(self, target: torch.Tensor) -> torch.Tensor:
+        if len(self._grids) != 2:
+            raise ValueError("expected 2d grid")
+        n_gridpts = [gr.n_pts for gr in self._grids]
+        res = torch.zeros(n_gridpts, dtype=target.dtype)
+        for i, val in enumerate(target):
+            row, col = divmod(i, n_gridpts[1])
+            res[row, col] = val
+        return res
