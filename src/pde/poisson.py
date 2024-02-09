@@ -723,9 +723,6 @@ if __name__ == "__main__":
 
     torch.manual_seed(42)
 
-    lp_fno = LearnerPoissonFNO()
-    lp_fno.load()
-    lp_fno.plot()
-
-    lp = LearnerPoisson()
-    lp.plot()
+    learner = LearnerPoissonFNO2d()
+    learner.train()
+    learner.plot()
