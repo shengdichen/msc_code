@@ -167,6 +167,74 @@ class PDEPoisson:
         plotter.plot_3d()
 
 
+class DatasetPoissonCustom:
+    def __init__(
+        self,
+        grid_x1: grid.Grid,
+        grid_x2: grid.Grid,
+        n_instances: int = 10,
+        n_samples_per_instance=4,
+    ):
+        self._grid_x1, self._grid_x2 = grid_x1, grid_x2
+        self._grids = grid.Grids([self._grid_x1, self._grid_x2])
+        coords_x1, coords_x2 = self._grids.coords_as_mesh()
+        self._coords_x1, self._coords_x2 = (
+            torch.from_numpy(coords_x1),
+            torch.from_numpy(coords_x2),
+        )
+
+        self._n_instancs = n_instances
+        self._n_samples_per_instance = n_samples_per_instance  # aka, |K|
+
+    def _generate_one_instance(self) -> tuple[torch.Tensor, torch.Tensor]:
+        solutions, sources = self._grids.zeroes_like(), self._grids.zeroes_like()
+        for i_sample in range(self._n_samples_per_instance):
+            weight_sin, weight_cos = torch.distributions.Uniform(low=-1, high=1).sample(
+                [2]
+            )
+            factor = i_sample * torch.pi
+            matrix_sin, matrix_cos = (
+                torch.sin(factor * self._coords_x1)
+                * torch.sin(factor * self._coords_x2),
+                torch.cos(factor * self._coords_x1)
+                * torch.cos(factor * self._coords_x2),
+            )
+            solution = weight_sin * matrix_sin + weight_cos * matrix_cos
+            solutions += solution
+            sources += -((self._n_samples_per_instance * torch.pi) ** 2) * solution
+
+        normalizer = self._n_samples_per_instance**2
+        solutions /= normalizer
+        sources /= normalizer
+        return solutions, sources
+
+    def dataset(self, idx_min: int, idx_max) -> torch.utils.data.dataset.TensorDataset:
+        solutions, sources, solutions_masked = [], [], []
+        for __ in range(self._n_instancs):
+            solution, source = self._generate_one_instance()
+            solutions.append(solution)
+            sources.append(source)
+            solutions_masked.append(self._grids.mask(solution, idx_min, idx_max))
+
+        lhss = torch.stack(
+            [
+                torch.stack(solutions_masked),
+                torch.stack(sources),
+                self._coords_x1.repeat(self._n_instancs, 1, 1),
+                self._coords_x2.repeat(self._n_instancs, 1, 1),
+            ],
+            dim=-1,
+        )
+        rhss = torch.stack(solutions).unsqueeze(-1)
+        return torch.utils.data.TensorDataset(lhss, rhss)
+
+    def plot_one(self) -> None:
+        solution, __ = self._generate_one_instance()
+        plotter = plot.PlotFrame(self._grids, solution, "poisson-dataset-custom")
+        plotter.plot_2d()
+        plotter.plot_3d()
+
+
 class DatasetFNO1D:
     def __init__(
         self,
