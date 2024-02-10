@@ -439,6 +439,34 @@ class TestGrids:
         )
         assert torch.allclose(grs.unflatten_2d(target_flattened), target_unflattened)
 
+    def test_mask(self):
+        gr_1 = grid.Grid(n_pts=5, stepsize=0.1, start=3)
+        gr_2 = grid.Grid(n_pts=6, stepsize=0.1, start=4)
+        grs = grid.Grids([gr_1, gr_2])
+
+        target_raw = torch.tensor(
+            [
+                [0, 1, 2, 3, 4, 5],
+                [10, 11, 12, 13, 14, 15],
+                [20, 21, 22, 23, 24, 25],
+                [30, 31, 32, 33, 34, 35],
+                [40, 41, 42, 43, 44, 45],
+            ]
+        )
+
+        assert torch.allclose(
+            grs.mask(target_raw, idx_min=1, idx_max=3),
+            torch.tensor(
+                [
+                    [0, 0, 0, 0, 0, 0],
+                    [0, 11, 12, 13, 0, 0],
+                    [0, 21, 22, 23, 0, 0],
+                    [0, 31, 32, 33, 0, 0],
+                    [0, 0, 0, 0, 0, 0],
+                ]
+            ),
+        )
+
 
 class TestGridTime:
     def test_n_pts(self):
