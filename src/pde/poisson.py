@@ -19,7 +19,14 @@ logger = logging.getLogger(__name__)
 
 
 class PDEPoisson:
-    def __init__(self, grid_x1: grid.Grid, grid_x2: grid.Grid, source: torch.Tensor):
+    def __init__(
+        self,
+        grid_x1: grid.Grid,
+        grid_x2: grid.Grid,
+        source: torch.Tensor,
+        n_iters_max: int = int(5e3),
+        error_threshold: float = 1e-4,
+    ):
         self._grid_x1, self._grid_x2 = grid_x1, grid_x2
         self._grids = grid.Grids([grid_x1, grid_x2])
         # TODO:
@@ -37,8 +44,7 @@ class PDEPoisson:
         self._rhss_internal: list[float] = []
         self._sol = self._grids.zeroes_like()
 
-        self._n_iters_max = int(5e3)
-        self._error_threshold = 1e-4
+        self._n_iters_max, self._error_threshold = n_iters_max, error_threshold
 
         self._saveload = SaveloadPde("poisson")
 
