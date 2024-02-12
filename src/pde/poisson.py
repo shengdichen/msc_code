@@ -3,6 +3,7 @@ import itertools
 import logging
 import math
 import typing
+from collections.abc import Iterable
 
 import numpy as np
 import scipy
@@ -336,7 +337,7 @@ class DatasetFNO:
     def make(self) -> torch.utils.data.dataset.TensorDataset:
         raise NotImplementedError
 
-    def _generate_instances(self) -> tuple[torch.Tensor, torch.Tensor]:
+    def _generate_instances(self) -> Iterable[torch.Tensor]:
         raise NotImplementedError
 
     def _repeat_mesh_like(self, mesh_like: torch.Tensor, count: int) -> torch.Tensor:
@@ -346,6 +347,67 @@ class DatasetFNO:
         if count != 1:
             res = res.repeat(count, 1, 1)
         return res
+
+
+class DatasetFNOMeshMasked(DatasetFNO):
+    def __init__(
+        self,
+        grid_x1: grid.Grid,
+        grid_x2: grid.Grid,
+        idx_min: int,
+        idx_max: int,
+        source: torch.Tensor,
+        boundary_mean: float,
+        boundary_sigma: float,
+        n_instances_train: int = 9,
+        n_instances_test: int = 1,
+    ):
+        super().__init__(
+            grid_x1,
+            grid_x2,
+            source,
+            boundary_mean=boundary_mean,
+            boundary_sigma=boundary_sigma,
+            n_instances_train=n_instances_train,
+            n_instances_test=n_instances_test,
+        )
+
+        self._idx_min, self._idx_max = idx_min, idx_max
+
+    def make(self) -> torch.utils.data.dataset.TensorDataset:
+        __, rhss_all, rhss_masked = self._generate_instances()
+        coords_x1_all, coords_x2_all = [
+            self._repeat_mesh_like(torch.from_numpy(coords_axis), self._n_instances)
+            for coords_axis in self._grids_full.coords_as_mesh()
+        ]
+        source_all = self._repeat_mesh_like(self._source, self._n_instances)
+
+        lhss_all = torch.stack(
+            [source_all, rhss_masked, coords_x1_all, coords_x2_all], dim=-1
+        )
+        rhss_all = rhss_all.unsqueeze(dim=-1)
+        return torch.utils.data.TensorDataset(lhss_all, rhss_all)
+
+    def _generate_instances(self) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        bounds_all, rhss_all, rhss_masked = [], [], []
+        for __ in range(self._n_instances):
+            solver = PDEPoisson(self._grid_x1, self._grid_x2, source=self._source)
+            solver.solve(
+                boundary_mean=self._boundary_mean, boundary_sigma=self._boundary_sigma
+            )
+            bounds_all.append(solver.rhss_bound_in_mesh)
+            rhss_all.append(solver.rhss_in_mesh)
+            rhss_masked.append(
+                self._grids_full.mask(
+                    solver.rhss_in_mesh, idx_min=self._idx_min, idx_max=self._idx_max
+                )
+            )
+
+        return (
+            torch.stack(bounds_all),
+            torch.stack(rhss_all),
+            torch.stack(rhss_masked),
+        )
 
 
 class DatasetFNOMesh(DatasetFNO):
