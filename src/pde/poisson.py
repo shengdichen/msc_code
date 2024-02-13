@@ -722,36 +722,23 @@ class LearnerPoissonFNO1d(LearnerPoissonFNO):
 
 
 class LearnerPoissonFNO2d(LearnerPoissonFNO):
-    def __init__(self, use_dataset_shrink: bool = True):
-        grid_x1 = grid.Grid(n_pts=50, stepsize=0.1, start=0.0)
-        grid_x2 = grid.Grid(n_pts=50, stepsize=0.1, start=0.0)
-        dataset = DatasetFNOMesh(
-            grid_x1,
-            grid_x2,
-            source=grid.Grids([grid_x1, grid_x2]).constants_like(-200),
-            boundary_mean=-20,
-            boundary_sigma=1,
-        )
-        dataset_full = dataset.as_dataset()
-        if use_dataset_shrink:
-            self._mask_type = "shrink"
-            dataset_mask = MaskingDatasetShrink(dataset_full).mask(
-                idx_min=10, idx_max=40
-            )
-        else:
-            self._mask_type = "pad"
-            dataset_mask = MaskingDatasetPad(dataset_full).mask(
-                val_min=1.0, val_max=4.0
-            )
-
+    def __init__(
+        self,
+        grid_x1: grid.Grid,
+        grid_x2: grid.Grid,
+        dataset_full: torch.utils.data.dataset.TensorDataset,
+        dataset_mask: torch.utils.data.dataset.TensorDataset,
+        name_dataset: str,
+    ):
         super().__init__(
             grid_x1,
             grid_x2,
             fno_2d.FNO2d(n_channels_lhs=4),
             dataset_full=dataset_full,
             dataset_mask=dataset_mask,
-            saveload_location=f"network-fno-2d-{self._mask_type}",
+            saveload_location=f"network-fno-2d-{name_dataset}",
         )
+        self._name_dataset = name_dataset
 
     def plot(self) -> None:
         lhss, rhss = self._one_lhss_rhss(self._dataset_full)
@@ -759,7 +746,7 @@ class LearnerPoissonFNO2d(LearnerPoissonFNO):
 
         lhss = lhss.to(device=self._device, dtype=torch.float)
         rhss_ours = self._network(lhss).detach().to("cpu")[0, :, :, 0]
-        self._plot_save(rhss_ours, f"poisson-fno-2d-{self._mask_type}")
+        self._plot_save(rhss_ours, f"poisson-fno-2d-{self._name_dataset}")
 
 
 class LearnerPoissonFC:
@@ -854,6 +841,82 @@ class LearnerPoissonFC:
         plotter.plot_3d()
 
 
+class Learners:
+    def __init__(self):
+        self._grid_x1 = grid.Grid(n_pts=50, stepsize=0.1, start=0.0)
+        self._grid_x2 = grid.Grid(n_pts=50, stepsize=0.1, start=0.0)
+
+        self._idx_min, self._idx_max = 10, 40
+
+    def dataset_standard(self) -> None:
+        ds = DatasetFNOMeshMasked(
+            self._grid_x1,
+            self._grid_x2,
+            idx_min=self._idx_min,
+            idx_max=self._idx_max,
+            source=grid.Grids([self._grid_x1, self._grid_x2]).constants_like(-200),
+            boundary_mean=-20,
+            boundary_sigma=1,
+        ).as_dataset()
+
+        learner = LearnerPoissonFNO2d(
+            self._grid_x1,
+            self._grid_x2,
+            dataset_full=ds,
+            dataset_mask=ds,
+            name_dataset="standard",
+        )
+        learner.train()
+        learner.plot()
+
+    def dataset_custom(self) -> None:
+        ds = DatasetPoissonCustom(self._grid_x1, self._grid_x2).dataset(
+            self._idx_min, self._idx_max
+        )
+
+        learner = LearnerPoissonFNO2d(
+            self._grid_x1,
+            self._grid_x2,
+            dataset_full=ds,
+            dataset_mask=ds,
+            name_dataset="custom",
+        )
+        learner.train()
+        learner.plot()
+
+    def dataset_standard_invalid(self) -> None:
+        dataset = DatasetFNOMesh(
+            self._grid_x1,
+            self._grid_x2,
+            source=grid.Grids([self._grid_x1, self._grid_x2]).constants_like(-200),
+            boundary_mean=-20,
+            boundary_sigma=1,
+        )
+        dataset_full = dataset.as_dataset()
+
+        learner = LearnerPoissonFNO2d(
+            self._grid_x1,
+            self._grid_x2,
+            dataset_full=dataset_full,
+            dataset_mask=MaskingDatasetShrink(dataset_full).mask(
+                idx_min=10, idx_max=40
+            ),
+            name_dataset="standard-invalid_shrink",
+        )
+        learner.train()
+        learner.plot()
+
+        learner = LearnerPoissonFNO2d(
+            self._grid_x1,
+            self._grid_x2,
+            dataset_full=dataset_full,
+            dataset_mask=MaskingDatasetPad(dataset_full).mask(val_min=1.0, val_max=4.0),
+            name_dataset="standard-invalid_pad",
+        )
+        learner.train()
+        learner.plot()
+
+
 if __name__ == "__main__":
     logging.basicConfig(
         format="%(module)s [%(levelname)s]> %(message)s", level=logging.INFO
@@ -861,6 +924,5 @@ if __name__ == "__main__":
 
     torch.manual_seed(42)
 
-    learner = LearnerPoissonFNO2d()
-    learner.train()
-    learner.plot()
+    learners = Learners()
+    learners.dataset_custom()
