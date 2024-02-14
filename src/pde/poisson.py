@@ -750,8 +750,9 @@ class LearnerPoissonFNO2d(LearnerPoissonFNO):
 
 
 class LearnerPoissonFC:
-    def __init__(self):
+    def __init__(self, n_pts_mask: int = 30):
         self._device = DEFINITION.device_preferred
+        self._name_variant = f"fc-{n_pts_mask}"
 
         grid_x1 = grid.Grid(n_pts=50, stepsize=0.1, start=0.0)
         grid_x2 = grid.Grid(n_pts=50, stepsize=0.1, start=0.0)
@@ -769,8 +770,8 @@ class LearnerPoissonFC:
 
         grids_mask = grid.Grids(
             [
-                grid.Grid(n_pts=30, stepsize=0.1, start=1.0),
-                grid.Grid(n_pts=30, stepsize=0.1, start=1.0),
+                grid.Grid(n_pts=n_pts_mask, stepsize=0.1, start=0.5),
+                grid.Grid(n_pts=n_pts_mask, stepsize=0.1, start=0.5),
             ]
         )
         self._lhss_train, self._rhss_exact_train = self._make_lhss_rhss_train(
@@ -813,7 +814,9 @@ class LearnerPoissonFC:
                 self.evaluate_model()
 
         saveload = SaveloadTorch("poisson")
-        saveload.save(self._network, saveload.rebase_location("network-fc"))
+        saveload.save(
+            self._network, saveload.rebase_location(f"network-{self._name_variant}")
+        )
 
     def evaluate_model(self) -> None:
         dist = distance.Distance(
@@ -823,7 +826,7 @@ class LearnerPoissonFC:
 
     def load(self) -> None:
         saveload = SaveloadTorch("poisson")
-        location = saveload.rebase_location("network-fc")
+        location = saveload.rebase_location(f"network-{self._name_variant}")
         self._network = saveload.load(location)
 
     def plot(self) -> None:
@@ -836,7 +839,7 @@ class LearnerPoissonFC:
             lhs = torch.tensor([val_x1, val_x2]).view(1, 2).to(self._device)
             res[idx_x1, idx_x2] = self._eval_network(lhs)
 
-        plotter = plot.PlotFrame(self._grids_full, res, "poisson-fc")
+        plotter = plot.PlotFrame(self._grids_full, res, f"poisson-{self._name_variant}")
         plotter.plot_2d()
         plotter.plot_3d()
 
