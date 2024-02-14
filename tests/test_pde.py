@@ -240,6 +240,25 @@ class TestGrid:
 
 
 class TestGrids:
+    def test_indexes(self):
+        gr_1 = grid.Grid(n_pts=3, stepsize=0.1, start=3)
+        gr_2 = grid.Grid(n_pts=4, stepsize=0.1, start=4)
+        grs = grid.Grids([gr_1, gr_2])
+        assert list(grs.indexes()) == [
+            (0, 0),
+            (0, 1),
+            (0, 2),
+            (0, 3),
+            (1, 0),
+            (1, 1),
+            (1, 2),
+            (1, 3),
+            (2, 0),
+            (2, 1),
+            (2, 2),
+            (2, 3),
+        ]
+
     def test_sample(self):
         gr_1 = grid.Grid(n_pts=4, stepsize=0.1, start=3)
         gr_2 = grid.Grid(n_pts=5, stepsize=0.1, start=4)
