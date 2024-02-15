@@ -1,6 +1,10 @@
+import abc
+import itertools
 import math
+import typing
 from collections.abc import Callable, Iterable
 
+import numpy as np
 import torch
 
 from src.numerics import distance
@@ -87,6 +91,44 @@ class DatasetPde:
     @staticmethod
     def one_big_batch(dataset: torch.utils.data.dataset.TensorDataset) -> list:
         return list(torch.utils.data.DataLoader(dataset, batch_size=len(dataset)))[0]
+
+
+class Masker:
+    def __init__(self, full: torch.Tensor):
+        self._full = full
+        self._n_gridpts_full = np.prod(self._full.shape)
+
+    @abc.abstractmethod
+    def mask(self) -> torch.Tensor:
+        raise NotImplementedError
+
+
+class MaskerRandom(Masker):
+    def __init__(
+        self,
+        full: torch.Tensor,
+        perc_to_mask: float = 0.5,
+        seed: typing.Optional[int] = None,
+    ):
+        super().__init__(full)
+
+        self._indexes = np.array(
+            [
+                idxs
+                for idxs in itertools.product(
+                    *(range(len_dim) for len_dim in self._full.shape)
+                )
+            ]
+        )
+        self._n_gridpts_mask = int(perc_to_mask * self._n_gridpts_full)
+
+        self._rng = np.random.default_rng(seed=seed)
+
+    def mask(self) -> torch.Tensor:
+        res = self._full.detach().clone()
+        for idx in self._rng.choice(self._indexes, self._n_gridpts_mask, replace=False):
+            res[tuple(idx)] = 0
+        return res
 
 
 class Filter:

@@ -2,6 +2,7 @@ import torch
 
 from src.numerics import grid
 from src.numerics.equality import EqualityTorch
+from src.util import dataset
 from src.util.dataset import DatasetPde, Filter
 
 
@@ -93,6 +94,47 @@ class TestDatasetPde:
                 ]
             ),
         ).is_close()
+
+
+class TestMask:
+    def test_mask_random(self):
+        full = torch.tensor(
+            [
+                [11, 12, 13, 14, 15],
+                [21, 22, 23, 24, 25],
+                [31, 32, 33, 34, 35],
+                [41, 42, 43, 44, 45],
+                [51, 52, 53, 54, 55],
+                [61, 62, 63, 64, 65],
+            ]
+        )
+        masker = dataset.MaskerRandom(full, 0.3, seed=42)
+        assert torch.allclose(
+            masker.mask(),
+            torch.tensor(
+                [
+                    [11, 0, 0, 14, 15],
+                    [21, 0, 23, 24, 25],
+                    [0, 0, 33, 34, 35],
+                    [0, 42, 0, 44, 45],
+                    [0, 52, 53, 0, 55],
+                    [61, 62, 63, 64, 65],
+                ]
+            ),
+        )
+        assert torch.allclose(
+            masker.mask(),
+            torch.tensor(
+                [
+                    [11, 12, 0, 14, 0],
+                    [21, 22, 23, 24, 0],
+                    [0, 32, 0, 34, 35],
+                    [41, 42, 43, 44, 0],
+                    [51, 52, 0, 54, 55],
+                    [0, 62, 63, 64, 0],
+                ]
+            ),
+        )
 
 
 class TestFilter:
