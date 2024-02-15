@@ -131,6 +131,33 @@ class MaskerRandom(Masker):
         return res
 
 
+class MaskerIsland(Masker):
+    def __init__(self, full: torch.Tensor, perc_to_keep: float):
+        super().__init__(full)
+
+        self._perc_to_keep = perc_to_keep
+        self._lows, self._highs = self._range_idx_dim()
+
+    def _range_idx_dim(self) -> tuple[np.ndarray, np.ndarray]:
+        perc_mask_per_side = (1 - self._perc_to_keep) / 2
+
+        lows, highs = [], []
+        for size_dim in self._full.shape:
+            lows.append(int(size_dim * perc_mask_per_side))
+            highs.append(int(size_dim * (1 - perc_mask_per_side)))
+        return np.array(lows), np.array(highs)
+
+    def mask(self) -> torch.Tensor:
+        res = torch.zeros_like(self._full)
+        for idxs in itertools.product(
+            *(range(len_dim) for len_dim in self._full.shape)
+        ):
+            idxs_np = np.array(idxs)
+            if np.all(idxs_np >= self._lows) and np.all(idxs_np < self._highs):
+                res[idxs] = self._full[idxs]
+        return res
+
+
 class Filter:
     def __init__(self, dataset: DatasetPde):
         self._dataset = dataset
