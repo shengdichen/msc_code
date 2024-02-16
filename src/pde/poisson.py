@@ -12,7 +12,7 @@ from src.deepl import fno_2d, network
 from src.definition import DEFINITION
 from src.numerics import distance, grid, multidiff
 from src.util import plot
-from src.util.saveload import SaveloadPde, SaveloadTorch
+from src.util.saveload import SaveloadImage, SaveloadPde, SaveloadTorch
 
 logger = logging.getLogger(__name__)
 
@@ -131,8 +131,10 @@ class SolverPoisson:
             self._sol,
         )
 
-    def plot(self) -> None:
-        plotter = plot.PlotFrame(self._grids, self._sol, "poisson")
+    def plot(self, name: str = "poisson-solver") -> None:
+        plotter = plot.PlotFrame(
+            self._grids, self._sol, name, SaveloadImage(self._saveload.base)
+        )
         plotter.plot_2d()
         plotter.plot_3d()
 
@@ -163,7 +165,9 @@ class DatasetPoisson:
         raise NotImplementedError
 
     def plot_one(self, sol: torch.Tensor) -> None:
-        plotter = plot.PlotFrame(self._grids, sol, self._name_dataset)
+        plotter = plot.PlotFrame(
+            self._grids, sol, self._name_dataset, SaveloadImage(self._saveload.base)
+        )
         plotter.plot_2d()
         plotter.plot_3d()
 
@@ -391,7 +395,9 @@ class LearnerPoissonFNO:
         pass
 
     def _plot_save(self, rhss_ours: torch.Tensor, save_as: str) -> None:
-        plotter = plot.PlotFrame(self._grids, rhss_ours, save_as)
+        plotter = plot.PlotFrame(
+            self._grids, rhss_ours, save_as, SaveloadImage(self._saveload.base)
+        )
         plotter.plot_2d()
         plotter.plot_3d()
 
@@ -475,6 +481,7 @@ class LearnerPoissonFC:
 
         self._network = network.Network(dim_x=2, with_time=False).to(self._device)
         self._eval_network = self._make_eval_network(use_multidiff=False)
+        self._saveload = SaveloadTorch("poisson")
 
     def _make_lhss_rhss_train(
         self, grids: grid.Grids, n_pts: int
@@ -508,9 +515,9 @@ class LearnerPoissonFC:
                 logger.info(f"epoch {epoch:04}> " f"loss [train]: {loss.item():.4} ")
                 self.evaluate_model()
 
-        saveload = SaveloadTorch("poisson")
-        saveload.save(
-            self._network, saveload.rebase_location(f"network-{self._name_variant}")
+        self._saveload.save(
+            self._network,
+            self._saveload.rebase_location(f"network-{self._name_variant}"),
         )
 
     def evaluate_model(self) -> None:
@@ -520,9 +527,8 @@ class LearnerPoissonFC:
         logger.info(f"eval> (mse, mse%): {dist.mse()}, {dist.mse_percentage()}")
 
     def load(self) -> None:
-        saveload = SaveloadTorch("poisson")
-        location = saveload.rebase_location(f"network-{self._name_variant}")
-        self._network = saveload.load(location)
+        location = self._saveload.rebase_location(f"network-{self._name_variant}")
+        self._network = self._saveload.load(location)
 
     def plot(self) -> None:
         res = self._grids_full.zeroes_like_numpy()
@@ -534,7 +540,12 @@ class LearnerPoissonFC:
             lhs = torch.tensor([val_x1, val_x2]).view(1, 2).to(self._device)
             res[idx_x1, idx_x2] = self._eval_network(lhs)
 
-        plotter = plot.PlotFrame(self._grids_full, res, f"poisson-{self._name_variant}")
+        plotter = plot.PlotFrame(
+            self._grids_full,
+            res,
+            f"poisson-{self._name_variant}",
+            SaveloadImage(self._saveload.base),
+        )
         plotter.plot_2d()
         plotter.plot_3d()
 

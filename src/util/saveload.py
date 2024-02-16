@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any, Union
 
 import torch
+from matplotlib import figure
 
 from src.definition import DEFINITION
 
@@ -14,6 +15,10 @@ logger = logging.getLogger(__name__)
 class Saveloader:
     def __init__(self, base: Path = DEFINITION.BIN_DIR):
         self._base = base
+
+    @property
+    def base(self) -> Path:
+        return self._base
 
     def rebase_location(self, location: Union[Path, str]) -> Path:
         return Path(self._base, location)
@@ -54,6 +59,19 @@ class Saveloader:
         target = make_target()
         self.save(target, location)
         return target
+
+
+class SaveloadImage(Saveloader):
+    def __init__(self, folder: Union[Path, str], suffix: str = "png"):
+        super().__init__(Path(DEFINITION.BIN_DIR, folder))
+
+        self._suffix = suffix
+
+    def rebase_location(self, location: Union[Path, str]) -> Path:
+        return Path(self._base, f"{location}.{self._suffix}")
+
+    def _save(self, target: figure.FigureBase, location: Path) -> None:
+        target.savefig(location)
 
 
 class SaveloadTorch(Saveloader):

@@ -1,16 +1,23 @@
 import torch
 from matplotlib import pyplot as plt
 
-from src.definition import DEFINITION
 from src.numerics import grid
+from src.util.saveload import SaveloadImage
 
 
 class PlotFrame:
-    def __init__(self, grids: grid.Grids, sol: torch.Tensor, name: str):
+    def __init__(
+        self,
+        grids: grid.Grids,
+        sol: torch.Tensor,
+        name: str,
+        saveload: SaveloadImage,
+    ):
         self._grids = grids
         self._coords_x1, self._coords_x2 = self._grids.coords_as_mesh()
         self._sol = sol
 
+        self._saveload = saveload
         self._name = name
 
     def plot_2d(self) -> None:
@@ -24,7 +31,7 @@ class PlotFrame:
 
         title = f"{self._name}-2d"
         plt.title(title)
-        plt.savefig(DEFINITION.BIN_DIR / title)
+        self._saveload.save(plt, self._saveload.rebase_location(title))
 
     def plot_3d(self) -> None:
         fig = plt.figure(figsize=(10, 8))
@@ -44,7 +51,7 @@ class PlotFrame:
 
         title = f"{self._name}-3d"
         ax.set_title(title)
-        plt.savefig(DEFINITION.BIN_DIR / title)
+        self._saveload.save(plt, self._saveload.rebase_location(title))
 
 
 class PlotMovie:
