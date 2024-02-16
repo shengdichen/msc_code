@@ -1,5 +1,4 @@
 import abc
-import collections
 import logging
 import math
 import typing
@@ -138,86 +137,81 @@ class SolverPoisson:
         plotter.plot_3d()
 
 
-class DatasetFNO:
+class DatasetPoisson:
     def __init__(
         self,
         grid_x1: grid.Grid,
         grid_x2: grid.Grid,
-        source: torch.Tensor,
-        boundary_mean: float,
-        boundary_sigma: float,
-        n_instances_train: int = 9,
-        n_instances_test: int = 1,
+        n_instances: int,
+        name_dataset: str,
+        saveload: SaveloadTorch,
     ):
         self._grid_x1, self._grid_x2 = grid_x1, grid_x2
-        self._grids_full = grid.Grids([self._grid_x1, self._grid_x2])
-        self._source = source
-        self._boundary_mean, self._boundary_sigma = boundary_mean, boundary_sigma
+        self._grids = grid.Grids([self._grid_x1, self._grid_x2])
 
-        self._n_instances, self._n_instances_train, self._n_instances_test = (
-            n_instances_train + n_instances_test,
-            n_instances_train,
-            n_instances_test,
-        )
-        self._saveload = SaveloadTorch("poisson")
+        self._n_instances = n_instances
+        self._name_dataset, self._saveload = name_dataset, saveload
 
     def dataset(self) -> torch.utils.data.dataset.TensorDataset:
         def make_target() -> torch.utils.data.dataset.TensorDataset:
             return self.make()
 
-        location = self._saveload.rebase_location("dataset-fno-2d")
+        location = self._saveload.rebase_location(self._name_dataset)
         return self._saveload.load_or_make(location, make_target)
 
     def make(self) -> torch.utils.data.dataset.TensorDataset:
         raise NotImplementedError
 
-    def _generate_instances(self) -> collections.abc.Iterable[torch.Tensor]:
-        raise NotImplementedError
-
-    def _repeat_mesh_like(self, mesh_like: torch.Tensor, count: int) -> torch.Tensor:
-        if mesh_like.dim() != 2:
-            raise ValueError("expected mesh-like tensor of dimension 2")
-        res = mesh_like.unsqueeze(dim=0)
-        if count != 1:
-            res = res.repeat(count, 1, 1)
-        return res
+    def plot_one(self, sol: torch.Tensor) -> None:
+        plotter = plot.PlotFrame(self._grids, sol, self._name_dataset)
+        plotter.plot_2d()
+        plotter.plot_3d()
 
 
-class DatasetConstructed:
+class DatasetConstructed(DatasetPoisson):
     def __init__(
         self,
         grid_x1: grid.Grid,
         grid_x2: grid.Grid,
+        saveload: SaveloadTorch,
+        name_dataset: str,
+        idx_min: int,
+        idx_max: int,
         n_instances: int = 10,
         n_samples_per_instance=4,
     ):
-        self._grid_x1, self._grid_x2 = grid_x1, grid_x2
-        self._grids = grid.Grids([self._grid_x1, self._grid_x2])
+        super().__init__(
+            grid_x1,
+            grid_x2,
+            n_instances=n_instances,
+            saveload=saveload,
+            name_dataset=name_dataset,
+        )
+
         coords_x1, coords_x2 = self._grids.coords_as_mesh()
         self._coords_x1, self._coords_x2 = (
             torch.from_numpy(coords_x1),
             torch.from_numpy(coords_x2),
         )
-
-        self._n_instancs = n_instances
         self._n_samples_per_instance = n_samples_per_instance  # aka, |K|
+        self._idx_min, self._idx_max = idx_min, idx_max
 
-    def dataset(
-        self, idx_min: int, idx_max: int
-    ) -> torch.utils.data.dataset.TensorDataset:
+    def make(self) -> torch.utils.data.dataset.TensorDataset:
         solutions, sources, solutions_masked = [], [], []
-        for __ in range(self._n_instancs):
+        for __ in range(self._n_instances):
             solution, source = self._generate_one_instance()
             solutions.append(solution)
             sources.append(source)
-            solutions_masked.append(self._grids.mask(solution, idx_min, idx_max))
+            solutions_masked.append(
+                self._grids.mask(solution, self._idx_min, self._idx_max)
+            )
 
         lhss = torch.stack(
             [
                 torch.stack(solutions_masked),
                 torch.stack(sources),
-                self._coords_x1.repeat(self._n_instancs, 1, 1),
-                self._coords_x2.repeat(self._n_instancs, 1, 1),
+                self._coords_x1.repeat(self._n_instances, 1, 1),
+                self._coords_x2.repeat(self._n_instances, 1, 1),
             ],
             dim=-1,
         )
@@ -246,43 +240,44 @@ class DatasetConstructed:
         sources /= normalizer
         return solutions, sources
 
-    def plot_one(self) -> None:
-        solution, __ = self._generate_one_instance()
-        plotter = plot.PlotFrame(self._grids, solution, "poisson-dataset-custom")
-        plotter.plot_2d()
-        plotter.plot_3d()
 
-
-class DatasetStandard(DatasetFNO):
+class DatasetSolver(DatasetPoisson):
     def __init__(
         self,
         grid_x1: grid.Grid,
         grid_x2: grid.Grid,
-        idx_min: int,
-        idx_max: int,
+        saveload: SaveloadTorch,
+        name_dataset: str,
         source: torch.Tensor,
         boundary_mean: float,
         boundary_sigma: float,
+        idx_min: int,
+        idx_max: int,
         n_instances_train: int = 9,
         n_instances_test: int = 1,
     ):
         super().__init__(
             grid_x1,
             grid_x2,
-            source,
-            boundary_mean=boundary_mean,
-            boundary_sigma=boundary_sigma,
-            n_instances_train=n_instances_train,
-            n_instances_test=n_instances_test,
+            n_instances=n_instances_train + n_instances_test,
+            saveload=saveload,
+            name_dataset=name_dataset,
         )
 
+        self._source = source
+        self._boundary_mean, self._boundary_sigma = boundary_mean, boundary_sigma
+
         self._idx_min, self._idx_max = idx_min, idx_max
+        self._n_instances_train, self._n_instances_test = (
+            n_instances_train,
+            n_instances_test,
+        )
 
     def make(self) -> torch.utils.data.dataset.TensorDataset:
         __, rhss_all, rhss_masked = self._generate_instances()
         coords_x1_all, coords_x2_all = [
             self._repeat_mesh_like(torch.from_numpy(coords_axis), self._n_instances)
-            for coords_axis in self._grids_full.coords_as_mesh()
+            for coords_axis in self._grids.coords_as_mesh()
         ]
         source_all = self._repeat_mesh_like(self._source, self._n_instances)
 
@@ -302,7 +297,7 @@ class DatasetStandard(DatasetFNO):
             bounds_all.append(solver.rhss_bound_in_mesh)
             rhss_all.append(solver.rhss_in_mesh)
             rhss_masked.append(
-                self._grids_full.mask(
+                self._grids.mask(
                     solver.rhss_in_mesh, idx_min=self._idx_min, idx_max=self._idx_max
                 )
             )
@@ -312,6 +307,14 @@ class DatasetStandard(DatasetFNO):
             torch.stack(rhss_all),
             torch.stack(rhss_masked),
         )
+
+    def _repeat_mesh_like(self, mesh_like: torch.Tensor, count: int) -> torch.Tensor:
+        if mesh_like.dim() != 2:
+            raise ValueError("expected mesh-like tensor of dimension 2")
+        res = mesh_like.unsqueeze(dim=0)
+        if count != 1:
+            res = res.repeat(count, 1, 1)
+        return res
 
 
 class LearnerPoissonFNO:
@@ -542,13 +545,17 @@ class Learners:
         self._grid_x2 = grid.Grid(n_pts=50, stepsize=0.1, start=0.0)
 
         self._idx_min, self._idx_max = 10, 40
+        self._saveload = SaveloadTorch("poisson")
 
     def dataset_standard(self) -> None:
-        ds = DatasetStandard(
+        name_dataset = "dataset-fno-2d"
+        ds = DatasetSolver(
             self._grid_x1,
             self._grid_x2,
             idx_min=self._idx_min,
             idx_max=self._idx_max,
+            saveload=self._saveload,
+            name_dataset=name_dataset,
             source=grid.Grids([self._grid_x1, self._grid_x2]).constants_like(-200),
             boundary_mean=-20,
             boundary_sigma=1,
@@ -565,9 +572,15 @@ class Learners:
         learner.plot()
 
     def dataset_custom(self) -> None:
-        ds = DatasetConstructed(self._grid_x1, self._grid_x2).dataset(
-            self._idx_min, self._idx_max
-        )
+        name_dataset = "dataset-fno-2d"
+        ds = DatasetConstructed(
+            self._grid_x1,
+            self._grid_x2,
+            saveload=self._saveload,
+            name_dataset=name_dataset,
+            idx_min=self._idx_min,
+            idx_max=self._idx_max,
+        ).dataset()
 
         learner = LearnerPoissonFNO2d(
             self._grid_x1,
