@@ -38,7 +38,7 @@ class Saveloader:
     def save(self, target: Any, location: Path, overwrite: bool = False) -> None:
         if self.exists(location):
             if not overwrite:
-                raise FileExistsError
+                raise FileExistsError(f"{location} already exists")
             location.unlink()
         else:
             logger.info(f"target saved at {location}")

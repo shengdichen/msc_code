@@ -152,27 +152,36 @@ class DatasetPoisson:
         self._grids = grid.Grids([self._grid_x1, self._grid_x2])
 
         self._n_instances = n_instances
-        self._name_dataset, self._saveload = name_dataset, saveload
+        self._saveload_location, self._saveload = (
+            f"dataset-fno-2d-{name_dataset}",
+            saveload,
+        )
 
     def dataset(self) -> torch.utils.data.dataset.TensorDataset:
         def make_target() -> torch.utils.data.dataset.TensorDataset:
             return self.make()
 
-        location = self._saveload.rebase_location(self._name_dataset)
+        location = self._saveload.rebase_location(self._saveload_location)
         return self._saveload.load_or_make(location, make_target)
 
     def make(self) -> torch.utils.data.dataset.TensorDataset:
         raise NotImplementedError
 
-    def plot_one(self, sol: torch.Tensor) -> None:
+    def plot_instance(self) -> None:
         plotter = plot.PlotFrame(
-            self._grids, sol, self._name_dataset, SaveloadImage(self._saveload.base)
+            self._grids,
+            self._generate_instance_solution(),
+            self._saveload_location,
+            SaveloadImage(self._saveload.base),
         )
         plotter.plot_2d()
         plotter.plot_3d()
 
+    def _generate_instance_solution(self) -> torch.Tensor:
+        raise NotImplementedError
 
-class DatasetConstructed(DatasetPoisson):
+
+class DatasetCustom(DatasetPoisson):
     def __init__(
         self,
         grid_x1: grid.Grid,
@@ -203,7 +212,7 @@ class DatasetConstructed(DatasetPoisson):
     def make(self) -> torch.utils.data.dataset.TensorDataset:
         solutions, sources, solutions_masked = [], [], []
         for __ in range(self._n_instances):
-            solution, source = self._generate_one_instance()
+            solution, source = self._generate_instance()
             solutions.append(solution)
             sources.append(source)
             solutions_masked.append(
@@ -222,7 +231,7 @@ class DatasetConstructed(DatasetPoisson):
         rhss = torch.stack(solutions).unsqueeze(-1)
         return torch.utils.data.TensorDataset(lhss, rhss)
 
-    def _generate_one_instance(self) -> tuple[torch.Tensor, torch.Tensor]:
+    def _generate_instance(self) -> tuple[torch.Tensor, torch.Tensor]:
         solutions, sources = self._grids.zeroes_like(), self._grids.zeroes_like()
         for i_sample in range(self._n_samples_per_instance):
             weight_sin, weight_cos = torch.distributions.Uniform(low=-1, high=1).sample(
@@ -243,6 +252,9 @@ class DatasetConstructed(DatasetPoisson):
         solutions /= normalizer
         sources /= normalizer
         return solutions, sources
+
+    def _generate_instance_solution(self) -> torch.Tensor:
+        return self._generate_instance()[0]
 
 
 class DatasetSolver(DatasetPoisson):
@@ -312,6 +324,13 @@ class DatasetSolver(DatasetPoisson):
             torch.stack(rhss_masked),
         )
 
+    def _generate_instance_solution(self) -> torch.Tensor:
+        solver = SolverPoisson(self._grid_x1, self._grid_x2, source=self._source)
+        solver.solve(
+            boundary_mean=self._boundary_mean, boundary_sigma=self._boundary_sigma
+        )
+        return solver.rhss_in_mesh
+
     def _repeat_mesh_like(self, mesh_like: torch.Tensor, count: int) -> torch.Tensor:
         if mesh_like.dim() != 2:
             raise ValueError("expected mesh-like tensor of dimension 2")
@@ -327,8 +346,9 @@ class LearnerPoissonFNO:
         grid_x1: grid.Grid,
         grid_x2: grid.Grid,
         network_fno: torch.nn.Module,
-        dataset_full: torch.utils.data.dataset.TensorDataset,
-        dataset_mask: torch.utils.data.dataset.TensorDataset,
+        dataset_eval: torch.utils.data.dataset.TensorDataset,
+        dataset_train: torch.utils.data.dataset.TensorDataset,
+        saveload: SaveloadTorch,
         saveload_location: str,
     ):
         self._device = DEFINITION.device_preferred
@@ -336,9 +356,9 @@ class LearnerPoissonFNO:
         self._grid_x1, self._grid_x2 = grid_x1, grid_x2
         self._grids = grid.Grids([self._grid_x1, self._grid_x2])
         self._network = network_fno.to(self._device)
-        self._dataset_full, self._dataset_mask = dataset_full, dataset_mask
+        self._dataset_eval, self._dataset_train = dataset_eval, dataset_train
 
-        self._saveload = SaveloadTorch("poisson")
+        self._saveload = saveload
         self._location = self._saveload.rebase_location(saveload_location)
 
     def train(self, n_epochs: int = 2001, freq_eval: int = 100) -> None:
@@ -348,7 +368,7 @@ class LearnerPoissonFNO:
         for epoch in range(n_epochs):
             loss_all = []
             for lhss_batch, rhss_batch in torch.utils.data.DataLoader(
-                self._dataset_mask, batch_size=2
+                self._dataset_train, batch_size=2
             ):
                 lhss_batch, rhss_batch = (
                     lhss_batch.to(device=self._device, dtype=torch.float),
@@ -377,7 +397,7 @@ class LearnerPoissonFNO:
         with torch.no_grad():
             self._network.eval()
             for lhss_batch, rhss_batch in torch.utils.data.DataLoader(
-                self._dataset_full
+                self._dataset_eval
             ):
                 lhss_batch, rhss_batch = (
                     lhss_batch.to(device=self._device, dtype=torch.float),
@@ -427,27 +447,28 @@ class LearnerPoissonFNO2d(LearnerPoissonFNO):
         self,
         grid_x1: grid.Grid,
         grid_x2: grid.Grid,
-        dataset_full: torch.utils.data.dataset.TensorDataset,
-        dataset_mask: torch.utils.data.dataset.TensorDataset,
-        name_dataset: str,
+        dataset_eval: torch.utils.data.dataset.TensorDataset,
+        dataset_train: torch.utils.data.dataset.TensorDataset,
+        saveload: SaveloadTorch,
+        name_learner: str,
     ):
         super().__init__(
             grid_x1,
             grid_x2,
             fno_2d.FNO2d(n_channels_lhs=4),
-            dataset_full=dataset_full,
-            dataset_mask=dataset_mask,
-            saveload_location=f"network-fno-2d-{name_dataset}",
+            dataset_eval=dataset_eval,
+            dataset_train=dataset_train,
+            saveload=saveload,
+            saveload_location=f"network-fno-2d-{name_learner}",
         )
-        self._name_dataset = name_dataset
 
     def plot(self) -> None:
-        lhss, rhss = self._one_lhss_rhss(self._dataset_full)
-        self._plot_save(rhss[0, :, :, 0], "poisson-fno-2d-theirs")
+        lhss, rhss = self._one_lhss_rhss(self._dataset_eval)
+        self._plot_save(rhss[0, :, :, 0], f"{self._location}-theirs")
 
         lhss = lhss.to(device=self._device, dtype=torch.float)
         rhss_ours = self._network(lhss).detach().to("cpu")[0, :, :, 0]
-        self._plot_save(rhss_ours, f"poisson-fno-2d-{self._name_dataset}")
+        self._plot_save(rhss_ours, f"{self._location}-ours")
 
 
 class LearnerPoissonFC:
@@ -575,32 +596,36 @@ class Learners:
         learner = LearnerPoissonFNO2d(
             self._grid_x1,
             self._grid_x2,
-            dataset_full=ds,
-            dataset_mask=ds,
-            name_dataset="standard",
+            dataset_eval=ds,
+            dataset_train=ds,
+            saveload=self._saveload,
+            name_learner="standard",
         )
         learner.train()
         learner.plot()
 
     def dataset_custom(self) -> None:
-        name_dataset = "dataset-fno-2d"
-        ds = DatasetConstructed(
+        name = "custom"
+
+        ds = DatasetCustom(
             self._grid_x1,
             self._grid_x2,
             saveload=self._saveload,
-            name_dataset=name_dataset,
+            name_dataset=name,
             idx_min=self._idx_min,
             idx_max=self._idx_max,
-        ).dataset()
+        )
+        ds.plot_instance()
 
         learner = LearnerPoissonFNO2d(
             self._grid_x1,
             self._grid_x2,
-            dataset_full=ds,
-            dataset_mask=ds,
-            name_dataset="custom",
+            dataset_eval=ds.dataset(),
+            dataset_train=ds.dataset(),
+            saveload=self._saveload,
+            name_learner=name,
         )
-        learner.train()
+        learner.train(n_epochs=1001)
         learner.plot()
 
 
