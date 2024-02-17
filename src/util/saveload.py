@@ -37,13 +37,21 @@ class Saveloader:
 
     def save(self, target: Any, location: Path, overwrite: bool = False) -> None:
         if self.exists(location):
-            if not overwrite:
-                raise FileExistsError(f"{location} already exists")
-            location.unlink()
-        else:
-            logger.info(f"target saved at {location}")
-            self._make_folder_containing(location)
-            self._save(target, location)
+            if overwrite or input(f"[{location}]> overwrite: [y]es; no (default) ") in [
+                "y",
+                "yes",
+                "Y",
+                "Yes",
+            ]:
+                location.unlink()
+            else:
+                raise FileExistsError(
+                    f"{location} already exists, but overwriting is refused"
+                )
+
+        logger.info(f"target saved at {location}")
+        self._make_folder_containing(location)
+        self._save(target, location)
 
     def _save(self, target: Any, location: Path) -> None:
         pass
