@@ -13,7 +13,7 @@ from src.definition import DEFINITION
 from src.numerics import distance, grid, multidiff
 from src.util import plot
 from src.util.dataset import MaskerRandom
-from src.util.saveload import SaveloadImage, SaveloadPde, SaveloadTorch
+from src.util.saveload import SaveloadImage, SaveloadTorch
 
 logger = logging.getLogger(__name__)
 
@@ -36,47 +36,35 @@ class SolverPoisson:
         ) / 2
 
         self._source_term = source
-
-        self._lhss_bound: list[torch.Tensor] = []
-        self._rhss_bound: list[float] = []
-        self._rhss_bound_in_mesh = self._grids.zeroes_like()
-        self._lhss_internal: list[torch.Tensor] = []
-        self._rhss_internal: list[float] = []
-        self._sol = self._grids.zeroes_like()
+        self._solution = self._grids.zeroes_like()
 
         self._n_iters_max, self._error_threshold = n_iters_max, error_threshold
 
-        self._saveload = SaveloadPde("poisson")
-
-    def solve(self, boundary_mean: float = -1.0, boundary_sigma: float = 0.0) -> None:
+    def solve(
+        self, boundary_mean: float = -1.0, boundary_sigma: float = 0.0
+    ) -> torch.Tensor:
         logger.info("Poisson.solve()")
-
         self._solve_boundary(mean=boundary_mean, sigma=boundary_sigma)
         self._solve_internal()
-        self._register_internal()
+
+        return self._solution
 
     def _solve_boundary(self, mean: float, sigma: float) -> None:
-        for (
-            (idx_x1, val_x1),
-            (idx_x2, val_x2),
-        ) in self._grids.boundaries_with_index():
-            self._lhss_bound.append([val_x1, val_x2])
+        for (idx_x1, __), (idx_x2, __) in self._grids.boundaries_with_index():
             if math.isclose(sigma, 0.0):
                 rhs = mean
             else:
                 rhs = scipy.stats.norm.rvs(loc=mean, scale=sigma)
-            self._rhss_bound.append(rhs)
-            self._sol[idx_x1, idx_x2] = rhs
-            self._rhss_bound_in_mesh[idx_x1, idx_x2] = rhs
+            self._solution[idx_x1, idx_x2] = rhs
 
     def _solve_internal(self) -> None:
         # REF:
         #   https://ubcmath.github.io/MATH316/fd/laplace.html#exercises-for-laplace-s-equation
         for i in range(self._n_iters_max):
-            sol_current = np.copy(self._sol)
+            sol_current = np.copy(self._solution)
             self._solve_internal_current()
 
-            max_update = torch.max(torch.abs(self._sol - sol_current))
+            max_update = torch.max(torch.abs(self._solution - sol_current))
             if max_update < self._error_threshold:
                 logger.info(
                     f"normal termination at iteration [{i}/{self._n_iters_max}]"
@@ -92,50 +80,61 @@ class SolverPoisson:
             )
 
     def _solve_internal_current(self) -> None:
-        for (idx_x1, _), (idx_x2, _) in self._grids.internals_with_index():
-            self._sol[idx_x1, idx_x2] = 0.25 * (
-                self._sol[idx_x1 + 1, idx_x2]
-                + self._sol[idx_x1 - 1, idx_x2]
-                + self._sol[idx_x1, idx_x2 + 1]
-                + self._sol[idx_x1, idx_x2 - 1]
+        for (idx_x1, __), (idx_x2, __) in self._grids.internals_with_index():
+            self._solution[idx_x1, idx_x2] = 0.25 * (
+                self._solution[idx_x1 + 1, idx_x2]
+                + self._solution[idx_x1 - 1, idx_x2]
+                + self._solution[idx_x1, idx_x2 + 1]
+                + self._solution[idx_x1, idx_x2 - 1]
                 - self._sum_of_squares * self._source_term[idx_x1, idx_x2]
             )
 
-    def _register_internal(self) -> None:
+    def solution_internal(self) -> tuple[torch.Tensor, torch.Tensor]:
+        lhss: list[tuple[float, float]] = []
+        rhss: list[float] = []
+
         for (
             (idx_x1, val_x1),
             (idx_x2, val_x2),
         ) in self._grids.internals_with_index():
-            self._lhss_internal.append([val_x1, val_x2])
-            self._rhss_internal.append(self._sol[idx_x1, idx_x2])
+            lhss.append((val_x1, val_x2))
+            rhss.append(self._solution[idx_x1, idx_x2].item())
+        return torch.tensor(lhss), torch.tensor(rhss)
 
-    @property
-    def rhss_bound_in_mesh(self) -> torch.Tensor:
-        return self._rhss_bound_in_mesh
+    def solution_boundary(
+        self,
+    ) -> tuple[torch.Tensor, tuple[torch.Tensor, torch.Tensor]]:
+        lhss: list[tuple[float, float]] = []
+        rhss_flat: list[float] = []
+        rhss_mesh = self._grids.zeroes_like()
 
-    @property
-    def rhss_in_mesh(self) -> torch.Tensor:
-        return self._sol
+        for (
+            (idx_x1, val_x1),
+            (idx_x2, val_x2),
+        ) in self._grids.boundaries_with_index():
+            lhss.append((val_x1, val_x2))
+            rhs = self._solution[idx_x1, idx_x2].item()
+            rhss_flat.append(rhs)
+            rhss_mesh[idx_x1, idx_x2] = rhs
+        return torch.tensor(lhss), (torch.tensor(rhss_mesh), rhss_mesh)
 
     def as_interpolator(
-        self, dataset_save_as: str = "dataset", **kwargs
+        self, saveload: SaveloadTorch, name: str = "dataset", **kwargs
     ) -> RectBivariateSpline:
         def make_target() -> None:
             self.solve(**kwargs)
-            return self._sol
+            return self._solution
 
-        location = self._saveload.rebase_location(dataset_save_as)
-        self._sol = self._saveload.load_or_make(location, make_target)
+        location = saveload.rebase_location(name)
+        self._solution = saveload.load_or_make(location, make_target)
         return RectBivariateSpline(
             self._grid_x1.step(),
             self._grid_x2.step(),
-            self._sol,
+            self._solution,
         )
 
-    def plot(self, name: str = "poisson-solver") -> None:
-        plotter = plot.PlotFrame(
-            self._grids, self._sol, name, SaveloadImage(self._saveload.base)
-        )
+    def plot(self, saveload: SaveloadImage, name: str = "poisson-solver") -> None:
+        plotter = plot.PlotFrame(self._grids, self._solution, name, saveload)
         plotter.plot_2d()
         plotter.plot_3d()
 
@@ -317,48 +316,45 @@ class DatasetSolver(DatasetPoisson):
         )
 
     def make(self) -> torch.utils.data.dataset.TensorDataset:
-        __, rhss_all, rhss_masked = self._generate_instances()
-        self._make(rhss_all, rhss_masked)
+        rhss_all, rhss_masked = self._generate_instances()
+        self._assemble(rhss_all, rhss_masked)
 
     def dataset_masked_random(
         self, perc_to_mask: float
     ) -> torch.utils.data.dataset.TensorDataset:
-        __, rhss_all, rhss_masked = self._generate_instances(perc_to_mask)
-        return self._make(rhss_all, rhss_masked)
+        rhss_all, rhss_masked = self._generate_instances(perc_to_mask)
+        return self._assemble(rhss_all, rhss_masked)
 
     def _generate_instances(
         self,
         perc_to_mask: typing.Optional[float] = None,
-    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-        bounds_all, rhss_all, rhss_masked = [], [], []
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        rhss_all, rhss_masked = [], []
         for __ in range(self._n_instances):
-            solver = SolverPoisson(self._grid_x1, self._grid_x2, source=self._source)
-            solver.solve(
+            solver = SolverPoisson(
+                self._grid_x1, self._grid_x2, source=self._source, error_threshold=1
+            )
+            solution = solver.solve(
                 boundary_mean=self._boundary_mean, boundary_sigma=self._boundary_sigma
             )
-            bounds_all.append(solver.rhss_bound_in_mesh)
-            rhss_all.append(solver.rhss_in_mesh)
+            rhss_all.append(solution)
             if not perc_to_mask:
-                rhss_masked.append(solver.rhss_in_mesh)
+                rhss_masked.append(solution)
             else:
                 rhss_masked.append(
-                    MaskerRandom(solver.rhss_in_mesh, perc_to_mask=perc_to_mask).mask()
+                    MaskerRandom(solution, perc_to_mask=perc_to_mask).mask()
                 )
 
-        return (
-            torch.stack(bounds_all),
-            torch.stack(rhss_all),
-            torch.stack(rhss_masked),
-        )
+        return torch.stack(rhss_all), torch.stack(rhss_masked)
 
-    def _make(
+    def _assemble(
         self, rhss_all: torch.Tensor, rhss_masked: torch.Tensor
     ) -> torch.utils.data.dataset.TensorDataset:
+        source_all = self._repeat_mesh_like(self._source, self._n_instances)
         coords_x1_all, coords_x2_all = [
             self._repeat_mesh_like(torch.from_numpy(coords_axis), self._n_instances)
             for coords_axis in self._grids.coords_as_mesh()
         ]
-        source_all = self._repeat_mesh_like(self._source, self._n_instances)
 
         lhss_all = torch.stack(
             [source_all, rhss_masked, coords_x1_all, coords_x2_all], dim=-1
@@ -368,10 +364,9 @@ class DatasetSolver(DatasetPoisson):
 
     def _generate_instance_solution(self) -> torch.Tensor:
         solver = SolverPoisson(self._grid_x1, self._grid_x2, source=self._source)
-        solver.solve(
+        return solver.solve(
             boundary_mean=self._boundary_mean, boundary_sigma=self._boundary_sigma
         )
-        return solver.rhss_in_mesh
 
     def _repeat_mesh_like(self, mesh_like: torch.Tensor, count: int) -> torch.Tensor:
         if mesh_like.dim() != 2:
@@ -522,11 +517,15 @@ class LearnerPoissonFC:
         grid_x2 = grid.Grid(n_pts=50, stepsize=0.1, start=0.0)
         self._grids_full = grid.Grids([grid_x1, grid_x2])
 
+        self._saveload = SaveloadTorch("poisson")
         solver = SolverPoisson(
             grid_x1, grid_x2, source=self._grids_full.constants_like(-200)
         )
         self._solver = solver.as_interpolator(
-            dataset_save_as="dataset-fc", boundary_mean=-20, boundary_sigma=1
+            saveload=self._saveload,
+            name="dataset-fc",
+            boundary_mean=-20,
+            boundary_sigma=1,
         )
         self._lhss_eval, self._rhss_exact_eval = self._make_lhss_rhss_train(
             self._grids_full, n_pts=5000
@@ -544,7 +543,6 @@ class LearnerPoissonFC:
 
         self._network = network.Network(dim_x=2, with_time=False).to(self._device)
         self._eval_network = self._make_eval_network(use_multidiff=False)
-        self._saveload = SaveloadTorch("poisson")
 
     def _make_lhss_rhss_train(
         self, grids: grid.Grids, n_pts: int
