@@ -657,8 +657,8 @@ class LearnerPoissonFC:
 
 class Learners:
     def __init__(self):
-        self._grid_x1 = grid.Grid(n_pts=50, stepsize=0.1, start=0.0)
-        self._grid_x2 = grid.Grid(n_pts=50, stepsize=0.1, start=0.0)
+        self._grid_x1 = grid.Grid(n_pts=64, stepsize=0.01, start=0.0)
+        self._grid_x2 = grid.Grid(n_pts=64, stepsize=0.01, start=0.0)
 
         self._idx_min, self._idx_max = 10, 40
         self._saveload = SaveloadTorch("poisson")
