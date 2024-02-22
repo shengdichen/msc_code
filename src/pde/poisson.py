@@ -198,7 +198,7 @@ class DatasetPoisson:
         raise NotImplementedError
 
 
-class DatasetCustom(DatasetPoisson):
+class DatasetConstructed(DatasetPoisson):
     def __init__(
         self,
         grid_x1: grid.Grid,
@@ -245,6 +245,33 @@ class DatasetCustom(DatasetPoisson):
             )
         return self._assemble(solutions_masked, sources, solutions)
 
+    def _assemble(
+        self,
+        solutions_masked: torch.Tensor,
+        sources: torch.Tensor,
+        solutions: torch.Tensor,
+    ) -> torch.utils.data.dataset.TensorDataset:
+        lhss = torch.stack(
+            [
+                torch.stack(solutions_masked),
+                torch.stack(sources),
+                self._coords_x1.repeat(self._n_instances, 1, 1),
+                self._coords_x2.repeat(self._n_instances, 1, 1),
+            ],
+            dim=-1,
+        )
+        rhss = torch.stack(solutions).unsqueeze(-1)
+        return torch.utils.data.TensorDataset(lhss, rhss)
+
+    def _generate_instance_solution(self) -> torch.Tensor:
+        return self._generate_instance()[0]
+
+    @abc.abstractmethod
+    def _generate_instance(self) -> tuple[torch.Tensor, torch.Tensor]:
+        raise NotImplementedError
+
+
+class DatasetConstructedSinCos(DatasetConstructed):
     def _generate_instance(self) -> tuple[torch.Tensor, torch.Tensor]:
         solutions, sources = self._grids.zeroes_like(), self._grids.zeroes_like()
         for i_sample in range(self._n_samples_per_instance):
@@ -267,26 +294,40 @@ class DatasetCustom(DatasetPoisson):
         sources /= normalizer
         return solutions, sources
 
-    def _assemble(
-        self,
-        solutions_masked: torch.Tensor,
-        sources: torch.Tensor,
-        solutions: torch.Tensor,
-    ) -> torch.utils.data.dataset.TensorDataset:
-        lhss = torch.stack(
-            [
-                torch.stack(solutions_masked),
-                torch.stack(sources),
-                self._coords_x1.repeat(self._n_instances, 1, 1),
-                self._coords_x2.repeat(self._n_instances, 1, 1),
-            ],
-            dim=-1,
-        )
-        rhss = torch.stack(solutions).unsqueeze(-1)
-        return torch.utils.data.TensorDataset(lhss, rhss)
 
-    def _generate_instance_solution(self) -> torch.Tensor:
-        return self._generate_instance()[0]
+class DatasetConstructedSin(DatasetConstructed):
+    def _generate_instance(self) -> tuple[torch.Tensor, torch.Tensor]:
+        weights = torch.distributions.Uniform(low=-1, high=1).sample(
+            [self._n_samples_per_instance] * self._grids.n_dims
+        )
+
+        sample_x1, sample_x2 = self._sample_coords()
+        idx_sum = sample_x1**2 + sample_x2**2
+
+        coords_x1 = self._coords_x1[..., None, None]
+        coords_x2 = self._coords_x2[..., None, None]
+        product = (
+            weights
+            * torch.sin(torch.pi * sample_x1 * coords_x1)
+            * torch.sin(torch.pi * sample_x2 * coords_x2)
+        )
+        const_r = 0.85
+        source = (torch.pi / self._n_samples_per_instance**2) * torch.sum(
+            (idx_sum**const_r) * product,
+            dim=(-2, -1),
+        )
+        solution = (1 / torch.pi / self._n_samples_per_instance**2) * torch.sum(
+            (idx_sum ** (const_r - 1)) * product,
+            dim=(-2, -1),
+        )
+        return source, solution
+
+    def _sample_coords(self) -> tuple[torch.Tensor, torch.Tensor]:
+        sample_x1, sample_x2 = np.meshgrid(
+            torch.arange(1, self._n_samples_per_instance + 1).float(),
+            torch.arange(1, self._n_samples_per_instance + 1).float(),
+        )
+        return torch.from_numpy(sample_x1), torch.from_numpy(sample_x2)
 
 
 class DatasetSolver(DatasetPoisson):
