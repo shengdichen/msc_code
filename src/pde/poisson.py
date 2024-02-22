@@ -157,19 +157,30 @@ class DatasetPoisson:
             saveload,
         )
 
-    def dataset(self) -> torch.utils.data.dataset.TensorDataset:
-        def make_target() -> torch.utils.data.dataset.TensorDataset:
-            return self.make()
+    def dataset_unmasked(self) -> torch.utils.data.dataset.TensorDataset:
+        def make() -> torch.utils.data.dataset.TensorDataset:
+            return self._make_dataset_unmasked()
 
         location = self._saveload.rebase_location(self._saveload_location)
-        return self._saveload.load_or_make(location, make_target)
+        return self._saveload.load_or_make(location, make)
+
+    @abc.abstractmethod
+    def _make_dataset_unmasked(self) -> torch.utils.data.dataset.TensorDataset:
+        raise NotImplementedError
 
     def dataset_masked_random(
         self, perc_to_mask: float
     ) -> torch.utils.data.dataset.TensorDataset:
-        raise NotImplementedError
+        def make() -> torch.utils.data.dataset.TensorDataset:
+            return self._make_dataset_masked_random(perc_to_mask)
 
-    def make(self) -> torch.utils.data.dataset.TensorDataset:
+        location = self._saveload.rebase_location(self._saveload_location)
+        return self._saveload.load_or_make(location, make)
+
+    @abc.abstractmethod
+    def _make_dataset_masked_random(
+        self, perc_to_mask: float
+    ) -> torch.utils.data.dataset.TensorDataset:
         raise NotImplementedError
 
     def plot_instance(self) -> None:
@@ -182,6 +193,7 @@ class DatasetPoisson:
         plotter.plot_2d()
         plotter.plot_3d()
 
+    @abc.abstractmethod
     def _generate_instance_solution(self) -> torch.Tensor:
         raise NotImplementedError
 
@@ -193,8 +205,6 @@ class DatasetCustom(DatasetPoisson):
         grid_x2: grid.Grid,
         saveload: SaveloadTorch,
         name_dataset: str,
-        idx_min: int,
-        idx_max: int,
         n_instances: int = 10,
         n_samples_per_instance=4,
     ):
@@ -212,31 +222,17 @@ class DatasetCustom(DatasetPoisson):
             torch.from_numpy(coords_x2),
         )
         self._n_samples_per_instance = n_samples_per_instance  # aka, |K|
-        self._idx_min, self._idx_max = idx_min, idx_max
 
-    def make(self) -> torch.utils.data.dataset.TensorDataset:
+    def _make_dataset_unmasked(self) -> torch.utils.data.dataset.TensorDataset:
         solutions, sources, solutions_masked = [], [], []
         for __ in range(self._n_instances):
             solution, source = self._generate_instance()
             solutions.append(solution)
             sources.append(source)
-            solutions_masked.append(
-                self._grids.mask(solution, self._idx_min, self._idx_max)
-            )
+            solutions_masked.append(source)
+        return self._assemble(solutions_masked, sources, solutions)
 
-        lhss = torch.stack(
-            [
-                torch.stack(solutions_masked),
-                torch.stack(sources),
-                self._coords_x1.repeat(self._n_instances, 1, 1),
-                self._coords_x2.repeat(self._n_instances, 1, 1),
-            ],
-            dim=-1,
-        )
-        rhss = torch.stack(solutions).unsqueeze(-1)
-        return torch.utils.data.TensorDataset(lhss, rhss)
-
-    def dataset_masked_random(
+    def _make_dataset_masked_random(
         self, perc_to_mask: float
     ) -> torch.utils.data.dataset.TensorDataset:
         solutions, sources, solutions_masked = [], [], []
@@ -247,24 +243,13 @@ class DatasetCustom(DatasetPoisson):
             solutions_masked.append(
                 MaskerRandom(solution, perc_to_mask=perc_to_mask).mask()
             )
-
-        lhss = torch.stack(
-            [
-                torch.stack(solutions_masked),
-                torch.stack(sources),
-                self._coords_x1.repeat(self._n_instances, 1, 1),
-                self._coords_x2.repeat(self._n_instances, 1, 1),
-            ],
-            dim=-1,
-        )
-        rhss = torch.stack(solutions).unsqueeze(-1)
-        return torch.utils.data.TensorDataset(lhss, rhss)
+        return self._assemble(solutions_masked, sources, solutions)
 
     def _generate_instance(self) -> tuple[torch.Tensor, torch.Tensor]:
         solutions, sources = self._grids.zeroes_like(), self._grids.zeroes_like()
         for i_sample in range(self._n_samples_per_instance):
             weight_sin, weight_cos = torch.distributions.Uniform(low=-1, high=1).sample(
-                [2]
+                torch.Size([2])
             )
             factor = i_sample * torch.pi
             matrix_sin, matrix_cos = (
@@ -281,6 +266,24 @@ class DatasetCustom(DatasetPoisson):
         solutions /= normalizer
         sources /= normalizer
         return solutions, sources
+
+    def _assemble(
+        self,
+        solutions_masked: torch.Tensor,
+        sources: torch.Tensor,
+        solutions: torch.Tensor,
+    ) -> torch.utils.data.dataset.TensorDataset:
+        lhss = torch.stack(
+            [
+                torch.stack(solutions_masked),
+                torch.stack(sources),
+                self._coords_x1.repeat(self._n_instances, 1, 1),
+                self._coords_x2.repeat(self._n_instances, 1, 1),
+            ],
+            dim=-1,
+        )
+        rhss = torch.stack(solutions).unsqueeze(-1)
+        return torch.utils.data.TensorDataset(lhss, rhss)
 
     def _generate_instance_solution(self) -> torch.Tensor:
         return self._generate_instance()[0]
@@ -315,11 +318,11 @@ class DatasetSolver(DatasetPoisson):
             n_instances_test,
         )
 
-    def make(self) -> torch.utils.data.dataset.TensorDataset:
+    def _make_dataset_unmasked(self) -> torch.utils.data.dataset.TensorDataset:
         rhss_all, rhss_masked = self._generate_instances()
         self._assemble(rhss_all, rhss_masked)
 
-    def dataset_masked_random(
+    def _make_dataset_masked_random(
         self, perc_to_mask: float
     ) -> torch.utils.data.dataset.TensorDataset:
         rhss_all, rhss_masked = self._generate_instances(perc_to_mask)
@@ -650,8 +653,6 @@ class Learners:
             self._grid_x2,
             saveload=self._saveload,
             name_dataset=name,
-            idx_min=self._idx_min,
-            idx_max=self._idx_max,
         )
         ds.plot_instance()
 
