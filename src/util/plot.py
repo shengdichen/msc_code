@@ -18,12 +18,13 @@ class PlotFrame:
 
         plt.contourf(self._coords_x1, self._coords_x2, self._sol, cmap="viridis")
         plt.colorbar(label="u(x, y)")
-        plt.title("Poisson 2D")
         plt.xlabel("x")
         plt.ylabel("y")
         plt.grid(True)
 
-        plt.savefig(DEFINITION.BIN_DIR / f"{self._name}-2d")
+        title = f"{self._name}-2d"
+        plt.title(title)
+        plt.savefig(DEFINITION.BIN_DIR / title)
 
     def plot_3d(self) -> None:
         fig = plt.figure(figsize=(10, 8))
@@ -36,13 +37,14 @@ class PlotFrame:
             cmap="viridis",
             edgecolor="k",
         )
-        ax.set_title("Poisson 3D")
         ax.set_xlabel("X")
         ax.set_ylabel("Y")
         ax.set_zlabel("u(X, Y)")
         fig.colorbar(surf, ax=ax, shrink=0.5, aspect=5)
 
-        plt.savefig(DEFINITION.BIN_DIR / f"{self._name}-3d")
+        title = f"{self._name}-3d"
+        ax.set_title(title)
+        plt.savefig(DEFINITION.BIN_DIR / title)
 
 
 class PlotMovie:

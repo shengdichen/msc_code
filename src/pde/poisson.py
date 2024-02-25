@@ -598,10 +598,12 @@ class LearnerPoissonFNO2d(LearnerPoissonFNO):
         )
         dataset_full = dataset.as_dataset()
         if use_dataset_shrink:
+            self._mask_type = "shrink"
             dataset_mask = MaskingDatasetShrink(dataset_full).mask(
                 idx_min=10, idx_max=40
             )
         else:
+            self._mask_type = "pad"
             dataset_mask = MaskingDatasetPad(dataset_full).mask(
                 val_min=1.0, val_max=4.0
             )
@@ -612,7 +614,7 @@ class LearnerPoissonFNO2d(LearnerPoissonFNO):
             fno_2d.FNO2d(n_channels_lhs=4),
             dataset_full=dataset_full,
             dataset_mask=dataset_mask,
-            saveload_location="network-fno-2d",
+            saveload_location=f"network-fno-2d-{self._mask_type}",
         )
 
     def plot(self) -> None:
@@ -621,7 +623,7 @@ class LearnerPoissonFNO2d(LearnerPoissonFNO):
 
         lhss = lhss.to(device=self._device, dtype=torch.float)
         rhss_ours = self._network(lhss).detach().to("cpu")[0, :, :, 0]
-        self._plot_save(rhss_ours, "poisson-fno-2d-ours")
+        self._plot_save(rhss_ours, f"poisson-fno-2d-{self._mask_type}")
 
 
 class LearnerPoissonFC:
