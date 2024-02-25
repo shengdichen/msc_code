@@ -697,11 +697,15 @@ class LearnerPoissonFC:
 
 
 class Learners:
-    def __init__(self):
+    def __init__(self, n_instances_eval: int = 300, n_instances_train=100):
         self._grid_x1 = grid.Grid(n_pts=64, stepsize=0.01, start=0.0)
         self._grid_x2 = grid.Grid(n_pts=64, stepsize=0.01, start=0.0)
 
-        self._idx_min, self._idx_max = 10, 40
+        self._n_instances_eval, self._n_instances_train = (
+            n_instances_eval,
+            n_instances_train,
+        )
+
         self._saveload = SaveloadTorch("poisson")
 
     def dataset_standard(self) -> None:
@@ -727,22 +731,35 @@ class Learners:
         learner.train()
         learner.plot()
 
-    def dataset_custom(self) -> None:
+    def dataset_custom(
+        self,
+        n_samples_per_instance_eval: int = 3,
+        n_samples_per_instance_train: int = 3,
+    ) -> None:
         name = "custom"
 
-        ds = DatasetCustom(
+        ds_eval = DatasetConstructedSin(
             self._grid_x1,
             self._grid_x2,
             saveload=self._saveload,
-            name_dataset=name,
+            name_dataset=f"{name}-eval",
+            n_instances=self._n_instances_eval,
+            n_samples_per_instance=n_samples_per_instance_eval,
         )
-        ds.plot_instance()
+        ds_train = DatasetConstructedSin(
+            self._grid_x1,
+            self._grid_x2,
+            saveload=self._saveload,
+            name_dataset=f"{name}-train",
+            n_instances=self._n_instances_train,
+            n_samples_per_instance=n_samples_per_instance_train,
+        )
 
         learner = LearnerPoissonFNO2d(
             self._grid_x1,
             self._grid_x2,
-            dataset_eval=ds.dataset_masked_random(perc_to_mask=0.5),
-            dataset_train=ds.dataset_masked_random(perc_to_mask=0.5),
+            dataset_eval=ds_eval.dataset_masked_random(perc_to_mask=0.5),
+            dataset_train=ds_train.dataset_masked_random(perc_to_mask=0.5),
             saveload=self._saveload,
             name_learner=name,
         )
