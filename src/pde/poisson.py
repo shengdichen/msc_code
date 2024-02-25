@@ -296,6 +296,27 @@ class DatasetConstructedSinCos(DatasetConstructed):
 
 
 class DatasetConstructedSin(DatasetConstructed):
+    def __init__(
+        self,
+        grid_x1: grid.Grid,
+        grid_x2: grid.Grid,
+        saveload: SaveloadTorch,
+        name_dataset: str,
+        n_instances: int = 10,
+        n_samples_per_instance=4,
+        constant_factor: float = 10.0,
+    ):
+        super().__init__(
+            grid_x1,
+            grid_x2,
+            saveload=saveload,
+            name_dataset=name_dataset,
+            n_instances=n_instances,
+            n_samples_per_instance=4,
+        )
+
+        self._constant_factor = constant_factor
+
     def _generate_instance(self) -> tuple[torch.Tensor, torch.Tensor]:
         weights = torch.distributions.Uniform(low=-1, high=1).sample(
             [self._n_samples_per_instance] * self._grids.n_dims
@@ -312,11 +333,15 @@ class DatasetConstructedSin(DatasetConstructed):
             * torch.sin(torch.pi * sample_x2 * coords_x2)
         )
         const_r = 0.85
-        source = (torch.pi / self._n_samples_per_instance**2) * torch.sum(
+        source = (
+            self._constant_factor * torch.pi / self._n_samples_per_instance**2
+        ) * torch.sum(
             (idx_sum**const_r) * product,
             dim=(-2, -1),
         )
-        solution = (1 / torch.pi / self._n_samples_per_instance**2) * torch.sum(
+        solution = (
+            self._constant_factor / torch.pi / self._n_samples_per_instance**2
+        ) * torch.sum(
             (idx_sum ** (const_r - 1)) * product,
             dim=(-2, -1),
         )
