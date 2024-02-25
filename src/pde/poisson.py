@@ -8,7 +8,7 @@ import scipy
 import torch
 from scipy.interpolate import RectBivariateSpline
 
-from src.deepl import fno_2d, network
+from src.deepl import cno, fno_2d, network
 from src.definition import DEFINITION
 from src.numerics import distance, grid, multidiff
 from src.util import plot
@@ -549,6 +549,47 @@ class LearnerPoissonFNO2d(LearnerPoissonFNO):
 
         lhss = lhss.to(device=self._device, dtype=torch.float)
         rhss_ours = self._network(lhss).detach().to("cpu")[0, :, :, 0]
+        self._plot_save(rhss_ours, f"{self._location}-ours")
+
+
+class DatasetReorderCNO:
+    def __init__(self, dataset: torch.utils.data.dataset.TensorDataset):
+        self._dataset = dataset
+
+    def reorder(self) -> torch.utils.data.dataset.TensorDataset:
+        lhss, rhss = [], []
+        for lhs, rhs in self._dataset:
+            lhss.append(lhs.permute(2, 0, 1))
+            rhss.append(rhs.permute(2, 0, 1))
+        return torch.utils.data.TensorDataset(torch.stack(lhss), torch.stack(rhss))
+
+
+class LearnerPoissonCNO2d(LearnerPoissonFNO):
+    def __init__(
+        self,
+        grid_x1: grid.Grid,
+        grid_x2: grid.Grid,
+        dataset_eval: torch.utils.data.dataset.TensorDataset,
+        dataset_train: torch.utils.data.dataset.TensorDataset,
+        saveload: SaveloadTorch,
+        name_learner: str,
+    ):
+        super().__init__(
+            grid_x1,
+            grid_x2,
+            cno.CNO2d(in_channel=4, out_channel=1),
+            dataset_eval=DatasetReorderCNO(dataset_eval).reorder(),
+            dataset_train=DatasetReorderCNO(dataset_train).reorder(),
+            saveload=saveload,
+            saveload_location=f"network-cno-2d-{name_learner}",
+        )
+
+    def plot(self) -> None:
+        lhss, rhss = self._one_lhss_rhss(self._dataset_eval)
+        self._plot_save(rhss[0, 0, :, :], f"{self._location}-theirs")
+
+        lhss = lhss.to(device=self._device, dtype=torch.float)
+        rhss_ours = self._network(lhss).detach().to("cpu")[0, 0, :, :]
         self._plot_save(rhss_ours, f"{self._location}-ours")
 
 
