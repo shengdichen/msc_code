@@ -1,5 +1,4 @@
 import abc
-import itertools
 import logging
 import math
 import typing
@@ -9,17 +8,25 @@ import scipy
 import torch
 from scipy.interpolate import RectBivariateSpline
 
-from src.deepl import fno_1d, fno_2d, network
+from src.deepl import fno_2d, network
 from src.definition import DEFINITION
 from src.numerics import distance, grid, multidiff
 from src.util import plot
-from src.util.saveload import SaveloadPde, SaveloadTorch
+from src.util.dataset import MaskerRandom
+from src.util.saveload import SaveloadImage, SaveloadTorch
 
 logger = logging.getLogger(__name__)
 
 
-class PDEPoisson:
-    def __init__(self, grid_x1: grid.Grid, grid_x2: grid.Grid, source: torch.Tensor):
+class SolverPoisson:
+    def __init__(
+        self,
+        grid_x1: grid.Grid,
+        grid_x2: grid.Grid,
+        source: torch.Tensor,
+        n_iters_max: int = int(5e3),
+        error_threshold: float = 1e-4,
+    ):
         self._grid_x1, self._grid_x2 = grid_x1, grid_x2
         self._grids = grid.Grids([grid_x1, grid_x2])
         # TODO:
@@ -29,60 +36,35 @@ class PDEPoisson:
         ) / 2
 
         self._source_term = source
+        self._solution = self._grids.zeroes_like()
 
-        self._lhss_bound: list[torch.Tensor] = []
-        self._rhss_bound: list[float] = []
-        self._rhss_bound_in_mesh = self._grids.zeroes_like()
-        self._lhss_internal: list[torch.Tensor] = []
-        self._rhss_internal: list[float] = []
-        self._sol = self._grids.zeroes_like()
+        self._n_iters_max, self._error_threshold = n_iters_max, error_threshold
 
-        self._n_iters_max = int(5e3)
-        self._error_threshold = 1e-4
-
-        self._saveload = SaveloadPde("poisson")
-
-    def _make_source_term(self, as_laplace: bool) -> torch.Tensor:
-        if as_laplace:
-            return 100 * np.ones((self._grid_x1.n_pts, self._grid_x2.n_pts))
-
-        res = self._grids.zeroes_like()
-        for (
-            (idx_x1, val_x1),
-            (idx_x2, val_x2),
-        ) in self._grids.steps_with_index():
-            res[idx_x1, idx_x2] = np.sin(np.pi * val_x1) * np.sin(np.pi * val_x2)
-        return res
-
-    def solve(self, boundary_mean: float = -1.0, boundary_sigma: float = 0.0) -> None:
+    def solve(
+        self, boundary_mean: float = -1.0, boundary_sigma: float = 0.0
+    ) -> torch.Tensor:
         logger.info("Poisson.solve()")
-
         self._solve_boundary(mean=boundary_mean, sigma=boundary_sigma)
         self._solve_internal()
-        self._register_internal()
+
+        return self._solution
 
     def _solve_boundary(self, mean: float, sigma: float) -> None:
-        for (
-            (idx_x1, val_x1),
-            (idx_x2, val_x2),
-        ) in self._grids.boundaries_with_index():
-            self._lhss_bound.append([val_x1, val_x2])
+        for (idx_x1, __), (idx_x2, __) in self._grids.boundaries_with_index():
             if math.isclose(sigma, 0.0):
                 rhs = mean
             else:
                 rhs = scipy.stats.norm.rvs(loc=mean, scale=sigma)
-            self._rhss_bound.append(rhs)
-            self._sol[idx_x1, idx_x2] = rhs
-            self._rhss_bound_in_mesh[idx_x1, idx_x2] = rhs
+            self._solution[idx_x1, idx_x2] = rhs
 
     def _solve_internal(self) -> None:
         # REF:
         #   https://ubcmath.github.io/MATH316/fd/laplace.html#exercises-for-laplace-s-equation
         for i in range(self._n_iters_max):
-            sol_current = np.copy(self._sol)
+            sol_current = np.copy(self._solution)
             self._solve_internal_current()
 
-            max_update = torch.max(torch.abs(self._sol - sol_current))
+            max_update = torch.max(torch.abs(self._solution - sol_current))
             if max_update < self._error_threshold:
                 logger.info(
                     f"normal termination at iteration [{i}/{self._n_iters_max}]"
@@ -98,172 +80,337 @@ class PDEPoisson:
             )
 
     def _solve_internal_current(self) -> None:
-        for (idx_x1, _), (idx_x2, _) in self._grids.internals_with_index():
-            self._sol[idx_x1, idx_x2] = 0.25 * (
-                self._sol[idx_x1 + 1, idx_x2]
-                + self._sol[idx_x1 - 1, idx_x2]
-                + self._sol[idx_x1, idx_x2 + 1]
-                + self._sol[idx_x1, idx_x2 - 1]
+        for (idx_x1, __), (idx_x2, __) in self._grids.internals_with_index():
+            self._solution[idx_x1, idx_x2] = 0.25 * (
+                self._solution[idx_x1 + 1, idx_x2]
+                + self._solution[idx_x1 - 1, idx_x2]
+                + self._solution[idx_x1, idx_x2 + 1]
+                + self._solution[idx_x1, idx_x2 - 1]
                 - self._sum_of_squares * self._source_term[idx_x1, idx_x2]
             )
 
-    def _register_internal(self) -> None:
+    def solution_internal(self) -> tuple[torch.Tensor, torch.Tensor]:
+        lhss: list[tuple[float, float]] = []
+        rhss: list[float] = []
+
         for (
             (idx_x1, val_x1),
             (idx_x2, val_x2),
         ) in self._grids.internals_with_index():
-            self._lhss_internal.append([val_x1, val_x2])
-            self._rhss_internal.append(self._sol[idx_x1, idx_x2])
+            lhss.append((val_x1, val_x2))
+            rhss.append(self._solution[idx_x1, idx_x2].item())
+        return torch.tensor(lhss), torch.tensor(rhss)
 
-    @property
-    def rhss_bound_in_mesh(self) -> torch.Tensor:
-        return self._rhss_bound_in_mesh
-
-    @property
-    def rhss_bound_flattened(self) -> torch.Tensor:
-        return self._grids.flattten(self._rhss_bound_in_mesh)
-
-    @property
-    def rhss_in_mesh(self) -> torch.Tensor:
-        return self._sol
-
-    @property
-    def rhss_flattened(self) -> torch.Tensor:
-        return self._grids.flattten(self._sol)
-
-    def as_dataset(
+    def solution_boundary(
         self,
-    ) -> tuple[
-        torch.utils.data.dataset.TensorDataset, torch.utils.data.dataset.TensorDataset
-    ]:
-        if not (self._saveload.exists_boundary() and self._saveload.exists_internal()):
-            self.solve()
-        dataset_boundary = self._saveload.dataset_boundary(
-            self._lhss_bound, self._rhss_bound
-        )
-        dataset_internal = self._saveload.dataset_internal(
-            self._lhss_internal, self._rhss_internal
-        )
-        return dataset_boundary, dataset_internal
+    ) -> tuple[torch.Tensor, tuple[torch.Tensor, torch.Tensor]]:
+        lhss: list[tuple[float, float]] = []
+        rhss_flat: list[float] = []
+        rhss_mesh = self._grids.zeroes_like()
+
+        for (
+            (idx_x1, val_x1),
+            (idx_x2, val_x2),
+        ) in self._grids.boundaries_with_index():
+            lhss.append((val_x1, val_x2))
+            rhs = self._solution[idx_x1, idx_x2].item()
+            rhss_flat.append(rhs)
+            rhss_mesh[idx_x1, idx_x2] = rhs
+        return torch.tensor(lhss), (torch.tensor(rhss_mesh), rhss_mesh)
 
     def as_interpolator(
-        self, dataset_save_as: str = "dataset", **kwargs
+        self, saveload: SaveloadTorch, name: str = "dataset", **kwargs
     ) -> RectBivariateSpline:
         def make_target() -> None:
             self.solve(**kwargs)
-            return self._sol
+            return self._solution
 
-        location = self._saveload.rebase_location(dataset_save_as)
-        self._sol = self._saveload.load_or_make(location, make_target)
+        location = saveload.rebase_location(name)
+        self._solution = saveload.load_or_make(location, make_target)
         return RectBivariateSpline(
             self._grid_x1.step(),
             self._grid_x2.step(),
-            self._sol,
+            self._solution,
         )
 
-    def plot(self) -> None:
-        plotter = plot.PlotFrame(self._grids, self._sol, "poisson")
+    def plot(self, saveload: SaveloadImage, name: str = "poisson-solver") -> None:
+        plotter = plot.PlotFrame(self._grids, self._solution, name, saveload)
         plotter.plot_2d()
         plotter.plot_3d()
 
 
-class DatasetFNO1D:
+class DatasetPoisson:
     def __init__(
         self,
         grid_x1: grid.Grid,
         grid_x2: grid.Grid,
+        n_instances: int,
+        name_dataset: str,
+        saveload: SaveloadTorch,
+    ):
+        self._grid_x1, self._grid_x2 = grid_x1, grid_x2
+        self._grids = grid.Grids([self._grid_x1, self._grid_x2])
+
+        self._n_instances = n_instances
+        self._saveload_location, self._saveload = (
+            f"dataset-fno-2d-{name_dataset}",
+            saveload,
+        )
+
+    def dataset_unmasked(self) -> torch.utils.data.dataset.TensorDataset:
+        def make() -> torch.utils.data.dataset.TensorDataset:
+            return self._make_dataset_unmasked()
+
+        location = self._saveload.rebase_location(self._saveload_location)
+        return self._saveload.load_or_make(location, make)
+
+    @abc.abstractmethod
+    def _make_dataset_unmasked(self) -> torch.utils.data.dataset.TensorDataset:
+        raise NotImplementedError
+
+    def dataset_masked_random(
+        self, perc_to_mask: float
+    ) -> torch.utils.data.dataset.TensorDataset:
+        def make() -> torch.utils.data.dataset.TensorDataset:
+            return self._make_dataset_masked_random(perc_to_mask)
+
+        location = self._saveload.rebase_location(self._saveload_location)
+        return self._saveload.load_or_make(location, make)
+
+    @abc.abstractmethod
+    def _make_dataset_masked_random(
+        self, perc_to_mask: float
+    ) -> torch.utils.data.dataset.TensorDataset:
+        raise NotImplementedError
+
+    def plot_instance(self) -> None:
+        plotter = plot.PlotFrame(
+            self._grids,
+            self._generate_instance_solution(),
+            self._saveload_location,
+            SaveloadImage(self._saveload.base),
+        )
+        plotter.plot_2d()
+        plotter.plot_3d()
+
+    @abc.abstractmethod
+    def _generate_instance_solution(self) -> torch.Tensor:
+        raise NotImplementedError
+
+
+class DatasetConstructed(DatasetPoisson):
+    def __init__(
+        self,
+        grid_x1: grid.Grid,
+        grid_x2: grid.Grid,
+        saveload: SaveloadTorch,
+        name_dataset: str,
+        n_instances: int = 10,
+        n_samples_per_instance=4,
+    ):
+        super().__init__(
+            grid_x1,
+            grid_x2,
+            n_instances=n_instances,
+            saveload=saveload,
+            name_dataset=name_dataset,
+        )
+
+        coords_x1, coords_x2 = self._grids.coords_as_mesh()
+        self._coords_x1, self._coords_x2 = (
+            torch.from_numpy(coords_x1),
+            torch.from_numpy(coords_x2),
+        )
+        self._n_samples_per_instance = n_samples_per_instance  # aka, |K|
+
+    def _make_dataset_unmasked(self) -> torch.utils.data.dataset.TensorDataset:
+        solutions, sources, solutions_masked = [], [], []
+        for __ in range(self._n_instances):
+            solution, source = self._generate_instance()
+            solutions.append(solution)
+            sources.append(source)
+            solutions_masked.append(source)
+        return self._assemble(solutions_masked, sources, solutions)
+
+    def _make_dataset_masked_random(
+        self, perc_to_mask: float
+    ) -> torch.utils.data.dataset.TensorDataset:
+        solutions, sources, solutions_masked = [], [], []
+        for __ in range(self._n_instances):
+            solution, source = self._generate_instance()
+            solutions.append(solution)
+            sources.append(source)
+            solutions_masked.append(
+                MaskerRandom(solution, perc_to_mask=perc_to_mask).mask()
+            )
+        return self._assemble(solutions_masked, sources, solutions)
+
+    def _assemble(
+        self,
+        solutions_masked: torch.Tensor,
+        sources: torch.Tensor,
+        solutions: torch.Tensor,
+    ) -> torch.utils.data.dataset.TensorDataset:
+        lhss = torch.stack(
+            [
+                torch.stack(solutions_masked),
+                torch.stack(sources),
+                self._coords_x1.repeat(self._n_instances, 1, 1),
+                self._coords_x2.repeat(self._n_instances, 1, 1),
+            ],
+            dim=-1,
+        )
+        rhss = torch.stack(solutions).unsqueeze(-1)
+        return torch.utils.data.TensorDataset(lhss, rhss)
+
+    def _generate_instance_solution(self) -> torch.Tensor:
+        return self._generate_instance()[0]
+
+    @abc.abstractmethod
+    def _generate_instance(self) -> tuple[torch.Tensor, torch.Tensor]:
+        raise NotImplementedError
+
+
+class DatasetConstructedSinCos(DatasetConstructed):
+    def _generate_instance(self) -> tuple[torch.Tensor, torch.Tensor]:
+        solutions, sources = self._grids.zeroes_like(), self._grids.zeroes_like()
+        for i_sample in range(self._n_samples_per_instance):
+            weight_sin, weight_cos = torch.distributions.Uniform(low=-1, high=1).sample(
+                torch.Size([2])
+            )
+            factor = i_sample * torch.pi
+            matrix_sin, matrix_cos = (
+                torch.sin(factor * self._coords_x1)
+                * torch.sin(factor * self._coords_x2),
+                torch.cos(factor * self._coords_x1)
+                * torch.cos(factor * self._coords_x2),
+            )
+            solution = weight_sin * matrix_sin + weight_cos * matrix_cos
+            solutions += solution
+            sources += -((self._n_samples_per_instance * torch.pi) ** 2) * solution
+
+        normalizer = self._n_samples_per_instance**2
+        solutions /= normalizer
+        sources /= normalizer
+        return solutions, sources
+
+
+class DatasetConstructedSin(DatasetConstructed):
+    def _generate_instance(self) -> tuple[torch.Tensor, torch.Tensor]:
+        weights = torch.distributions.Uniform(low=-1, high=1).sample(
+            [self._n_samples_per_instance] * self._grids.n_dims
+        )
+
+        sample_x1, sample_x2 = self._sample_coords()
+        idx_sum = sample_x1**2 + sample_x2**2
+
+        coords_x1 = self._coords_x1[..., None, None]
+        coords_x2 = self._coords_x2[..., None, None]
+        product = (
+            weights
+            * torch.sin(torch.pi * sample_x1 * coords_x1)
+            * torch.sin(torch.pi * sample_x2 * coords_x2)
+        )
+        const_r = 0.85
+        source = (torch.pi / self._n_samples_per_instance**2) * torch.sum(
+            (idx_sum**const_r) * product,
+            dim=(-2, -1),
+        )
+        solution = (1 / torch.pi / self._n_samples_per_instance**2) * torch.sum(
+            (idx_sum ** (const_r - 1)) * product,
+            dim=(-2, -1),
+        )
+        return source, solution
+
+    def _sample_coords(self) -> tuple[torch.Tensor, torch.Tensor]:
+        sample_x1, sample_x2 = np.meshgrid(
+            torch.arange(1, self._n_samples_per_instance + 1).float(),
+            torch.arange(1, self._n_samples_per_instance + 1).float(),
+        )
+        return torch.from_numpy(sample_x1), torch.from_numpy(sample_x2)
+
+
+class DatasetSolver(DatasetPoisson):
+    def __init__(
+        self,
+        grid_x1: grid.Grid,
+        grid_x2: grid.Grid,
+        saveload: SaveloadTorch,
+        name_dataset: str,
         source: torch.Tensor,
         boundary_mean: float,
         boundary_sigma: float,
         n_instances_train: int = 9,
         n_instances_test: int = 1,
     ):
-        self._grid_x1, self._grid_x2 = grid_x1, grid_x2
-        self._grids_full = grid.Grids([self._grid_x1, self._grid_x2])
+        super().__init__(
+            grid_x1,
+            grid_x2,
+            n_instances=n_instances_train + n_instances_test,
+            saveload=saveload,
+            name_dataset=name_dataset,
+        )
+
         self._source = source
         self._boundary_mean, self._boundary_sigma = boundary_mean, boundary_sigma
 
-        self._n_instances, self._n_instances_train, self._n_instances_test = (
-            n_instances_train + n_instances_test,
+        self._n_instances_train, self._n_instances_test = (
             n_instances_train,
             n_instances_test,
         )
-        self._saveload = SaveloadTorch("poisson")
 
-    def make(self) -> torch.utils.data.dataset.TensorDataset:
-        grids = torch.tensor(list(self._grids_full.steps()))
-        grids_x1, grids_x2 = (
-            self._repeat(grids[:, 0], self._n_instances),
-            self._repeat(grids[:, 1], self._n_instances),
-        )
-        sources = self._repeat(
-            self._grids_full.flattten(self._source), self._n_instances
-        )
+    def _make_dataset_unmasked(self) -> torch.utils.data.dataset.TensorDataset:
+        rhss_all, rhss_masked = self._generate_instances()
+        self._assemble(rhss_all, rhss_masked)
 
-        bounds_all, rhss_all = [], []
+    def _make_dataset_masked_random(
+        self, perc_to_mask: float
+    ) -> torch.utils.data.dataset.TensorDataset:
+        rhss_all, rhss_masked = self._generate_instances(perc_to_mask)
+        return self._assemble(rhss_all, rhss_masked)
+
+    def _generate_instances(
+        self,
+        perc_to_mask: typing.Optional[float] = None,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        rhss_all, rhss_masked = [], []
         for __ in range(self._n_instances):
-            solver = PDEPoisson(self._grid_x1, self._grid_x2, source=self._source)
-            solver.solve(
+            solver = SolverPoisson(
+                self._grid_x1, self._grid_x2, source=self._source, error_threshold=1
+            )
+            solution = solver.solve(
                 boundary_mean=self._boundary_mean, boundary_sigma=self._boundary_sigma
             )
-            bounds_all.append(solver.rhss_bound_flattened)
-            rhss_all.append(solver.rhss_flattened)
+            rhss_all.append(solution)
+            if not perc_to_mask:
+                rhss_masked.append(solution)
+            else:
+                rhss_masked.append(
+                    MaskerRandom(solution, perc_to_mask=perc_to_mask).mask()
+                )
 
-        bounds_all_torch, rhss_all_torch = (
-            torch.stack(bounds_all),
-            torch.stack(rhss_all),
+        return torch.stack(rhss_all), torch.stack(rhss_masked)
+
+    def _assemble(
+        self, rhss_all: torch.Tensor, rhss_masked: torch.Tensor
+    ) -> torch.utils.data.dataset.TensorDataset:
+        source_all = self._repeat_mesh_like(self._source, self._n_instances)
+        coords_x1_all, coords_x2_all = [
+            self._repeat_mesh_like(torch.from_numpy(coords_axis), self._n_instances)
+            for coords_axis in self._grids.coords_as_mesh()
+        ]
+
+        lhss_all = torch.stack(
+            [source_all, rhss_masked, coords_x1_all, coords_x2_all], dim=-1
         )
-        lhss_all_torch = torch.stack(
-            [bounds_all_torch, sources, grids_x1, grids_x2], dim=-1
+        rhss_all = rhss_all.unsqueeze(dim=-1)
+        return torch.utils.data.TensorDataset(lhss_all, rhss_all)
+
+    def _generate_instance_solution(self) -> torch.Tensor:
+        solver = SolverPoisson(self._grid_x1, self._grid_x2, source=self._source)
+        return solver.solve(
+            boundary_mean=self._boundary_mean, boundary_sigma=self._boundary_sigma
         )
-        rhss_all_torch = rhss_all_torch.unsqueeze(-1)
-        return torch.utils.data.TensorDataset(lhss_all_torch, rhss_all_torch)
-
-    def dataset(self) -> None:
-        location = self._saveload.rebase_location("dataset-fno-1d")
-        if not self._saveload.exists(location):
-            self._saveload.save(self.make(), location)
-        return self._saveload.load(location)
-
-    def _repeat(self, target: torch.Tensor, count: int) -> torch.Tensor:
-        return target.repeat(count, 1)
-
-
-class DatasetFNO:
-    def __init__(
-        self,
-        grid_x1: grid.Grid,
-        grid_x2: grid.Grid,
-        source: torch.Tensor,
-        boundary_mean: float,
-        boundary_sigma: float,
-        n_instances_train: int = 9,
-        n_instances_test: int = 1,
-    ):
-        self._grid_x1, self._grid_x2 = grid_x1, grid_x2
-        self._grids_full = grid.Grids([self._grid_x1, self._grid_x2])
-        self._source = source
-        self._boundary_mean, self._boundary_sigma = boundary_mean, boundary_sigma
-
-        self._n_instances, self._n_instances_train, self._n_instances_test = (
-            n_instances_train + n_instances_test,
-            n_instances_train,
-            n_instances_test,
-        )
-        self._saveload = SaveloadTorch("poisson")
-
-    def as_dataset(self) -> torch.utils.data.dataset.TensorDataset:
-        def make_target() -> torch.utils.data.dataset.TensorDataset:
-            return self.make()
-
-        location = self._saveload.rebase_location("dataset-fno-2d")
-        return self._saveload.load_or_make(location, make_target)
-
-    def make(self) -> torch.utils.data.dataset.TensorDataset:
-        raise NotImplementedError
-
-    def _generate_instances(self) -> tuple[torch.Tensor, torch.Tensor]:
-        raise NotImplementedError
 
     def _repeat_mesh_like(self, mesh_like: torch.Tensor, count: int) -> torch.Tensor:
         if mesh_like.dim() != 2:
@@ -274,190 +421,15 @@ class DatasetFNO:
         return res
 
 
-class DatasetFNOMesh(DatasetFNO):
-    def __init__(
-        self,
-        grid_x1: grid.Grid,
-        grid_x2: grid.Grid,
-        source: torch.Tensor,
-        boundary_mean: float,
-        boundary_sigma: float,
-        n_instances_train: int = 9,
-        n_instances_test: int = 1,
-    ):
-        super().__init__(
-            grid_x1,
-            grid_x2,
-            source,
-            boundary_mean=boundary_mean,
-            boundary_sigma=boundary_sigma,
-            n_instances_train=n_instances_train,
-            n_instances_test=n_instances_test,
-        )
-
-        self._lhss_x1, self._lhss_x2 = self._grids_full.coords_as_mesh()
-
-    def make(self) -> torch.utils.data.dataset.TensorDataset:
-        # coords_x1_all: (n_instances, n_gripts_x1, n_gripts_x2)
-        # coords_x2_all: (n_instances, n_gripts_x1, n_gripts_x2)
-        # rhss_all: (n_instances, n_gripts_x1, n_gripts_x2)
-        bounds_all, rhss_all = self._generate_instances()
-        coords_x1_all, coords_x2_all = [
-            self._repeat_mesh_like(torch.from_numpy(coords_axis), self._n_instances)
-            for coords_axis in self._grids_full.coords_as_mesh()
-        ]
-        source_all = self._repeat_mesh_like(self._source, self._n_instances)
-
-        # make fno-ready:
-        # lhss_all: (n_instances, n_gripts_x1, n_gripts_x2, 4)
-        # rhss_all: (n_instances, n_gripts_x1, n_gripts_x2, 1)
-        lhss_all = torch.stack(
-            [bounds_all, source_all, coords_x1_all, coords_x2_all], dim=-1
-        )
-        rhss_all = rhss_all.unsqueeze(dim=-1)
-        return torch.utils.data.TensorDataset(lhss_all, rhss_all)
-
-    def _generate_instances(self) -> tuple:
-        bounds_all, rhss_all = [], []
-        for __ in range(self._n_instances):
-            solver = PDEPoisson(self._grid_x1, self._grid_x2, source=self._source)
-            solver.solve(
-                boundary_mean=self._boundary_mean, boundary_sigma=self._boundary_sigma
-            )
-            bounds_all.append(solver.rhss_bound_in_mesh)
-            rhss_all.append(solver.rhss_in_mesh)
-
-        return (
-            torch.stack(bounds_all),
-            torch.stack(rhss_all),
-        )
-
-
-class DatasetFNOInterpolation(DatasetFNO):
-    def __init__(
-        self,
-        grid_x1: grid.Grid,
-        grid_x2: grid.Grid,
-        source: torch.Tensor,
-        boundary_mean: float,
-        boundary_sigma: float,
-        n_gridpts_per_instance: int = 5000,
-        n_instances_train: int = 9,
-        n_instances_test: int = 1,
-    ):
-        super().__init__(
-            grid_x1,
-            grid_x2,
-            source,
-            boundary_mean=boundary_mean,
-            boundary_sigma=boundary_sigma,
-            n_instances_train=n_instances_train,
-            n_instances_test=n_instances_test,
-        )
-
-        self._lhss = self._grids_full.samples_sobol(n_gridpts_per_instance)
-
-    def make(self) -> torch.utils.data.dataset.TensorDataset:
-        # lhss_all: (n_instances, n_gripts, 2)
-        # rhss_all: (n_instances, n_gripts, 1)
-        lhss_all, rhss_all = self._generate_instances()
-
-        # make fno-ready:
-        # lhss_all: (n_instances, n_gripts, 3)
-        lhss_all = torch.cat([rhss_all, lhss_all], dim=-1)
-
-        return torch.utils.data.TensorDataset(lhss_all, rhss_all)
-
-    def _generate_instances(self) -> tuple[torch.Tensor, torch.Tensor]:
-        lhss_all, rhss_all = [], []
-        for __ in range(self._n_instances_test + self._n_instances_train):
-            lhss_all.append(self._lhss)
-            rhss_all.append(self._generate_rhss_instance())
-
-        lhss_all_torch, rhss_all_torch = torch.stack(lhss_all), torch.stack(rhss_all)
-        return lhss_all_torch, rhss_all_torch
-
-    def _generate_rhss_instance(self) -> torch.Tensor:
-        solver = PDEPoisson(self._grid_x1, self._grid_x2, source=self._source)
-        solver.solve(
-            boundary_mean=self._boundary_mean, boundary_sigma=self._boundary_sigma
-        )
-        rhss = torch.from_numpy(
-            solver.as_interpolator().ev(self._lhss[:, 0], self._lhss[:, 1])
-        ).view(-1, 1)
-        return rhss
-
-
-class MaskingDatasetPad:
-    def __init__(self, dataset: torch.utils.data.dataset.TensorDataset):
-        self._dataset = dataset
-
-        self._n_batches = len(self._dataset)
-        self._shape_lhs, self._shape_rhs = (
-            self._dataset[0][0].shape,
-            self._dataset[0][1].shape,
-        )
-        self._n_gridpts_x1, self._n_gridpts_x2 = self._shape_lhs[0], self._shape_lhs[1]
-
-    def mask(
-        self, val_min: float, val_max: float, val_mask: float = 0.0
-    ) -> torch.utils.data.dataset.TensorDataset:
-        lhss_all, rhss_all = self._init_lhss_rhss_masked(val_mask)
-
-        for i, (lhss, rhss) in enumerate(self._dataset):
-            for idx_x1, idx_x2 in itertools.product(
-                range(self._n_gridpts_x1), range(self._n_gridpts_x2)
-            ):
-                lhs, rhs = lhss[idx_x1, idx_x2, :], rhss[idx_x1, idx_x2, :]
-                val_x1, val_x2 = lhs[2], lhs[3]
-                if val_min < val_x1 < val_max and val_min < val_x2 < val_max:
-                    lhss_all[i, idx_x1, idx_x2, :] = lhs
-                    rhss_all[i, idx_x1, idx_x2, :] = rhs
-
-        return torch.utils.data.TensorDataset(lhss_all, rhss_all)
-
-    def _init_lhss_rhss_masked(
-        self, val_mask: float
-    ) -> tuple[torch.Tensor, torch.Tensor]:
-        if val_mask == 0.0:
-            lhss_all, rhss_all = (
-                torch.zeros((self._n_batches, *self._shape_lhs)),
-                torch.zeros((self._n_batches, *self._shape_rhs)),
-            )
-        else:
-            lhss_all, rhss_all = (
-                val_mask * torch.ones((self._n_batches, *self._shape_lhs)),
-                val_mask * torch.ones((self._n_batches, *self._shape_rhs)),
-            )
-        return lhss_all, rhss_all
-
-
-class MaskingDatasetShrink:
-    def __init__(self, dataset: torch.utils.data.dataset.TensorDataset):
-        self._dataset = dataset
-
-        lhss, rhss = [], []
-        for lhs, rhs in self._dataset:
-            lhss.append(lhs)
-            rhss.append(rhs)
-        self._lhss, self._rhss = torch.stack(lhss), torch.stack(rhss)
-
-    def mask(
-        self, idx_min: int, idx_max: int
-    ) -> torch.utils.data.dataset.TensorDataset:
-        lhss = self._lhss[:, idx_min:idx_max, idx_min:idx_max, :]
-        rhss = self._rhss[:, idx_min:idx_max, idx_min:idx_max, :]
-        return torch.utils.data.TensorDataset(lhss, rhss)
-
-
 class LearnerPoissonFNO:
     def __init__(
         self,
         grid_x1: grid.Grid,
         grid_x2: grid.Grid,
         network_fno: torch.nn.Module,
-        dataset_full: torch.utils.data.dataset.TensorDataset,
-        dataset_mask: torch.utils.data.dataset.TensorDataset,
+        dataset_eval: torch.utils.data.dataset.TensorDataset,
+        dataset_train: torch.utils.data.dataset.TensorDataset,
+        saveload: SaveloadTorch,
         saveload_location: str,
     ):
         self._device = DEFINITION.device_preferred
@@ -465,9 +437,9 @@ class LearnerPoissonFNO:
         self._grid_x1, self._grid_x2 = grid_x1, grid_x2
         self._grids = grid.Grids([self._grid_x1, self._grid_x2])
         self._network = network_fno.to(self._device)
-        self._dataset_full, self._dataset_mask = dataset_full, dataset_mask
+        self._dataset_eval, self._dataset_train = dataset_eval, dataset_train
 
-        self._saveload = SaveloadTorch("poisson")
+        self._saveload = saveload
         self._location = self._saveload.rebase_location(saveload_location)
 
     def train(self, n_epochs: int = 2001, freq_eval: int = 100) -> None:
@@ -477,7 +449,7 @@ class LearnerPoissonFNO:
         for epoch in range(n_epochs):
             loss_all = []
             for lhss_batch, rhss_batch in torch.utils.data.DataLoader(
-                self._dataset_mask, batch_size=2
+                self._dataset_train, batch_size=2
             ):
                 lhss_batch, rhss_batch = (
                     lhss_batch.to(device=self._device, dtype=torch.float),
@@ -506,7 +478,7 @@ class LearnerPoissonFNO:
         with torch.no_grad():
             self._network.eval()
             for lhss_batch, rhss_batch in torch.utils.data.DataLoader(
-                self._dataset_full
+                self._dataset_eval
             ):
                 lhss_batch, rhss_batch = (
                     lhss_batch.to(device=self._device, dtype=torch.float),
@@ -524,7 +496,9 @@ class LearnerPoissonFNO:
         pass
 
     def _plot_save(self, rhss_ours: torch.Tensor, save_as: str) -> None:
-        plotter = plot.PlotFrame(self._grids, rhss_ours, save_as)
+        plotter = plot.PlotFrame(
+            self._grids, rhss_ours, save_as, SaveloadImage(self._saveload.base)
+        )
         plotter.plot_2d()
         plotter.plot_3d()
 
@@ -549,96 +523,53 @@ class LearnerPoissonFNO:
         return lhss, rhss
 
 
-class LearnerPoissonFNO1d(LearnerPoissonFNO):
-    def __init__(self):
-        grid_x1 = grid.Grid(n_pts=50, stepsize=0.1, start=0.0)
-        grid_x2 = grid.Grid(n_pts=50, stepsize=0.1, start=0.0)
-        dataset = DatasetFNO1D(
-            grid_x1,
-            grid_x2,
-            source=grid.Grids([grid_x1, grid_x2]).constants_like(-200),
-            boundary_mean=-20,
-            boundary_sigma=1,
-        ).dataset()
-        dataset_full = dataset
-        dataset_mask = dataset
-
-        super().__init__(
-            grid_x1,
-            grid_x2,
-            fno_1d.FNO1d(n_channels_lhs=4),
-            dataset_full=dataset_full,
-            dataset_mask=dataset_mask,
-            saveload_location="network-fno-1d",
-        )
-
-    def plot(self) -> None:
-        lhss, rhss = self._one_lhss_rhss(self._dataset_full)
-        self._plot_save(
-            self._grids.unflatten_2d(rhss.squeeze()), "poisson-fno-1d-theirs"
-        )
-
-        lhss = lhss.to(self._device)
-        rhss_ours = self._grids.unflatten_2d(
-            self._network(lhss).squeeze().detach().to("cpu")
-        )
-        self._plot_save(rhss_ours, "poisson-fno-1d-ours")
-
-
 class LearnerPoissonFNO2d(LearnerPoissonFNO):
-    def __init__(self, use_dataset_shrink: bool = True):
-        grid_x1 = grid.Grid(n_pts=50, stepsize=0.1, start=0.0)
-        grid_x2 = grid.Grid(n_pts=50, stepsize=0.1, start=0.0)
-        dataset = DatasetFNOMesh(
-            grid_x1,
-            grid_x2,
-            source=grid.Grids([grid_x1, grid_x2]).constants_like(-200),
-            boundary_mean=-20,
-            boundary_sigma=1,
-        )
-        dataset_full = dataset.as_dataset()
-        if use_dataset_shrink:
-            self._mask_type = "shrink"
-            dataset_mask = MaskingDatasetShrink(dataset_full).mask(
-                idx_min=10, idx_max=40
-            )
-        else:
-            self._mask_type = "pad"
-            dataset_mask = MaskingDatasetPad(dataset_full).mask(
-                val_min=1.0, val_max=4.0
-            )
-
+    def __init__(
+        self,
+        grid_x1: grid.Grid,
+        grid_x2: grid.Grid,
+        dataset_eval: torch.utils.data.dataset.TensorDataset,
+        dataset_train: torch.utils.data.dataset.TensorDataset,
+        saveload: SaveloadTorch,
+        name_learner: str,
+    ):
         super().__init__(
             grid_x1,
             grid_x2,
             fno_2d.FNO2d(n_channels_lhs=4),
-            dataset_full=dataset_full,
-            dataset_mask=dataset_mask,
-            saveload_location=f"network-fno-2d-{self._mask_type}",
+            dataset_eval=dataset_eval,
+            dataset_train=dataset_train,
+            saveload=saveload,
+            saveload_location=f"network-fno-2d-{name_learner}",
         )
 
     def plot(self) -> None:
-        lhss, rhss = self._one_lhss_rhss(self._dataset_full)
-        self._plot_save(rhss[0, :, :, 0], "poisson-fno-2d-theirs")
+        lhss, rhss = self._one_lhss_rhss(self._dataset_eval)
+        self._plot_save(rhss[0, :, :, 0], f"{self._location}-theirs")
 
         lhss = lhss.to(device=self._device, dtype=torch.float)
         rhss_ours = self._network(lhss).detach().to("cpu")[0, :, :, 0]
-        self._plot_save(rhss_ours, f"poisson-fno-2d-{self._mask_type}")
+        self._plot_save(rhss_ours, f"{self._location}-ours")
 
 
 class LearnerPoissonFC:
-    def __init__(self):
+    def __init__(self, n_pts_mask: int = 30):
         self._device = DEFINITION.device_preferred
+        self._name_variant = f"fc-{n_pts_mask}"
 
         grid_x1 = grid.Grid(n_pts=50, stepsize=0.1, start=0.0)
         grid_x2 = grid.Grid(n_pts=50, stepsize=0.1, start=0.0)
         self._grids_full = grid.Grids([grid_x1, grid_x2])
 
-        solver = PDEPoisson(
+        self._saveload = SaveloadTorch("poisson")
+        solver = SolverPoisson(
             grid_x1, grid_x2, source=self._grids_full.constants_like(-200)
         )
         self._solver = solver.as_interpolator(
-            dataset_save_as="dataset-fc", boundary_mean=-20, boundary_sigma=1
+            saveload=self._saveload,
+            name="dataset-fc",
+            boundary_mean=-20,
+            boundary_sigma=1,
         )
         self._lhss_eval, self._rhss_exact_eval = self._make_lhss_rhss_train(
             self._grids_full, n_pts=5000
@@ -646,8 +577,8 @@ class LearnerPoissonFC:
 
         grids_mask = grid.Grids(
             [
-                grid.Grid(n_pts=30, stepsize=0.1, start=1.0),
-                grid.Grid(n_pts=30, stepsize=0.1, start=1.0),
+                grid.Grid(n_pts=n_pts_mask, stepsize=0.1, start=0.5),
+                grid.Grid(n_pts=n_pts_mask, stepsize=0.1, start=0.5),
             ]
         )
         self._lhss_train, self._rhss_exact_train = self._make_lhss_rhss_train(
@@ -689,8 +620,10 @@ class LearnerPoissonFC:
                 logger.info(f"epoch {epoch:04}> " f"loss [train]: {loss.item():.4} ")
                 self.evaluate_model()
 
-        saveload = SaveloadTorch("poisson")
-        saveload.save(self._network, saveload.rebase_location("network-fc"))
+        self._saveload.save(
+            self._network,
+            self._saveload.rebase_location(f"network-{self._name_variant}"),
+        )
 
     def evaluate_model(self) -> None:
         dist = distance.Distance(
@@ -699,9 +632,8 @@ class LearnerPoissonFC:
         logger.info(f"eval> (mse, mse%): {dist.mse()}, {dist.mse_percentage()}")
 
     def load(self) -> None:
-        saveload = SaveloadTorch("poisson")
-        location = saveload.rebase_location("network-fc")
-        self._network = saveload.load(location)
+        location = self._saveload.rebase_location(f"network-{self._name_variant}")
+        self._network = self._saveload.load(location)
 
     def plot(self) -> None:
         res = self._grids_full.zeroes_like_numpy()
@@ -713,9 +645,68 @@ class LearnerPoissonFC:
             lhs = torch.tensor([val_x1, val_x2]).view(1, 2).to(self._device)
             res[idx_x1, idx_x2] = self._eval_network(lhs)
 
-        plotter = plot.PlotFrame(self._grids_full, res, "poisson-fc")
+        plotter = plot.PlotFrame(
+            self._grids_full,
+            res,
+            f"poisson-{self._name_variant}",
+            SaveloadImage(self._saveload.base),
+        )
         plotter.plot_2d()
         plotter.plot_3d()
+
+
+class Learners:
+    def __init__(self):
+        self._grid_x1 = grid.Grid(n_pts=64, stepsize=0.01, start=0.0)
+        self._grid_x2 = grid.Grid(n_pts=64, stepsize=0.01, start=0.0)
+
+        self._idx_min, self._idx_max = 10, 40
+        self._saveload = SaveloadTorch("poisson")
+
+    def dataset_standard(self) -> None:
+        name_dataset = "dataset-fno-2d-standard"
+        ds = DatasetSolver(
+            self._grid_x1,
+            self._grid_x2,
+            saveload=self._saveload,
+            name_dataset=name_dataset,
+            source=grid.Grids([self._grid_x1, self._grid_x2]).constants_like(-200),
+            boundary_mean=-20,
+            boundary_sigma=1,
+        )
+
+        learner = LearnerPoissonFNO2d(
+            self._grid_x1,
+            self._grid_x2,
+            dataset_eval=ds.dataset_masked_random(perc_to_mask=0.5),
+            dataset_train=ds.dataset_masked_random(perc_to_mask=0.5),
+            saveload=self._saveload,
+            name_learner="standard",
+        )
+        learner.train()
+        learner.plot()
+
+    def dataset_custom(self) -> None:
+        name = "custom"
+
+        ds = DatasetCustom(
+            self._grid_x1,
+            self._grid_x2,
+            saveload=self._saveload,
+            name_dataset=name,
+        )
+        ds.plot_instance()
+
+        learner = LearnerPoissonFNO2d(
+            self._grid_x1,
+            self._grid_x2,
+            dataset_eval=ds.dataset_masked_random(perc_to_mask=0.5),
+            dataset_train=ds.dataset_masked_random(perc_to_mask=0.5),
+            saveload=self._saveload,
+            name_learner=name,
+        )
+        learner.train(n_epochs=1001)
+        learner.plot()
 
 
 if __name__ == "__main__":
@@ -725,6 +716,5 @@ if __name__ == "__main__":
 
     torch.manual_seed(42)
 
-    learner = LearnerPoissonFNO2d()
-    learner.train()
-    learner.plot()
+    learners = Learners()
+    learners.dataset_standard()

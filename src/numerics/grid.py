@@ -134,6 +134,7 @@ class Grids:
     def __init__(self, grids: list[Grid]):
         self._grids = grids
         self._n_dims = len(self._grids)
+        self._dims = [gr.n_pts for gr in self._grids]
 
         self._starts, self._ends = (
             torch.tensor(list(self.starts()), dtype=torch.float),
@@ -144,6 +145,10 @@ class Grids:
     def n_dims(self) -> int:
         return self._n_dims
 
+    @property
+    def dims(self) -> list[int]:
+        return self._dims
+
     def samples_sobol(self, n_samples: int, seed: Optional[int] = None) -> torch.Tensor:
         engine = torch.quasirandom.SobolEngine(self._n_dims, seed=seed)
         return engine.draw(n_samples) * (self._ends - self._starts) + self._starts
@@ -153,6 +158,10 @@ class Grids:
 
     def ends(self) -> Iterable[float]:
         return (gr.end for gr in self._grids)
+
+    def indexes(self) -> Generator[Iterable[int], None, None]:
+        for idxs in itertools.product(*(range(gr.n_pts) for gr in self._grids)):
+            yield idxs
 
     def steps(self) -> Generator[Iterable[float], None, None]:
         for vals in itertools.product(*(gr.step() for gr in self._grids)):
@@ -216,8 +225,8 @@ class Grids:
 
     def flattten(self, target: torch.Tensor) -> torch.Tensor:
         res = []
-        for coords in itertools.product(*(range(gr.n_pts) for gr in self._grids)):
-            res.append(target[coords])
+        for indexes in self.indexes():
+            res.append(target[indexes])
         return torch.tensor(res)
 
     def unflatten_2d(self, target: torch.Tensor) -> torch.Tensor:
@@ -228,4 +237,16 @@ class Grids:
         for i, val in enumerate(target):
             row, col = divmod(i, n_gridpts[1])
             res[row, col] = val
+        return res
+
+    def mask(
+        self, raw: torch.Tensor, idx_min: int, idx_max: int, val_mask: float = 0.0
+    ) -> torch.Tensor:
+        if raw.shape != torch.Size(self._dims):
+            raise ValueError("wrong raw shape: must agree with that of the grids")
+
+        res = self.constants_like(val_mask).to(raw.dtype)
+        for indexes in self.indexes():
+            if all([idx_min <= idx <= idx_max for idx in indexes]):
+                res[indexes] = raw[indexes]
         return res

@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any, Union
 
 import torch
+from matplotlib import figure
 
 from src.definition import DEFINITION
 
@@ -14,6 +15,10 @@ logger = logging.getLogger(__name__)
 class Saveloader:
     def __init__(self, base: Path = DEFINITION.BIN_DIR):
         self._base = base
+
+    @property
+    def base(self) -> Path:
+        return self._base
 
     def rebase_location(self, location: Union[Path, str]) -> Path:
         return Path(self._base, location)
@@ -32,13 +37,21 @@ class Saveloader:
 
     def save(self, target: Any, location: Path, overwrite: bool = False) -> None:
         if self.exists(location):
-            if not overwrite:
-                raise FileExistsError
-            location.unlink()
-        else:
-            logger.info(f"target saved at {location}")
-            self._make_folder_containing(location)
-            self._save(target, location)
+            if overwrite or input(f"[{location}]> overwrite: [y]es; no (default) ") in [
+                "y",
+                "yes",
+                "Y",
+                "Yes",
+            ]:
+                location.unlink()
+            else:
+                raise FileExistsError(
+                    f"{location} already exists, but overwriting is refused"
+                )
+
+        logger.info(f"target saved at {location}")
+        self._make_folder_containing(location)
+        self._save(target, location)
 
     def _save(self, target: Any, location: Path) -> None:
         pass
@@ -54,6 +67,19 @@ class Saveloader:
         target = make_target()
         self.save(target, location)
         return target
+
+
+class SaveloadImage(Saveloader):
+    def __init__(self, folder: Union[Path, str], suffix: str = "png"):
+        super().__init__(Path(DEFINITION.BIN_DIR, folder))
+
+        self._suffix = suffix
+
+    def rebase_location(self, location: Union[Path, str]) -> Path:
+        return Path(self._base, f"{location}.{self._suffix}")
+
+    def _save(self, target: figure.FigureBase, location: Path) -> None:
+        target.savefig(location)
 
 
 class SaveloadTorch(Saveloader):
