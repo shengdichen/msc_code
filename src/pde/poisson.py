@@ -758,4 +758,4 @@ if __name__ == "__main__":
     torch.manual_seed(42)
 
     learners = Learners()
-    learners.dataset_standard()
+    learners.dataset_custom()
