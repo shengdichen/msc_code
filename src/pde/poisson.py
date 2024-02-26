@@ -155,7 +155,7 @@ class DatasetPoisson:
 
         self._n_instances = n_instances
         self._saveload_location, self._saveload = (
-            f"dataset-fno-2d-{name_dataset}",
+            f"dataset--{name_dataset}",
             saveload,
         )
 
@@ -167,7 +167,7 @@ class DatasetPoisson:
             return self._make_dataset_raw()
 
         return self._load_or_make(
-            make, location=location or f"{self._saveload_location}-raw"
+            make, location=location or f"{self._saveload_location}--raw"
         )
 
     @abc.abstractmethod
@@ -244,7 +244,7 @@ class DatasetConstructed(DatasetPoisson):
         indexes: typing.Optional[
             typing.Union[np.ndarray, collections.abc.Sequence[int]]
         ] = None,
-        location: typing.Optional[typing.Union[str, pathlib.Path]] = None,
+        save_as_suffix: typing.Optional[typing.Union[str, pathlib.Path]] = "masked",
     ) -> torch.utils.data.dataset.TensorDataset:
         def make() -> torch.utils.data.dataset.TensorDataset:
             if indexes is None:
@@ -265,7 +265,7 @@ class DatasetConstructed(DatasetPoisson):
                 solutions_masked, sources, solutions, n_instances=n_instances
             )
 
-        return self._load_or_make(make, location)
+        return self._load_or_make(make, f"{self._saveload_location}--{save_as_suffix}")
 
     def _assemble(
         self,
@@ -795,19 +795,19 @@ class Learners:
             self._grid_x1,
             self._grid_x2,
             saveload=self._saveload,
-            name_dataset=f"{name}-{ds_size}",
+            name_dataset=f"{name}--{ds_size}",
             n_instances=ds_size,
             n_samples_per_instance=n_samples_per_instance,
         )
         ds_eval = ds.dataset_masked(
             indexes=indexes_eval,
             mask_solution=MaskerRandom(perc_to_mask=0.5),
-            location="eval",
+            save_as_suffix=f"eval_{self._n_instances_eval}",
         )
         ds_train = ds.dataset_masked(
             indexes=indexes_train,
             mask_solution=MaskerRandom(perc_to_mask=0.5),
-            location="train",
+            save_as_suffix=f"train_{self._n_instances_train}",
         )
 
         learner = LearnerPoissonFNO2d(
