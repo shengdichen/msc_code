@@ -542,7 +542,7 @@ class LearnerPoissonFNO:
     def load(self) -> None:
         self._network = self._saveload.load(self._location)
 
-    def eval(self) -> None:
+    def eval(self, print_result: bool = True) -> float:
         mse_abs_all, mse_rel_all = [], []
         with torch.no_grad():
             self._network.eval()
@@ -558,7 +558,10 @@ class LearnerPoissonFNO:
                 mse_abs_all.append(dst.mse().item())
                 mse_rel_all.append(dst.mse_relative().item())
         mse_abs_avg, mse_rel_avg = np.average(mse_abs_all), np.average(mse_rel_all)
-        print(f"eval> (mse, mse%): {mse_abs_avg}, {mse_rel_avg}")
+        if print_result:
+            print(f"eval> (mse, mse%): {mse_abs_avg}, {mse_rel_avg}")
+
+        return mse_rel_avg.item()
 
     @abc.abstractmethod
     def plot(self) -> None:
