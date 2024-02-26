@@ -1,6 +1,7 @@
 import abc
 import logging
 import math
+import pathlib
 import typing
 
 import numpy as np
@@ -12,7 +13,7 @@ from src.deepl import cno, fno_2d, network
 from src.definition import DEFINITION
 from src.numerics import distance, grid, multidiff
 from src.util import plot
-from src.util.dataset import MaskerRandom
+from src.util.dataset import Masker, MaskerRandom
 from src.util.saveload import SaveloadImage, SaveloadTorch
 
 logger = logging.getLogger(__name__)
@@ -161,27 +162,24 @@ class DatasetPoisson:
         def make() -> torch.utils.data.dataset.TensorDataset:
             return self._make_dataset_unmasked()
 
-        location = self._saveload.rebase_location(self._saveload_location)
-        return self._saveload.load_or_make(location, make)
+        return self._load_or_make(make)
 
     @abc.abstractmethod
     def _make_dataset_unmasked(self) -> torch.utils.data.dataset.TensorDataset:
         raise NotImplementedError
 
-    def dataset_masked_random(
-        self, perc_to_mask: float
-    ) -> torch.utils.data.dataset.TensorDataset:
-        def make() -> torch.utils.data.dataset.TensorDataset:
-            return self._make_dataset_masked_random(perc_to_mask)
-
-        location = self._saveload.rebase_location(self._saveload_location)
-        return self._saveload.load_or_make(location, make)
-
-    @abc.abstractmethod
-    def _make_dataset_masked_random(
-        self, perc_to_mask: float
-    ) -> torch.utils.data.dataset.TensorDataset:
+    def dataset_masked(self) -> torch.utils.data.dataset.TensorDataset:
         raise NotImplementedError
+
+    def _load_or_make(
+        self,
+        make: typing.Callable[..., torch.utils.data.dataset.TensorDataset],
+        location: typing.Optional[typing.Union[str, pathlib.Path]] = None,
+    ) -> torch.utils.data.dataset.TensorDataset:
+        location = location or self._saveload_location
+        return self._saveload.load_or_make(
+            self._saveload.rebase_location(location), make
+        )
 
     def plot_instance(self) -> None:
         plotter = plot.PlotFrame(
@@ -232,18 +230,24 @@ class DatasetConstructed(DatasetPoisson):
             solutions_masked.append(source)
         return self._assemble(solutions_masked, sources, solutions)
 
-    def _make_dataset_masked_random(
-        self, perc_to_mask: float
+    def dataset_masked(
+        self,
+        mask_source: typing.Optional[Masker] = None,
+        mask_solution: typing.Optional[Masker] = None,
+        location: typing.Optional[typing.Union[str, pathlib.Path]] = None,
     ) -> torch.utils.data.dataset.TensorDataset:
-        solutions, sources, solutions_masked = [], [], []
-        for __ in range(self._n_instances):
-            solution, source = self._generate_instance()
-            solutions.append(solution)
-            sources.append(source)
-            solutions_masked.append(
-                MaskerRandom(solution, perc_to_mask=perc_to_mask).mask()
-            )
-        return self._assemble(solutions_masked, sources, solutions)
+        def make() -> torch.utils.data.dataset.TensorDataset:
+            solutions, sources, solutions_masked = [], [], []
+            for __ in range(self._n_instances):
+                solution, source = self._generate_instance()
+                solutions.append(solution)
+                sources.append(mask_source.mask(source) if mask_source else source)
+                solutions_masked.append(
+                    mask_solution.mask(solution) if mask_solution else solution
+                )
+            return self._assemble(solutions_masked, sources, solutions)
+
+        return self._load_or_make(make, location)
 
     def _assemble(
         self,
@@ -388,15 +392,20 @@ class DatasetSolver(DatasetPoisson):
         rhss_all, rhss_masked = self._generate_instances()
         self._assemble(rhss_all, rhss_masked)
 
-    def _make_dataset_masked_random(
-        self, perc_to_mask: float
+    def dataset_masked(
+        self,
+        mask_solution: typing.Optional[Masker] = None,
+        location: typing.Optional[typing.Union[str, pathlib.Path]] = None,
     ) -> torch.utils.data.dataset.TensorDataset:
-        rhss_all, rhss_masked = self._generate_instances(perc_to_mask)
-        return self._assemble(rhss_all, rhss_masked)
+        def make() -> None:
+            rhss_all, rhss_masked = self._generate_instances(mask_solution)
+            return self._assemble(rhss_all, rhss_masked)
+
+        return self._load_or_make(make, location)
 
     def _generate_instances(
         self,
-        perc_to_mask: typing.Optional[float] = None,
+        mask_solution: typing.Optional[Masker] = None,
     ) -> tuple[torch.Tensor, torch.Tensor]:
         rhss_all, rhss_masked = [], []
         for __ in range(self._n_instances):
@@ -407,12 +416,9 @@ class DatasetSolver(DatasetPoisson):
                 boundary_mean=self._boundary_mean, boundary_sigma=self._boundary_sigma
             )
             rhss_all.append(solution)
-            if not perc_to_mask:
-                rhss_masked.append(solution)
-            else:
-                rhss_masked.append(
-                    MaskerRandom(solution, perc_to_mask=perc_to_mask).mask()
-                )
+            rhss_masked.append(
+                mask_solution.mask(solution) if mask_solution else solution
+            )
 
         return torch.stack(rhss_all), torch.stack(rhss_masked)
 
@@ -748,8 +754,8 @@ class Learners:
         learner = LearnerPoissonFNO2d(
             self._grid_x1,
             self._grid_x2,
-            dataset_eval=ds.dataset_masked_random(perc_to_mask=0.5),
-            dataset_train=ds.dataset_masked_random(perc_to_mask=0.5),
+            dataset_eval=ds.dataset_masked(mask_solution=MaskerRandom(0.5)),
+            dataset_train=ds.dataset_masked(mask_solution=MaskerRandom(0.5)),
             saveload=self._saveload,
             name_learner="standard",
         )
@@ -783,8 +789,12 @@ class Learners:
         learner = LearnerPoissonFNO2d(
             self._grid_x1,
             self._grid_x2,
-            dataset_eval=ds_eval.dataset_masked_random(perc_to_mask=0.5),
-            dataset_train=ds_train.dataset_masked_random(perc_to_mask=0.5),
+            dataset_eval=ds_eval.dataset_masked(
+                mask_solution=MaskerRandom(perc_to_mask=0.5)
+            ),
+            dataset_train=ds_train.dataset_masked(
+                mask_source=MaskerRandom(perc_to_mask=0.5)
+            ),
             saveload=self._saveload,
             name_learner=name,
         )
