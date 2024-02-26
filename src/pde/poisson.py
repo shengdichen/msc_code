@@ -1,4 +1,5 @@
 import abc
+import collections
 import logging
 import math
 import pathlib
@@ -240,18 +241,29 @@ class DatasetConstructed(DatasetPoisson):
         self,
         mask_source: typing.Optional[Masker] = None,
         mask_solution: typing.Optional[Masker] = None,
+        indexes: typing.Optional[
+            typing.Union[np.ndarray, collections.abc.Sequence[int]]
+        ] = None,
         location: typing.Optional[typing.Union[str, pathlib.Path]] = None,
     ) -> torch.utils.data.dataset.TensorDataset:
         def make() -> torch.utils.data.dataset.TensorDataset:
+            if indexes is None:
+                ds_raw = self.dataset_raw()
+                n_instances = self._n_instances
+            else:
+                ds_raw = torch.utils.data.Subset(self.dataset_raw(), indexes)
+                n_instances = len(indexes)
+
             solutions, sources, solutions_masked = [], [], []
-            for __ in range(self._n_instances):
-                solution, source = self._generate_instance()
+            for solution, source in ds_raw:
                 solutions.append(solution)
                 sources.append(mask_source.mask(source) if mask_source else source)
                 solutions_masked.append(
                     mask_solution.mask(solution) if mask_solution else solution
                 )
-            return self._assemble(solutions_masked, sources, solutions)
+            return self._assemble(
+                solutions_masked, sources, solutions, n_instances=n_instances
+            )
 
         return self._load_or_make(make, location)
 
@@ -260,13 +272,15 @@ class DatasetConstructed(DatasetPoisson):
         solutions_masked: torch.Tensor,
         sources: torch.Tensor,
         solutions: torch.Tensor,
+        n_instances: typing.Optional[int] = None,
     ) -> torch.utils.data.dataset.TensorDataset:
+        n_instances = n_instances or self._n_instances
         lhss = torch.stack(
             [
                 torch.stack(solutions_masked),
                 torch.stack(sources),
-                self._coords_x1.repeat(self._n_instances, 1, 1),
-                self._coords_x2.repeat(self._n_instances, 1, 1),
+                self._coords_x1.repeat(n_instances, 1, 1),
+                self._coords_x2.repeat(n_instances, 1, 1),
             ],
             dim=-1,
         )
@@ -744,6 +758,7 @@ class Learners:
         )
 
         self._saveload = SaveloadTorch("poisson")
+        self._rng = np.random.default_rng(seed=42)
 
     def dataset_standard(self) -> None:
         name_dataset = "dataset-fno-2d-standard"
@@ -770,42 +785,55 @@ class Learners:
 
     def dataset_custom(
         self,
-        n_samples_per_instance_eval: int = 3,
-        n_samples_per_instance_train: int = 3,
+        n_samples_per_instance: int = 3,
     ) -> None:
-        name = "custom"
+        name = "custom_sin"
+        ds_size = 1000
+        indexes_eval, indexes_train = self._indexes_eval_train(ds_size)
 
-        ds_eval = DatasetConstructedSin(
+        ds = DatasetConstructedSin(
             self._grid_x1,
             self._grid_x2,
             saveload=self._saveload,
-            name_dataset=f"{name}-eval",
-            n_instances=self._n_instances_eval,
-            n_samples_per_instance=n_samples_per_instance_eval,
+            name_dataset=f"{name}-{ds_size}",
+            n_instances=ds_size,
+            n_samples_per_instance=n_samples_per_instance,
         )
-        ds_train = DatasetConstructedSin(
-            self._grid_x1,
-            self._grid_x2,
-            saveload=self._saveload,
-            name_dataset=f"{name}-train",
-            n_instances=self._n_instances_train,
-            n_samples_per_instance=n_samples_per_instance_train,
+        ds_eval = ds.dataset_masked(
+            indexes=indexes_eval,
+            mask_solution=MaskerRandom(perc_to_mask=0.5),
+            location="eval",
+        )
+        ds_train = ds.dataset_masked(
+            indexes=indexes_train,
+            mask_solution=MaskerRandom(perc_to_mask=0.5),
+            location="train",
         )
 
         learner = LearnerPoissonFNO2d(
             self._grid_x1,
             self._grid_x2,
-            dataset_eval=ds_eval.dataset_masked(
-                mask_solution=MaskerRandom(perc_to_mask=0.5)
-            ),
-            dataset_train=ds_train.dataset_masked(
-                mask_source=MaskerRandom(perc_to_mask=0.5)
-            ),
+            dataset_eval=ds_eval,
+            dataset_train=ds_train,
             saveload=self._saveload,
             name_learner=name,
         )
         learner.train(n_epochs=1001)
         learner.plot()
+
+    def _indexes_eval_train(self, size_datset: int) -> tuple[np.ndarray, np.ndarray]:
+        # NOTE:
+        # generate indexes in one call with |replace| set to |False| to guarantee strict
+        # separation of train and eval datasets
+        indexes = self._rng.choice(
+            size_datset,
+            self._n_instances_eval + self._n_instances_train,
+            replace=False,
+        )
+        return (
+            indexes[: self._n_instances_eval],
+            indexes[-self._n_instances_train :],
+        )
 
 
 if __name__ == "__main__":
