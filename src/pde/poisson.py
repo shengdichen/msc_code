@@ -161,18 +161,33 @@ class DatasetPoisson:
 
     def dataset_raw(
         self,
-        location: typing.Optional[typing.Union[str, pathlib.Path]] = None,
     ) -> torch.utils.data.dataset.TensorDataset:
         def make() -> torch.utils.data.dataset.TensorDataset:
             return self._make_dataset_raw()
 
         return self._load_or_make(
-            make, location=location or f"{self._saveload_location}--raw"
+            make,
+            location=f"{self._saveload_location}--raw_{self._n_instances}",
         )
 
     @abc.abstractmethod
     def _make_dataset_raw(self) -> torch.utils.data.dataset.TensorDataset:
         raise NotImplementedError
+
+    def dataset_raw_split(
+        self,
+        indexes: typing.Union[np.ndarray, collections.abc.Sequence[int]],
+        autosave: typing.Optional[bool] = True,
+        save_as_suffix: typing.Optional[typing.Union[str, pathlib.Path]] = None,
+    ) -> torch.utils.data.dataset.TensorDataset:
+        def make() -> torch.utils.data.dataset.TensorDataset:
+            return torch.utils.data.Subset(self.dataset_raw(), indexes)
+
+        return self._load_or_make(
+            make,
+            location=f"{self._saveload_location}--{save_as_suffix}_{len(indexes)}",
+            autosave=autosave,
+        )
 
     def dataset_masked(self) -> torch.utils.data.dataset.TensorDataset:
         raise NotImplementedError
@@ -181,11 +196,14 @@ class DatasetPoisson:
         self,
         make: typing.Callable[..., torch.utils.data.dataset.TensorDataset],
         location: typing.Optional[typing.Union[str, pathlib.Path]] = None,
+        autosave: typing.Optional[bool] = True,
     ) -> torch.utils.data.dataset.TensorDataset:
-        location = location or self._saveload_location
-        return self._saveload.load_or_make(
-            self._saveload.rebase_location(location), make
-        )
+        if autosave:
+            location = location or self._saveload_location
+            return self._saveload.load_or_make(
+                self._saveload.rebase_location(location), make
+            )
+        return make()
 
     def plot_instance(self) -> None:
         plotter = plot.PlotFrame(
@@ -241,21 +259,16 @@ class DatasetConstructed(DatasetPoisson):
         self,
         mask_source: typing.Optional[Masker] = None,
         mask_solution: typing.Optional[Masker] = None,
-        indexes: typing.Optional[
-            typing.Union[np.ndarray, collections.abc.Sequence[int]]
-        ] = None,
+        from_dataset: typing.Optional[torch.utils.data.dataset.TensorDataset] = None,
+        autosave: typing.Optional[bool] = False,
         save_as_suffix: typing.Optional[typing.Union[str, pathlib.Path]] = "masked",
     ) -> torch.utils.data.dataset.TensorDataset:
         def make() -> torch.utils.data.dataset.TensorDataset:
-            if indexes is None:
-                ds_raw = self.dataset_raw()
-                n_instances = self._n_instances
-            else:
-                ds_raw = torch.utils.data.Subset(self.dataset_raw(), indexes)
-                n_instances = len(indexes)
+            dataset_raw = from_dataset or self.dataset_raw()
+            n_instances = len(dataset_raw)
 
             solutions, sources, solutions_masked = [], [], []
-            for solution, source in ds_raw:
+            for solution, source in dataset_raw:
                 solutions.append(solution)
                 sources.append(mask_source.mask(source) if mask_source else source)
                 solutions_masked.append(
@@ -265,7 +278,11 @@ class DatasetConstructed(DatasetPoisson):
                 solutions_masked, sources, solutions, n_instances=n_instances
             )
 
-        return self._load_or_make(make, f"{self._saveload_location}--{save_as_suffix}")
+        return self._load_or_make(
+            make,
+            location=f"{self._saveload_location}--{save_as_suffix}",
+            autosave=autosave,
+        )
 
     def _assemble(
         self,
@@ -787,25 +804,27 @@ class Learners:
         self,
         n_samples_per_instance: int = 3,
     ) -> None:
-        name = "custom_sin"
-        ds_size = 1000
+        name, ds_size = "custom_sin", 1000
         indexes_eval, indexes_train = self._indexes_eval_train(ds_size)
 
         ds = DatasetConstructedSin(
             self._grid_x1,
             self._grid_x2,
             saveload=self._saveload,
-            name_dataset=f"{name}--{ds_size}",
+            name_dataset=name,
             n_instances=ds_size,
             n_samples_per_instance=n_samples_per_instance,
         )
+        ds_eval = ds.dataset_raw_split(indexes=indexes_eval, save_as_suffix="eval")
+        ds_train = ds.dataset_raw_split(indexes=indexes_train, save_as_suffix="train")
+
         ds_eval = ds.dataset_masked(
-            indexes=indexes_eval,
+            from_dataset=ds_eval,
             mask_solution=MaskerRandom(perc_to_mask=0.5),
             save_as_suffix=f"eval_{self._n_instances_eval}",
         )
         ds_train = ds.dataset_masked(
-            indexes=indexes_train,
+            from_dataset=ds_train,
             mask_solution=MaskerRandom(perc_to_mask=0.5),
             save_as_suffix=f"train_{self._n_instances_train}",
         )
