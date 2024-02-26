@@ -816,16 +816,22 @@ class Learners:
             n_instances=ds_size,
             n_samples_per_instance=n_samples_per_instance,
         )
-        ds_eval = ds.dataset_raw_split(indexes=indexes_eval, save_as_suffix="eval")
-        ds_train = ds.dataset_raw_split(indexes=indexes_train, save_as_suffix="train")
+        ds_eval_raw = ds.dataset_raw_split(
+            indexes=indexes_eval,
+            save_as_suffix="eval",
+        )
+        ds_train_raw = ds.dataset_raw_split(
+            indexes=indexes_train,
+            save_as_suffix="train",
+        )
 
-        ds_eval = ds.dataset_masked(
-            from_dataset=ds_eval,
+        ds_eval_masked = ds.dataset_masked(
+            from_dataset=ds_eval_raw,
             mask_solution=MaskerRandom(perc_to_mask=0.5),
             save_as_suffix=f"eval_{self._n_instances_eval}",
         )
-        ds_train = ds.dataset_masked(
-            from_dataset=ds_train,
+        ds_train_masked = ds.dataset_masked(
+            from_dataset=ds_train_raw,
             mask_solution=MaskerRandom(perc_to_mask=0.5),
             save_as_suffix=f"train_{self._n_instances_train}",
         )
@@ -833,8 +839,8 @@ class Learners:
         learner = LearnerPoissonFNO2d(
             self._grid_x1,
             self._grid_x2,
-            dataset_eval=ds_eval,
-            dataset_train=ds_train,
+            dataset_eval=ds_eval_masked,
+            dataset_train=ds_train_masked,
             saveload=self._saveload,
             name_learner=name,
         )
