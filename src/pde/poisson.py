@@ -158,17 +158,19 @@ class DatasetPoisson:
             saveload,
         )
 
-    def dataset_unmasked(
+    def dataset_raw(
         self,
         location: typing.Optional[typing.Union[str, pathlib.Path]] = None,
     ) -> torch.utils.data.dataset.TensorDataset:
         def make() -> torch.utils.data.dataset.TensorDataset:
-            return self._make_dataset_unmasked()
+            return self._make_dataset_raw()
 
-        return self._load_or_make(make, location)
+        return self._load_or_make(
+            make, location=location or f"{self._saveload_location}-raw"
+        )
 
     @abc.abstractmethod
-    def _make_dataset_unmasked(self) -> torch.utils.data.dataset.TensorDataset:
+    def _make_dataset_raw(self) -> torch.utils.data.dataset.TensorDataset:
         raise NotImplementedError
 
     def dataset_masked(self) -> torch.utils.data.dataset.TensorDataset:
@@ -224,14 +226,15 @@ class DatasetConstructed(DatasetPoisson):
         )
         self._n_samples_per_instance = n_samples_per_instance  # aka, |K|
 
-    def _make_dataset_unmasked(self) -> torch.utils.data.dataset.TensorDataset:
-        solutions, sources, solutions_masked = [], [], []
+    def _make_dataset_raw(self) -> torch.utils.data.dataset.TensorDataset:
+        solutions, sources = [], []
         for __ in range(self._n_instances):
             solution, source = self._generate_instance()
             solutions.append(solution)
             sources.append(source)
-            solutions_masked.append(source)
-        return self._assemble(solutions_masked, sources, solutions)
+        return torch.utils.data.TensorDataset(
+            torch.stack(solutions), torch.stack(sources)
+        )
 
     def dataset_masked(
         self,
