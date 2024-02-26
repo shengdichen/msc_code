@@ -158,11 +158,14 @@ class DatasetPoisson:
             saveload,
         )
 
-    def dataset_unmasked(self) -> torch.utils.data.dataset.TensorDataset:
+    def dataset_unmasked(
+        self,
+        location: typing.Optional[typing.Union[str, pathlib.Path]] = None,
+    ) -> torch.utils.data.dataset.TensorDataset:
         def make() -> torch.utils.data.dataset.TensorDataset:
             return self._make_dataset_unmasked()
 
-        return self._load_or_make(make)
+        return self._load_or_make(make, location)
 
     @abc.abstractmethod
     def _make_dataset_unmasked(self) -> torch.utils.data.dataset.TensorDataset:
