@@ -609,7 +609,7 @@ class LearnerPoissonFNO2d(LearnerPoissonFNO):
             dataset_eval=dataset_eval,
             dataset_train=dataset_train,
             saveload=saveload,
-            saveload_location=f"network-fno-2d-{name_learner}",
+            saveload_location=f"network_fno_2d--{name_learner}",
         )
 
     def plot(self) -> None:
@@ -650,7 +650,7 @@ class LearnerPoissonCNO2d(LearnerPoissonFNO):
             dataset_eval=DatasetReorderCNO(dataset_eval).reorder(),
             dataset_train=DatasetReorderCNO(dataset_train).reorder(),
             saveload=saveload,
-            saveload_location=f"network-cno-2d-{name_learner}",
+            saveload_location=f"network_cno_2d--{name_learner}",
         )
 
     def plot(self) -> None:
