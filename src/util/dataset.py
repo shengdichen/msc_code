@@ -94,68 +94,65 @@ class DatasetPde:
 
 
 class Masker:
-    def __init__(self, full: torch.Tensor):
-        self._full = full
-        self._n_gridpts_full = np.prod(self._full.shape)
-
     @abc.abstractmethod
-    def mask(self) -> torch.Tensor:
+    def mask(self, full: torch.Tensor) -> torch.Tensor:
         raise NotImplementedError
 
 
 class MaskerRandom(Masker):
     def __init__(
         self,
-        full: torch.Tensor,
         perc_to_mask: float = 0.5,
         seed: typing.Optional[int] = None,
     ):
-        super().__init__(full)
-
-        self._indexes = np.array(
-            [
-                idxs
-                for idxs in itertools.product(
-                    *(range(len_dim) for len_dim in self._full.shape)
-                )
-            ]
-        )
-        self._n_gridpts_mask = int(perc_to_mask * self._n_gridpts_full)
+        super().__init__()
 
         self._rng = np.random.default_rng(seed=seed)
+        self._perc_to_mask = perc_to_mask
 
-    def mask(self) -> torch.Tensor:
-        res = self._full.detach().clone()
-        for idx in self._rng.choice(self._indexes, self._n_gridpts_mask, replace=False):
+    def mask(self, full: torch.Tensor) -> torch.Tensor:
+        res = full.detach().clone()
+        for idx in self._indexes_to_mask(full):
             res[tuple(idx)] = 0
         return res
 
+    def _indexes_to_mask(self, full: torch.Tensor) -> np.ndarray:
+        n_gridpts_to_mask = int(self._perc_to_mask * np.prod(full.shape))
+
+        indexes_full = np.array(
+            [
+                idxs
+                for idxs in itertools.product(
+                    *(range(len_dim) for len_dim in full.shape)
+                )
+            ]
+        )
+        return self._rng.choice(indexes_full, n_gridpts_to_mask, replace=False)
+
 
 class MaskerIsland(Masker):
-    def __init__(self, full: torch.Tensor, perc_to_keep: float):
-        super().__init__(full)
+    def __init__(self, perc_to_keep: float):
+        super().__init__()
 
         self._perc_to_keep = perc_to_keep
-        self._lows, self._highs = self._range_idx_dim()
 
-    def _range_idx_dim(self) -> tuple[np.ndarray, np.ndarray]:
+    def mask(self, full: torch.Tensor) -> torch.Tensor:
+        lows, highs = self._range_idx_dim(full)
+        res = torch.zeros_like(full)
+        for idxs in itertools.product(*(range(len_dim) for len_dim in full.shape)):
+            idxs_np = np.array(idxs)
+            if np.all(idxs_np >= lows) and np.all(idxs_np < highs):
+                res[idxs] = full[idxs]
+        return res
+
+    def _range_idx_dim(self, full: torch.Tensor) -> tuple[np.ndarray, np.ndarray]:
         perc_mask_per_side = (1 - self._perc_to_keep) / 2
 
         lows, highs = [], []
-        for size_dim in self._full.shape:
+        for size_dim in full.shape:
             lows.append(int(size_dim * perc_mask_per_side))
             highs.append(int(size_dim * (1 - perc_mask_per_side)))
         return np.array(lows), np.array(highs)
-
-    def mask(self) -> torch.Tensor:
-        res = torch.zeros_like(self._full)
-        for idxs in itertools.product(
-            *(range(len_dim) for len_dim in self._full.shape)
-        ):
-            idxs_np = np.array(idxs)
-            if np.all(idxs_np >= self._lows) and np.all(idxs_np < self._highs):
-                res[idxs] = self._full[idxs]
-        return res
 
 
 class Filter:
