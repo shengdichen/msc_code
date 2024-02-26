@@ -189,6 +189,7 @@ class DatasetPoisson:
             autosave=autosave,
         )
 
+    @abc.abstractmethod
     def dataset_masked(self) -> torch.utils.data.dataset.TensorDataset:
         raise NotImplementedError
 
