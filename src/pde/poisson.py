@@ -499,7 +499,7 @@ class LearnerPoissonFNO:
         dataset_eval: torch.utils.data.dataset.TensorDataset,
         dataset_train: torch.utils.data.dataset.TensorDataset,
         saveload: SaveloadTorch,
-        saveload_location: str,
+        name_learner: str,
     ):
         self._device = DEFINITION.device_preferred
 
@@ -508,8 +508,8 @@ class LearnerPoissonFNO:
         self._network = network_fno.to(self._device)
         self._dataset_eval, self._dataset_train = dataset_eval, dataset_train
 
-        self._saveload = saveload
-        self._location = self._saveload.rebase_location(saveload_location)
+        self._saveload, self._name_learner = saveload, name_learner
+        self._location = self._saveload.rebase_location(name_learner)
 
     def train(self, n_epochs: int = 2001, freq_eval: int = 100) -> None:
         optimizer = torch.optim.Adam(self._network.parameters(), weight_decay=1e-5)
@@ -537,10 +537,20 @@ class LearnerPoissonFNO:
                 print(f"train> mse: {np.average(loss_all)}")
                 self.eval()
 
-        self._saveload.save(self._network, self._location)
+    def load_network_trained(
+        self, n_epochs: int = 2001, freq_eval: int = 100, save_as_suffix: str = "model"
+    ) -> torch.nn.Module:
+        def make() -> torch.nn.Module:
+            self.train(n_epochs=n_epochs, freq_eval=freq_eval)
+            return self._network
 
-    def load(self) -> None:
-        self._network = self._saveload.load(self._location)
+        location = (
+            self._saveload.rebase_location(f"{self._name_learner}--{save_as_suffix}")
+            if save_as_suffix
+            else self._location
+        )
+        self._network = self._saveload.load_or_make(location, make)
+        return self._network
 
     def eval(self, print_result: bool = True) -> float:
         mse_abs_all, mse_rel_all = [], []
@@ -612,7 +622,7 @@ class LearnerPoissonFNO2d(LearnerPoissonFNO):
             dataset_eval=dataset_eval,
             dataset_train=dataset_train,
             saveload=saveload,
-            saveload_location=f"network_fno_2d--{name_learner}",
+            name_learner=f"network_fno_2d--{name_learner}",
         )
 
     def plot(self) -> None:
@@ -653,7 +663,7 @@ class LearnerPoissonCNO2d(LearnerPoissonFNO):
             dataset_eval=DatasetReorderCNO(dataset_eval).reorder(),
             dataset_train=DatasetReorderCNO(dataset_train).reorder(),
             saveload=saveload,
-            saveload_location=f"network_cno_2d--{name_learner}",
+            name_learner=f"network_cno_2d--{name_learner}",
         )
 
     def plot(self) -> None:
@@ -828,27 +838,32 @@ class Learners:
             save_as_suffix="train",
         )
 
-        ds_eval_masked = ds.dataset_masked(
-            from_dataset=ds_eval_raw,
-            mask_solution=MaskerRandom(perc_to_mask=0.5),
-            save_as_suffix=f"eval_{self._n_instances_eval}",
-        )
-        ds_train_masked = ds.dataset_masked(
-            from_dataset=ds_train_raw,
-            mask_solution=MaskerRandom(perc_to_mask=0.5),
-            save_as_suffix=f"train_{self._n_instances_train}",
-        )
+        errors = []
+        for perc_to_mask in np.arange(start=0.1, stop=1.0, step=0.1):
+            ds_eval_masked = ds.dataset_masked(
+                from_dataset=ds_eval_raw,
+                mask_solution=MaskerRandom(perc_to_mask=perc_to_mask),
+                save_as_suffix=f"eval_{self._n_instances_eval}",
+            )
+            ds_train_masked = ds.dataset_masked(
+                from_dataset=ds_train_raw,
+                mask_solution=MaskerRandom(perc_to_mask=perc_to_mask),
+                save_as_suffix=f"train_{self._n_instances_train}",
+            )
 
-        learner = LearnerPoissonFNO2d(
-            self._grid_x1,
-            self._grid_x2,
-            dataset_eval=ds_eval_masked,
-            dataset_train=ds_train_masked,
-            saveload=self._saveload,
-            name_learner=name,
-        )
-        learner.train(n_epochs=1001)
-        learner.plot()
+            learner = LearnerPoissonFNO2d(
+                self._grid_x1,
+                self._grid_x2,
+                dataset_eval=ds_eval_masked,
+                dataset_train=ds_train_masked,
+                saveload=self._saveload,
+                name_learner=name,
+            )
+            learner.load_network_trained(
+                n_epochs=1001,
+                save_as_suffix=f"random_{perc:.2}",
+            )
+            errors.append(learner.eval(print_result=False))
 
     def _indexes_eval_train(self, size_datset: int) -> tuple[np.ndarray, np.ndarray]:
         # NOTE:
