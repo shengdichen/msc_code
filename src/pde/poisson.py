@@ -5,6 +5,7 @@ import math
 import pathlib
 import typing
 
+import matplotlib.pyplot as plt
 import numpy as np
 import scipy
 import torch
@@ -788,7 +789,8 @@ class Learners:
             n_instances_train,
         )
 
-        self._saveload = SaveloadTorch("poisson")
+        self._saveload_base = "poisson"
+        self._saveload = SaveloadTorch(self._saveload_base)
         self._rng = np.random.default_rng(seed=42)
 
     def dataset_standard(self) -> None:
@@ -839,15 +841,16 @@ class Learners:
         )
 
         errors = []
-        for perc_to_mask in np.arange(start=0.1, stop=1.0, step=0.1):
+        percs_to_mask = np.arange(start=0.1, stop=1.0, step=0.1)
+        for perc in percs_to_mask:
             ds_eval_masked = ds.dataset_masked(
                 from_dataset=ds_eval_raw,
-                mask_solution=MaskerRandom(perc_to_mask=perc_to_mask),
+                mask_solution=MaskerRandom(perc_to_mask=perc),
                 save_as_suffix=f"eval_{self._n_instances_eval}",
             )
             ds_train_masked = ds.dataset_masked(
                 from_dataset=ds_train_raw,
-                mask_solution=MaskerRandom(perc_to_mask=perc_to_mask),
+                mask_solution=MaskerRandom(perc_to_mask=perc),
                 save_as_suffix=f"train_{self._n_instances_train}",
             )
 
@@ -864,6 +867,33 @@ class Learners:
                 save_as_suffix=f"random_{perc:.2}",
             )
             errors.append(learner.eval(print_result=False))
+        self._plot_mask_to_error(
+            percs_to_mask,
+            errors,
+            name_problem=name,
+            name_model="FNO",
+            save_as_suffix="random",
+        )
+
+    def _plot_mask_to_error(
+        self,
+        percs_to_mask: np.ndarray,
+        errors: list[float],
+        name_problem: str,
+        name_model: str,
+        save_as_suffix: str = "",
+    ) -> None:
+        fig, ax = plt.subplots()
+        ax.plot(percs_to_mask, errors)
+        ax.set_xlabel("masking proportion [random-style]")
+        ax.set_ylabel("error [L2]")
+        ax.set_title(f"error VS masking [{name_model}]")
+
+        saveload = SaveloadImage(self._saveload_base)
+        location = f"mask_to_error--{name_problem}--{name_model}"
+        if save_as_suffix:
+            location = f"{location}--{save_as_suffix}"
+        saveload.save(fig, saveload.rebase_location(location), overwrite=True)
 
     def _indexes_eval_train(self, size_datset: int) -> tuple[np.ndarray, np.ndarray]:
         # NOTE:
