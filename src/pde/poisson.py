@@ -881,6 +881,7 @@ class Learners:
 
         percs_to_mask = np.arange(start=0.1, stop=1.0, step=0.1)
         masks_random = [MaskerRandom(perc_to_mask=perc) for perc in percs_to_mask]
+        masks_island = [MaskerIsland(perc_to_keep=1 - perc) for perc in percs_to_mask]
 
         self._plot_fnos(
             dataset_full,
@@ -888,6 +889,13 @@ class Learners:
             name_problem=name_problem,
             masks=masks_random,
             name_mask="random",
+        )
+        self._plot_fnos(
+            dataset_full,
+            percs_to_mask,
+            name_problem=name_problem,
+            masks=masks_island,
+            name_mask="island",
         )
 
     def _plot_fnos(
