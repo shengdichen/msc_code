@@ -884,7 +884,8 @@ class Learners:
         save_as_suffix: str = "",
     ) -> None:
         fig, ax = plt.subplots()
-        ax.plot(percs_to_mask, errors)
+        style = {"linestyle": "dashed", "marker": "x"}
+        ax.plot(percs_to_mask, errors, **style)
         ax.set_xlabel("masking proportion [random-style]")
         ax.set_ylabel("error [L2]")
         ax.set_title(f"error VS masking [{name_model}]")
