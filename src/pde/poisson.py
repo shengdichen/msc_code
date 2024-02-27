@@ -15,7 +15,7 @@ from src.deepl import cno, fno_2d, network
 from src.definition import DEFINITION
 from src.numerics import distance, grid, multidiff
 from src.util import plot
-from src.util.dataset import Masker, MaskerRandom
+from src.util.dataset import Masker, MaskerIsland, MaskerRandom
 from src.util.saveload import SaveloadImage, SaveloadTorch
 
 logger = logging.getLogger(__name__)
@@ -159,6 +159,10 @@ class DatasetPoisson:
             f"dataset--{name_dataset}",
             saveload,
         )
+
+    @property
+    def n_instances(self) -> int:
+        return self._n_instances
 
     def dataset_raw(
         self,
@@ -779,6 +783,51 @@ class LearnerPoissonFC:
         plotter.plot_3d()
 
 
+class DatasetSplits:
+    def __init__(
+        self,
+        dataset_full: DatasetPoisson,
+        n_instances_eval: int = 300,
+        n_instances_train: int = 100,
+    ):
+        self._dataset_full = dataset_full
+        self._n_instances = self._dataset_full.n_instances
+        self._n_instances_eval, self._n_instances_train = (
+            n_instances_eval,
+            n_instances_train,
+        )
+
+    def split(
+        self,
+    ) -> tuple[
+        torch.utils.data.dataset.TensorDataset, torch.utils.data.dataset.TensorDataset
+    ]:
+        indexes_eval, indexes_train = self._indexes_eval_train()
+
+        return (
+            self._dataset_full.dataset_raw_split(
+                indexes=indexes_eval, save_as_suffix="eval"
+            ),
+            self._dataset_full.dataset_raw_split(
+                indexes=indexes_train, save_as_suffix="train"
+            ),
+        )
+
+    def _indexes_eval_train(self) -> tuple[np.ndarray, np.ndarray]:
+        # NOTE:
+        # generate indexes in one call with |replace| set to |False| to guarantee strict
+        # separation of train and eval datasets
+        indexes = np.random.default_rng(seed=42).choice(
+            self._n_instances,
+            self._n_instances_eval + self._n_instances_train,
+            replace=False,
+        )
+        return (
+            indexes[: self._n_instances_eval],
+            indexes[-self._n_instances_train :],
+        )
+
+
 class Learners:
     def __init__(self, n_instances_eval: int = 300, n_instances_train=100):
         self._grid_x1 = grid.Grid(n_pts=64, stepsize=0.01, start=0.0)
@@ -791,7 +840,6 @@ class Learners:
 
         self._saveload_base = "poisson"
         self._saveload = SaveloadTorch(self._saveload_base)
-        self._rng = np.random.default_rng(seed=42)
 
     def dataset_standard(self) -> None:
         name_dataset = "dataset-fno-2d-standard"
@@ -816,63 +864,78 @@ class Learners:
         learner.train()
         learner.plot()
 
-    def dataset_custom(
+    def dataset_custom_sin(
         self,
+        ds_size: int = 1000,
         n_samples_per_instance: int = 3,
     ) -> None:
-        name, ds_size = "custom_sin", 1000
-        indexes_eval, indexes_train = self._indexes_eval_train(ds_size)
-
-        ds = DatasetConstructedSin(
+        name_problem = "custom_sin"
+        dataset_full = DatasetConstructedSin(
             self._grid_x1,
             self._grid_x2,
             saveload=self._saveload,
-            name_dataset=name,
+            name_dataset=name_problem,
             n_instances=ds_size,
             n_samples_per_instance=n_samples_per_instance,
         )
-        ds_eval_raw = ds.dataset_raw_split(
-            indexes=indexes_eval,
-            save_as_suffix="eval",
-        )
-        ds_train_raw = ds.dataset_raw_split(
-            indexes=indexes_train,
-            save_as_suffix="train",
+
+        percs_to_mask = np.arange(start=0.1, stop=1.0, step=0.1)
+        masks_random = [MaskerRandom(perc_to_mask=perc) for perc in percs_to_mask]
+
+        self._plot_fnos(
+            dataset_full,
+            percs_to_mask,
+            name_problem=name_problem,
+            masks=masks_random,
+            name_mask="random",
         )
 
+    def _plot_fnos(
+        self,
+        dataset_full: DatasetConstructed,
+        percs_to_mask: np.ndarray,
+        masks: typing.Sequence[Masker],
+        name_mask: str,
+        name_problem: str,
+    ) -> None:
         errors = []
-        percs_to_mask = np.arange(start=0.1, stop=1.0, step=0.1)
-        for perc in percs_to_mask:
-            ds_eval_masked = ds.dataset_masked(
+        ds_eval_raw, ds_train_raw = DatasetSplits(
+            dataset_full,
+            n_instances_eval=self._n_instances_eval,
+            n_instances_train=self._n_instances_train,
+        ).split()
+
+        for perc, mask in zip(percs_to_mask, masks):
+            ds_eval_masked = dataset_full.dataset_masked(
                 from_dataset=ds_eval_raw,
-                mask_solution=MaskerRandom(perc_to_mask=perc),
+                mask_solution=mask,
                 save_as_suffix=f"eval_{self._n_instances_eval}",
             )
-            ds_train_masked = ds.dataset_masked(
+            ds_train_masked = dataset_full.dataset_masked(
                 from_dataset=ds_train_raw,
-                mask_solution=MaskerRandom(perc_to_mask=perc),
+                mask_solution=mask,
                 save_as_suffix=f"train_{self._n_instances_train}",
             )
-
             learner = LearnerPoissonFNO2d(
                 self._grid_x1,
                 self._grid_x2,
                 dataset_eval=ds_eval_masked,
                 dataset_train=ds_train_masked,
                 saveload=self._saveload,
-                name_learner=name,
+                name_learner=name_problem,
             )
             learner.load_network_trained(
                 n_epochs=1001,
-                save_as_suffix=f"random_{perc:.2}",
+                save_as_suffix=f"{name_mask}_{perc:.2}",
             )
             errors.append(learner.eval(print_result=False))
+
         self._plot_mask_to_error(
             percs_to_mask,
             errors,
-            name_problem=name,
+            name_problem=name_problem,
             name_model="FNO",
-            save_as_suffix="random",
+            name_mask=name_mask,
         )
 
     def _plot_mask_to_error(
@@ -881,34 +944,20 @@ class Learners:
         errors: list[float],
         name_problem: str,
         name_model: str,
-        save_as_suffix: str = "",
+        name_mask: str,
     ) -> None:
         fig, ax = plt.subplots()
         style = {"linestyle": "dashed", "marker": "x"}
         ax.plot(percs_to_mask, errors, **style)
-        ax.set_xlabel("masking proportion [random-style]")
+        ax.set_xlabel(f"masking proportion [{name_mask}-style]")
         ax.set_ylabel("error [L2]")
         ax.set_title(f"error VS masking [{name_model}]")
 
         saveload = SaveloadImage(self._saveload_base)
         location = f"mask_to_error--{name_problem}--{name_model}"
-        if save_as_suffix:
-            location = f"{location}--{save_as_suffix}"
+        if name_mask:
+            location = f"{location}--{name_mask}"
         saveload.save(fig, saveload.rebase_location(location), overwrite=True)
-
-    def _indexes_eval_train(self, size_datset: int) -> tuple[np.ndarray, np.ndarray]:
-        # NOTE:
-        # generate indexes in one call with |replace| set to |False| to guarantee strict
-        # separation of train and eval datasets
-        indexes = self._rng.choice(
-            size_datset,
-            self._n_instances_eval + self._n_instances_train,
-            replace=False,
-        )
-        return (
-            indexes[: self._n_instances_eval],
-            indexes[-self._n_instances_train :],
-        )
 
 
 if __name__ == "__main__":
@@ -919,4 +968,4 @@ if __name__ == "__main__":
     torch.manual_seed(42)
 
     learners = Learners()
-    learners.dataset_custom()
+    learners.dataset_custom_sin()
