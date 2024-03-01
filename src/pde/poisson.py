@@ -675,8 +675,10 @@ class LearnerPoissonFNO2d(LearnerPoissonFNO):
         lhss, rhss = self._one_lhss_rhss(self._dataset_eval)
         u_theirs = rhss[0, :, :, 0]
 
-        lhss = lhss.to(device=self._device, dtype=torch.float)
-        u_ours = self._network(lhss).detach().to("cpu")[0, :, :, 0]
+        with torch.no_grad():
+            lhss = lhss.to(device=self._device, dtype=torch.float)
+            self._network.eval()
+            u_ours = self._network(lhss).detach().to("cpu")[0, :, :, 0]
 
         return u_theirs, u_ours
 
