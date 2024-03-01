@@ -579,16 +579,49 @@ class LearnerPoissonFNO:
 
         return mse_rel_avg.item()
 
-    @abc.abstractmethod
-    def plot(self) -> None:
-        pass
+    def plot(self) -> mpl.figure.Figure:
+        return self.plot_comparison_2d()
 
-    def _plot_save(self, rhss_ours: torch.Tensor, save_as: str) -> None:
-        plotter = plot.PlotFrame(
-            self._grids, rhss_ours, save_as, SaveloadImage(self._saveload.base)
+    def plot_comparison_2d(self) -> mpl.figure.Figure:
+        u_theirs, u_ours = self._plotdata_u()
+
+        fig, (ax_1, ax_2) = plt.subplots(
+            1, 2, width_ratios=(1, 1), figsize=(10, 5), dpi=200
         )
-        plotter.plot_2d()
-        plotter.plot_3d()
+        putil = plot.PlotUtil(self._grids)
+
+        # TODO: how do we use colorbar?
+        # fig.colorbar(label="u")
+        putil.plot_2d(ax_1, u_theirs)
+        ax_1.set_title("$u$ (theirs)")
+
+        putil.plot_2d(ax_2, u_ours)
+        ax_2.set_title("$u$ (ours)")
+        return fig
+
+    def plot_comparison_3d(self) -> mpl.figure.Figure:
+        u_theirs, u_ours = self._plotdata_u()
+
+        fig, (ax_1, ax_2) = plt.subplots(
+            1,
+            2,
+            width_ratios=(1, 1),
+            figsize=(10, 5),
+            dpi=200,
+            subplot_kw={"projection": "3d"},
+        )
+        putil = plot.PlotUtil(self._grids)
+
+        putil.plot_3d(ax_1, u_theirs)
+        ax_1.set_title("$u$ (theirs)")
+
+        putil.plot_3d(ax_2, u_ours)
+        ax_2.set_title("$u$ (ours)")
+        return fig
+
+    @abc.abstractmethod
+    def _plotdata_u(self) -> tuple[torch.Tensor, torch.Tensor]:
+        raise NotImplementedError
 
     def _separate_lhss_rhss(
         self, dataset: torch.utils.data.dataset.TensorDataset
@@ -630,46 +663,6 @@ class LearnerPoissonFNO2d(LearnerPoissonFNO):
             saveload=saveload,
             name_learner=f"network_fno_2d--{name_learner}",
         )
-
-    def plot(self) -> mpl.figure.Figure:
-        return self.plot_comparison_2d()
-
-    def plot_comparison_2d(self) -> mpl.figure.Figure:
-        u_theirs, u_ours = self._plotdata_u()
-
-        fig, (ax_1, ax_2) = plt.subplots(
-            1, 2, width_ratios=(1, 1), figsize=(10, 5), dpi=200
-        )
-        putil = plot.PlotUtil(self._grids)
-
-        # TODO: how do we use colorbar?
-        # fig.colorbar(label="u")
-        putil.plot_2d(ax_1, u_theirs)
-        ax_1.set_title("$u$ (theirs)")
-
-        putil.plot_2d(ax_2, u_ours)
-        ax_2.set_title("$u$ (ours)")
-        return fig
-
-    def plot_comparison_3d(self) -> mpl.figure.Figure:
-        u_theirs, u_ours = self._plotdata_u()
-
-        fig, (ax_1, ax_2) = plt.subplots(
-            1,
-            2,
-            width_ratios=(1, 1),
-            figsize=(10, 5),
-            dpi=200,
-            subplot_kw={"projection": "3d"},
-        )
-        putil = plot.PlotUtil(self._grids)
-
-        putil.plot_3d(ax_1, u_theirs)
-        ax_1.set_title("$u$ (theirs)")
-
-        putil.plot_3d(ax_2, u_ours)
-        ax_2.set_title("$u$ (ours)")
-        return fig
 
     def _plotdata_u(self) -> tuple[torch.Tensor, torch.Tensor]:
         lhss, rhss = self._one_lhss_rhss(self._dataset_eval)
@@ -715,13 +708,16 @@ class LearnerPoissonCNO2d(LearnerPoissonFNO):
             name_learner=f"network_cno_2d--{name_learner}",
         )
 
-    def plot(self) -> None:
+    def _plotdata_u(self) -> tuple[torch.Tensor, torch.Tensor]:
         lhss, rhss = self._one_lhss_rhss(self._dataset_eval)
-        self._plot_save(rhss[0, 0, :, :], f"{self._location}-theirs")
+        u_theirs = rhss[0, 0, :, :]
 
-        lhss = lhss.to(device=self._device, dtype=torch.float)
-        rhss_ours = self._network(lhss).detach().to("cpu")[0, 0, :, :]
-        self._plot_save(rhss_ours, f"{self._location}-ours")
+        with torch.no_grad():
+            lhss = lhss.to(device=self._device, dtype=torch.float)
+            self._network.eval()
+            u_ours = self._network(lhss).detach().to("cpu")[0, 0, :, :]
+
+        return u_theirs, u_ours
 
 
 class LearnerPoissonFC:
@@ -1007,7 +1003,14 @@ class Learners:
         saveload = SaveloadImage(self._saveload_base)
         location = f"{name_problem}--{name_model}--{detail_mask}"
         saveload.save(
-            learner.plot(), saveload.rebase_location(location), overwrite=True
+            learner.plot_comparison_2d(),
+            saveload.rebase_location(f"{location}--2d"),
+            overwrite=True,
+        )
+        saveload.save(
+            learner.plot_comparison_3d(),
+            saveload.rebase_location(f"{location}--3d"),
+            overwrite=True,
         )
 
     def _plot_mask_to_error(
