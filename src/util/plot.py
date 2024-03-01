@@ -1,8 +1,41 @@
+import matplotlib as mpl
 import torch
 from matplotlib import pyplot as plt
 
 from src.numerics import grid
 from src.util.saveload import SaveloadImage
+
+
+class PlotUtil:
+    def __init__(
+        self,
+        grids: grid.Grids,
+    ):
+        self._grids = grids
+        self._coords_x1, self._coords_x2 = self._grids.coords_as_mesh()
+
+    def plot_2d(self, ax: mpl.axes.Axes, target: torch.Tensor) -> None:
+        ax.contourf(self._coords_x1, self._coords_x2, target, cmap="viridis")
+        self._set_label_xy(ax)
+        ax.grid(True)
+
+    def plot_3d(self, ax: mpl.axes.Axes, target: torch.Tensor) -> None:
+        surface = ax.plot_surface(
+            self._coords_x1,
+            self._coords_x2,
+            target,
+            cmap="viridis",
+            edgecolor="k",
+        )
+
+        self._set_label_xy(ax)
+        ax.set_zlabel("$u$")
+
+        return surface
+
+    def _set_label_xy(self, ax: mpl.axes.Axes) -> None:
+        ax.set_xlabel("$x_1$")
+        ax.set_ylabel("$x_2$")
 
 
 class PlotFrame:
