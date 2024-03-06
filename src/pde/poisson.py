@@ -937,6 +937,75 @@ class Learners:
             masks=masks_island,
             name_mask="island",
         )
+        self._plot_cnos(
+            dataset_full,
+            percs_to_mask,
+            name_problem=name_problem,
+            masks=masks_random,
+            name_mask="random",
+        )
+        self._plot_cnos(
+            dataset_full,
+            percs_to_mask,
+            name_problem=name_problem,
+            masks=masks_island,
+            name_mask="island",
+        )
+
+    def _plot_cnos(
+        self,
+        dataset_full: DatasetConstructed,
+        percs_to_mask: np.ndarray,
+        masks: typing.Sequence[Masker],
+        name_mask: str,
+        name_problem: str,
+    ) -> None:
+        errors = []
+        ds_eval_raw, ds_train_raw = DatasetSplits(
+            dataset_full,
+            n_instances_eval=self._n_instances_eval,
+            n_instances_train=self._n_instances_train,
+        ).split()
+
+        for perc, mask in zip(percs_to_mask, masks):
+            ds_eval_masked = dataset_full.dataset_masked(
+                from_dataset=ds_eval_raw,
+                mask_solution=mask,
+                save_as_suffix=f"eval_{self._n_instances_eval}",
+            )
+            ds_train_masked = dataset_full.dataset_masked(
+                from_dataset=ds_train_raw,
+                mask_solution=mask,
+                save_as_suffix=f"train_{self._n_instances_train}",
+            )
+            learner = LearnerPoissonCNO2d(
+                self._grid_x1,
+                self._grid_x2,
+                dataset_eval=ds_eval_masked,
+                dataset_train=ds_train_masked,
+                saveload=self._saveload,
+                name_learner=name_problem,
+            )
+            detail_mask = f"{name_mask}_{perc:.2}"
+            learner.load_network_trained(
+                n_epochs=1001,
+                save_as_suffix=detail_mask,
+            )
+            self._plot_comparison(
+                learner,
+                name_problem=name_problem,
+                name_model="CNO",
+                detail_mask=detail_mask,
+            )
+            errors.append(learner.eval(print_result=False))
+
+        self._plot_mask_to_error(
+            percs_to_mask,
+            errors,
+            name_problem=name_problem,
+            name_model="CNO",
+            name_mask=name_mask,
+        )
 
     def _plot_fnos(
         self,
