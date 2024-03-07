@@ -194,30 +194,6 @@ class DatasetConstructed(DatasetPoisson):
         raise NotImplementedError
 
 
-class DatasetConstructedSinCos(DatasetConstructed):
-    def _generate_instance(self) -> tuple[torch.Tensor, torch.Tensor]:
-        solutions, sources = self._grids.zeroes_like(), self._grids.zeroes_like()
-        for i_sample in range(self._n_samples_per_instance):
-            weight_sin, weight_cos = torch.distributions.Uniform(low=-1, high=1).sample(
-                torch.Size([2])
-            )
-            factor = i_sample * torch.pi
-            matrix_sin, matrix_cos = (
-                torch.sin(factor * self._coords_x1)
-                * torch.sin(factor * self._coords_x2),
-                torch.cos(factor * self._coords_x1)
-                * torch.cos(factor * self._coords_x2),
-            )
-            solution = weight_sin * matrix_sin + weight_cos * matrix_cos
-            solutions += solution
-            sources += -((self._n_samples_per_instance * torch.pi) ** 2) * solution
-
-        normalizer = self._n_samples_per_instance**2
-        solutions /= normalizer
-        sources /= normalizer
-        return solutions, sources
-
-
 class DatasetConstructedSin(DatasetConstructed):
     def __init__(
         self,
