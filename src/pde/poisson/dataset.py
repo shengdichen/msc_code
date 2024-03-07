@@ -266,6 +266,12 @@ class DatasetSumOfGauss(DatasetConstructed):
         n_samples_per_instance=4,
         constant_factor: float = 1.0,
         rng_np: np.random.Generator = np.random.default_rng(42),
+        sample_weight_min: float = 0.3,
+        sample_weight_max: float = 0.7,
+        sample_mu_with_sobol: bool = False,
+        sample_sigma_same: bool = False,
+        sample_sigma_min: float = 0.04,
+        sample_sigma_max: float = 0.13,
     ):
         super().__init__(
             grid_x1,
@@ -280,6 +286,11 @@ class DatasetSumOfGauss(DatasetConstructed):
         self._rng_np = rng_np
         self._coords_x1, self._coords_x2 = self._grids.coords_as_mesh()
 
+        self._weight_min, self._weight_max = sample_weight_min, sample_weight_max
+        self._mu_with_sobol = sample_mu_with_sobol
+        self._sigma_same = sample_sigma_same
+        self._sigma_min, self._sigma_max = sample_sigma_min, sample_sigma_max
+
     def _generate_instance(self) -> tuple[torch.Tensor, torch.Tensor]:
         solution_final, source_final = (
             self._grids.zeroes_like_numpy(),
@@ -292,13 +303,33 @@ class DatasetSumOfGauss(DatasetConstructed):
         return torch.from_numpy(solution_final), torch.from_numpy(source_final)
 
     def _make_sample_data(self) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-        weights = self._rng_np.uniform(size=self._n_samples_per_instance)
-        mu_vectors = self._grids.sample_uniform(
-            size=self._n_samples_per_instance, rng=self._rng_np
+        weights = self._rng_np.uniform(
+            low=self._weight_min,
+            high=self._weight_max,
+            size=self._n_samples_per_instance,
         )
-        sigma_vectors = self._rng_np.uniform(
-            size=(self._n_samples_per_instance, self._grids.n_dims)
-        )
+
+        if self._mu_with_sobol:
+            mu_vectors = self._grids.samples_sobol(self._n_samples_per_instance).numpy()
+        else:
+            mu_vectors = self._grids.sample_uniform(
+                size=self._n_samples_per_instance, rng=self._rng_np
+            )
+
+        if self._sigma_same:
+            sigmas = self._rng_np.uniform(
+                low=self._sigma_min,
+                high=self._sigma_max,
+                size=self._n_samples_per_instance,
+            )
+            sigma_vectors = np.stack([sigmas] * self._grids.n_dims, axis=-1)
+        else:
+            sigma_vectors = self._rng_np.uniform(
+                low=self._sigma_min,
+                high=self._sigma_max,
+                size=(self._n_samples_per_instance, self._grids.n_dims),
+            )
+
         return weights, mu_vectors, sigma_vectors
 
     def _make_sample(
