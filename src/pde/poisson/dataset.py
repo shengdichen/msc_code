@@ -9,6 +9,7 @@ import numpy as np
 import scipy
 import torch
 from scipy.interpolate import RectBivariateSpline
+from scipy.stats import multivariate_normal
 
 from src.numerics import grid
 from src.util import plot
@@ -252,6 +253,92 @@ class DatasetConstructedSin(DatasetConstructed):
             torch.arange(1, self._n_samples_per_instance + 1).float(),
         )
         return torch.from_numpy(sample_x1), torch.from_numpy(sample_x2)
+
+
+class DatasetSumOfGauss(DatasetConstructed):
+    def __init__(
+        self,
+        grid_x1: grid.Grid,
+        grid_x2: grid.Grid,
+        saveload: SaveloadTorch,
+        name_dataset: str,
+        n_instances: int = 10,
+        n_samples_per_instance=4,
+        constant_factor: float = 1.0,
+        rng_np: np.random.Generator = np.random.default_rng(42),
+    ):
+        super().__init__(
+            grid_x1,
+            grid_x2,
+            saveload=saveload,
+            name_dataset=name_dataset,
+            n_instances=n_instances,
+            n_samples_per_instance=n_samples_per_instance,
+        )
+
+        self._constant_factor = constant_factor
+        self._rng_np = rng_np
+        self._coords_x1, self._coords_x2 = self._grids.coords_as_mesh()
+
+    def _generate_instance(self) -> tuple[torch.Tensor, torch.Tensor]:
+        solution_final, source_final = (
+            self._grids.zeroes_like_numpy(),
+            self._grids.zeroes_like_numpy(),
+        )
+        for weight, mus, sigmas in zip(*self._make_sample_data()):
+            solution, source = self._make_sample(mus, sigmas)
+            solution_final += weight * solution
+            source_final += weight * source
+        return torch.from_numpy(solution_final), torch.from_numpy(source_final)
+
+    def _make_sample_data(self) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        weights = self._rng_np.uniform(size=self._n_samples_per_instance)
+        mu_vectors = self._grids.sample_uniform(
+            size=self._n_samples_per_instance, rng=self._rng_np
+        )
+        sigma_vectors = self._rng_np.uniform(
+            size=(self._n_samples_per_instance, self._grids.n_dims)
+        )
+        return weights, mu_vectors, sigma_vectors
+
+    def _make_sample(
+        self, mu_vec: np.ndarray, sigmas: torch.utils.data.dataset.TensorDataset
+    ) -> tuple[np.ndarray, np.ndarray]:
+        return (
+            self._constant_factor
+            * self._calc_solution(mu_vec, sigma_mat=np.diag(sigmas**2)),
+            self._constant_factor * self._calc_source(mu_vec, sigmas),
+        )
+
+    def _calc_solution(self, mu_vec: np.ndarray, sigma_mat: np.ndarray) -> np.ndarray:
+        return multivariate_normal(mean=mu_vec, cov=sigma_mat).pdf(
+            np.dstack((self._coords_x1, self._coords_x2))
+        )
+
+    def _calc_solution_ours(self, mu_vec: np.ndarray, sigmas: np.ndarray) -> np.ndarray:
+        r_var_1, r_var_2 = 1 / (sigmas[0] ** 2), 1 / (sigmas[1] ** 2)
+        diff_s_1, diff_s_2 = (
+            (self._coords_x1 - mu_vec[0]) ** 2,
+            (self._coords_x2 - mu_vec[1]) ** 2,
+        )
+        return (
+            1
+            / (2 * np.pi * np.prod(sigmas))
+            * np.exp(-0.5 * (r_var_1 * diff_s_1 + r_var_2 * diff_s_2))
+        )
+
+    def _calc_source(self, mu_vec: np.ndarray, sigmas: np.ndarray) -> np.ndarray:
+        r_var_1, r_var_2 = 1 / (sigmas[0] ** 2), 1 / (sigmas[1] ** 2)
+        diff_s_1, diff_s_2 = (
+            (self._coords_x1 - mu_vec[0]) ** 2,
+            (self._coords_x2 - mu_vec[1]) ** 2,
+        )
+        return (
+            1
+            / (2 * np.pi * np.prod(sigmas))
+            * (r_var_1**2 * diff_s_1 - r_var_1 + r_var_2**2 * diff_s_2 - r_var_2)
+            * np.exp(-0.5 * (r_var_1 * diff_s_1 + r_var_2 * diff_s_2))
+        )
 
 
 class SolverPoisson:
