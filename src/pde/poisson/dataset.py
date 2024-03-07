@@ -428,7 +428,7 @@ class DatasetSolver(DatasetPoisson):
             n_instances_test,
         )
 
-    def _make_dataset_unmasked(self) -> torch.utils.data.dataset.TensorDataset:
+    def _make_dataset_raw(self) -> torch.utils.data.dataset.TensorDataset:
         rhss_all, rhss_masked = self._generate_instances()
         self._assemble(rhss_all, rhss_masked)
 
