@@ -96,6 +96,11 @@ class Grid:
             raise ValueError("requested range is empty")
         return pt_min, pt_max
 
+    def sample_uniform(
+        self, size: int = 1, rng: np.random.Generator = np.random.default_rng()
+    ) -> np.ndarray:
+        return rng.uniform(low=self._start, high=self._end, size=size)
+
 
 class GridTime(Grid):
     def __init__(self, n_pts: int, stepsize: float, start=0.0):
@@ -250,3 +255,11 @@ class Grids:
             if all([idx_min <= idx <= idx_max for idx in indexes]):
                 res[indexes] = raw[indexes]
         return res
+
+    def sample_uniform(
+        self, size: int = 1, rng: np.random.Generator = np.random.default_rng()
+    ) -> np.ndarray:
+        return np.stack(
+            [gr.sample_uniform(size=size, rng=rng) for gr in self._grids],
+            axis=-1,  # such that first axis/index is size
+        )
