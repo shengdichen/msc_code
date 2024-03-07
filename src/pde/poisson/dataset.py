@@ -211,7 +211,7 @@ class DatasetConstructedSin(DatasetConstructed):
             saveload=saveload,
             name_dataset=name_dataset,
             n_instances=n_instances,
-            n_samples_per_instance=4,
+            n_samples_per_instance=n_samples_per_instance,
         )
 
         self._constant_factor = constant_factor
