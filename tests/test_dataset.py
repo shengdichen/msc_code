@@ -108,9 +108,9 @@ class TestMask:
                 [61, 62, 63, 64, 65],
             ]
         )
-        masker = dataset.MaskerRandom(full, 0.3, seed=42)
+        masker = dataset.MaskerRandom(0.3, seed=42)
         assert torch.allclose(
-            masker.mask(),
+            masker.mask(full),
             torch.tensor(
                 [
                     [11, 0, 0, 14, 15],
@@ -123,7 +123,7 @@ class TestMask:
             ),
         )
         assert torch.allclose(
-            masker.mask(),
+            masker.mask(full),
             torch.tensor(
                 [
                     [11, 12, 0, 14, 0],
@@ -150,9 +150,9 @@ class TestMask:
                 [90, 91, 92, 93, 94, 95, 94, 97, 98, 99],
             ]
         )
-        masker = dataset.MaskerIsland(full, 0.5)
+        masker = dataset.MaskerIsland(0.5)
         assert torch.allclose(
-            masker.mask(),
+            masker.mask(full),
             torch.tensor(
                 [
                     [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],

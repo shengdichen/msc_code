@@ -1,18 +1,22 @@
 import abc
+import collections
 import logging
 import math
+import pathlib
 import typing
 
+import matplotlib as mpl
+import matplotlib.pyplot as plt
 import numpy as np
 import scipy
 import torch
 from scipy.interpolate import RectBivariateSpline
 
-from src.deepl import fno_2d, network
+from src.deepl import cno, fno_2d, network
 from src.definition import DEFINITION
 from src.numerics import distance, grid, multidiff
 from src.util import plot
-from src.util.dataset import MaskerRandom
+from src.util.dataset import Masker, MaskerIsland, MaskerRandom
 from src.util.saveload import SaveloadImage, SaveloadTorch
 
 logger = logging.getLogger(__name__)
@@ -153,35 +157,60 @@ class DatasetPoisson:
 
         self._n_instances = n_instances
         self._saveload_location, self._saveload = (
-            f"dataset-fno-2d-{name_dataset}",
+            f"dataset--{name_dataset}",
             saveload,
         )
 
-    def dataset_unmasked(self) -> torch.utils.data.dataset.TensorDataset:
-        def make() -> torch.utils.data.dataset.TensorDataset:
-            return self._make_dataset_unmasked()
+    @property
+    def n_instances(self) -> int:
+        return self._n_instances
 
-        location = self._saveload.rebase_location(self._saveload_location)
-        return self._saveload.load_or_make(location, make)
-
-    @abc.abstractmethod
-    def _make_dataset_unmasked(self) -> torch.utils.data.dataset.TensorDataset:
-        raise NotImplementedError
-
-    def dataset_masked_random(
-        self, perc_to_mask: float
+    def dataset_raw(
+        self,
     ) -> torch.utils.data.dataset.TensorDataset:
         def make() -> torch.utils.data.dataset.TensorDataset:
-            return self._make_dataset_masked_random(perc_to_mask)
+            return self._make_dataset_raw()
 
-        location = self._saveload.rebase_location(self._saveload_location)
-        return self._saveload.load_or_make(location, make)
+        return self._load_or_make(
+            make,
+            location=f"{self._saveload_location}--raw_{self._n_instances}",
+        )
 
     @abc.abstractmethod
-    def _make_dataset_masked_random(
-        self, perc_to_mask: float
-    ) -> torch.utils.data.dataset.TensorDataset:
+    def _make_dataset_raw(self) -> torch.utils.data.dataset.TensorDataset:
         raise NotImplementedError
+
+    def dataset_raw_split(
+        self,
+        indexes: typing.Union[np.ndarray, collections.abc.Sequence[int]],
+        autosave: typing.Optional[bool] = True,
+        save_as_suffix: typing.Optional[typing.Union[str, pathlib.Path]] = None,
+    ) -> torch.utils.data.dataset.TensorDataset:
+        def make() -> torch.utils.data.dataset.TensorDataset:
+            return torch.utils.data.Subset(self.dataset_raw(), indexes)
+
+        return self._load_or_make(
+            make,
+            location=f"{self._saveload_location}--{save_as_suffix}_{len(indexes)}",
+            autosave=autosave,
+        )
+
+    @abc.abstractmethod
+    def dataset_masked(self) -> torch.utils.data.dataset.TensorDataset:
+        raise NotImplementedError
+
+    def _load_or_make(
+        self,
+        make: typing.Callable[..., torch.utils.data.dataset.TensorDataset],
+        location: typing.Optional[typing.Union[str, pathlib.Path]] = None,
+        autosave: typing.Optional[bool] = True,
+    ) -> torch.utils.data.dataset.TensorDataset:
+        if autosave:
+            location = location or self._saveload_location
+            return self._saveload.load_or_make(
+                self._saveload.rebase_location(location), make
+            )
+        return make()
 
     def plot_instance(self) -> None:
         plotter = plot.PlotFrame(
@@ -223,40 +252,59 @@ class DatasetConstructed(DatasetPoisson):
         )
         self._n_samples_per_instance = n_samples_per_instance  # aka, |K|
 
-    def _make_dataset_unmasked(self) -> torch.utils.data.dataset.TensorDataset:
-        solutions, sources, solutions_masked = [], [], []
+    def _make_dataset_raw(self) -> torch.utils.data.dataset.TensorDataset:
+        solutions, sources = [], []
         for __ in range(self._n_instances):
             solution, source = self._generate_instance()
             solutions.append(solution)
             sources.append(source)
-            solutions_masked.append(source)
-        return self._assemble(solutions_masked, sources, solutions)
+        return torch.utils.data.TensorDataset(
+            torch.stack(solutions), torch.stack(sources)
+        )
 
-    def _make_dataset_masked_random(
-        self, perc_to_mask: float
+    def dataset_masked(
+        self,
+        mask_source: typing.Optional[Masker] = None,
+        mask_solution: typing.Optional[Masker] = None,
+        from_dataset: typing.Optional[torch.utils.data.dataset.TensorDataset] = None,
+        autosave: typing.Optional[bool] = False,
+        save_as_suffix: typing.Optional[typing.Union[str, pathlib.Path]] = "masked",
     ) -> torch.utils.data.dataset.TensorDataset:
-        solutions, sources, solutions_masked = [], [], []
-        for __ in range(self._n_instances):
-            solution, source = self._generate_instance()
-            solutions.append(solution)
-            sources.append(source)
-            solutions_masked.append(
-                MaskerRandom(solution, perc_to_mask=perc_to_mask).mask()
+        def make() -> torch.utils.data.dataset.TensorDataset:
+            dataset_raw = from_dataset or self.dataset_raw()
+            n_instances = len(dataset_raw)
+
+            solutions, sources, solutions_masked = [], [], []
+            for solution, source in dataset_raw:
+                solutions.append(solution)
+                sources.append(mask_source.mask(source) if mask_source else source)
+                solutions_masked.append(
+                    mask_solution.mask(solution) if mask_solution else solution
+                )
+            return self._assemble(
+                solutions_masked, sources, solutions, n_instances=n_instances
             )
-        return self._assemble(solutions_masked, sources, solutions)
+
+        return self._load_or_make(
+            make,
+            location=f"{self._saveload_location}--{save_as_suffix}",
+            autosave=autosave,
+        )
 
     def _assemble(
         self,
         solutions_masked: torch.Tensor,
         sources: torch.Tensor,
         solutions: torch.Tensor,
+        n_instances: typing.Optional[int] = None,
     ) -> torch.utils.data.dataset.TensorDataset:
+        n_instances = n_instances or self._n_instances
         lhss = torch.stack(
             [
                 torch.stack(solutions_masked),
                 torch.stack(sources),
-                self._coords_x1.repeat(self._n_instances, 1, 1),
-                self._coords_x2.repeat(self._n_instances, 1, 1),
+                self._coords_x1.repeat(n_instances, 1, 1),
+                self._coords_x2.repeat(n_instances, 1, 1),
             ],
             dim=-1,
         )
@@ -296,6 +344,27 @@ class DatasetConstructedSinCos(DatasetConstructed):
 
 
 class DatasetConstructedSin(DatasetConstructed):
+    def __init__(
+        self,
+        grid_x1: grid.Grid,
+        grid_x2: grid.Grid,
+        saveload: SaveloadTorch,
+        name_dataset: str,
+        n_instances: int = 10,
+        n_samples_per_instance=4,
+        constant_factor: float = 10.0,
+    ):
+        super().__init__(
+            grid_x1,
+            grid_x2,
+            saveload=saveload,
+            name_dataset=name_dataset,
+            n_instances=n_instances,
+            n_samples_per_instance=4,
+        )
+
+        self._constant_factor = constant_factor
+
     def _generate_instance(self) -> tuple[torch.Tensor, torch.Tensor]:
         weights = torch.distributions.Uniform(low=-1, high=1).sample(
             [self._n_samples_per_instance] * self._grids.n_dims
@@ -312,11 +381,15 @@ class DatasetConstructedSin(DatasetConstructed):
             * torch.sin(torch.pi * sample_x2 * coords_x2)
         )
         const_r = 0.85
-        source = (torch.pi / self._n_samples_per_instance**2) * torch.sum(
+        source = (
+            self._constant_factor * torch.pi / self._n_samples_per_instance**2
+        ) * torch.sum(
             (idx_sum**const_r) * product,
             dim=(-2, -1),
         )
-        solution = (1 / torch.pi / self._n_samples_per_instance**2) * torch.sum(
+        solution = (
+            self._constant_factor / torch.pi / self._n_samples_per_instance**2
+        ) * torch.sum(
             (idx_sum ** (const_r - 1)) * product,
             dim=(-2, -1),
         )
@@ -363,15 +436,20 @@ class DatasetSolver(DatasetPoisson):
         rhss_all, rhss_masked = self._generate_instances()
         self._assemble(rhss_all, rhss_masked)
 
-    def _make_dataset_masked_random(
-        self, perc_to_mask: float
+    def dataset_masked(
+        self,
+        mask_solution: typing.Optional[Masker] = None,
+        location: typing.Optional[typing.Union[str, pathlib.Path]] = None,
     ) -> torch.utils.data.dataset.TensorDataset:
-        rhss_all, rhss_masked = self._generate_instances(perc_to_mask)
-        return self._assemble(rhss_all, rhss_masked)
+        def make() -> None:
+            rhss_all, rhss_masked = self._generate_instances(mask_solution)
+            return self._assemble(rhss_all, rhss_masked)
+
+        return self._load_or_make(make, location)
 
     def _generate_instances(
         self,
-        perc_to_mask: typing.Optional[float] = None,
+        mask_solution: typing.Optional[Masker] = None,
     ) -> tuple[torch.Tensor, torch.Tensor]:
         rhss_all, rhss_masked = [], []
         for __ in range(self._n_instances):
@@ -382,12 +460,9 @@ class DatasetSolver(DatasetPoisson):
                 boundary_mean=self._boundary_mean, boundary_sigma=self._boundary_sigma
             )
             rhss_all.append(solution)
-            if not perc_to_mask:
-                rhss_masked.append(solution)
-            else:
-                rhss_masked.append(
-                    MaskerRandom(solution, perc_to_mask=perc_to_mask).mask()
-                )
+            rhss_masked.append(
+                mask_solution.mask(solution) if mask_solution else solution
+            )
 
         return torch.stack(rhss_all), torch.stack(rhss_masked)
 
@@ -430,7 +505,7 @@ class LearnerPoissonFNO:
         dataset_eval: torch.utils.data.dataset.TensorDataset,
         dataset_train: torch.utils.data.dataset.TensorDataset,
         saveload: SaveloadTorch,
-        saveload_location: str,
+        name_learner: str,
     ):
         self._device = DEFINITION.device_preferred
 
@@ -439,8 +514,8 @@ class LearnerPoissonFNO:
         self._network = network_fno.to(self._device)
         self._dataset_eval, self._dataset_train = dataset_eval, dataset_train
 
-        self._saveload = saveload
-        self._location = self._saveload.rebase_location(saveload_location)
+        self._saveload, self._name_learner = saveload, name_learner
+        self._location = self._saveload.rebase_location(name_learner)
 
     def train(self, n_epochs: int = 2001, freq_eval: int = 100) -> None:
         optimizer = torch.optim.Adam(self._network.parameters(), weight_decay=1e-5)
@@ -468,12 +543,22 @@ class LearnerPoissonFNO:
                 print(f"train> mse: {np.average(loss_all)}")
                 self.eval()
 
-        self._saveload.save(self._network, self._location)
+    def load_network_trained(
+        self, n_epochs: int = 2001, freq_eval: int = 100, save_as_suffix: str = "model"
+    ) -> torch.nn.Module:
+        def make() -> torch.nn.Module:
+            self.train(n_epochs=n_epochs, freq_eval=freq_eval)
+            return self._network
 
-    def load(self) -> None:
-        self._network = self._saveload.load(self._location)
+        location = (
+            self._saveload.rebase_location(f"{self._name_learner}--{save_as_suffix}")
+            if save_as_suffix
+            else self._location
+        )
+        self._network = self._saveload.load_or_make(location, make)
+        return self._network
 
-    def eval(self) -> None:
+    def eval(self, print_result: bool = True) -> float:
         mse_abs_all, mse_rel_all = [], []
         with torch.no_grad():
             self._network.eval()
@@ -489,18 +574,54 @@ class LearnerPoissonFNO:
                 mse_abs_all.append(dst.mse().item())
                 mse_rel_all.append(dst.mse_relative().item())
         mse_abs_avg, mse_rel_avg = np.average(mse_abs_all), np.average(mse_rel_all)
-        print(f"eval> (mse, mse%): {mse_abs_avg}, {mse_rel_avg}")
+        if print_result:
+            print(f"eval> (mse, mse%): {mse_abs_avg}, {mse_rel_avg}")
+
+        return mse_rel_avg.item()
+
+    def plot(self) -> mpl.figure.Figure:
+        return self.plot_comparison_2d()
+
+    def plot_comparison_2d(self) -> mpl.figure.Figure:
+        u_theirs, u_ours = self._plotdata_u()
+
+        fig, (ax_1, ax_2) = plt.subplots(
+            1, 2, width_ratios=(1, 1), figsize=(10, 5), dpi=200
+        )
+        putil = plot.PlotUtil(self._grids)
+
+        # TODO: how do we use colorbar?
+        # fig.colorbar(label="u")
+        putil.plot_2d(ax_1, u_theirs)
+        ax_1.set_title("$u$ (theirs)")
+
+        putil.plot_2d(ax_2, u_ours)
+        ax_2.set_title("$u$ (ours)")
+        return fig
+
+    def plot_comparison_3d(self) -> mpl.figure.Figure:
+        u_theirs, u_ours = self._plotdata_u()
+
+        fig, (ax_1, ax_2) = plt.subplots(
+            1,
+            2,
+            width_ratios=(1, 1),
+            figsize=(10, 5),
+            dpi=200,
+            subplot_kw={"projection": "3d"},
+        )
+        putil = plot.PlotUtil(self._grids)
+
+        putil.plot_3d(ax_1, u_theirs)
+        ax_1.set_title("$u$ (theirs)")
+
+        putil.plot_3d(ax_2, u_ours)
+        ax_2.set_title("$u$ (ours)")
+        return fig
 
     @abc.abstractmethod
-    def plot(self) -> None:
-        pass
-
-    def _plot_save(self, rhss_ours: torch.Tensor, save_as: str) -> None:
-        plotter = plot.PlotFrame(
-            self._grids, rhss_ours, save_as, SaveloadImage(self._saveload.base)
-        )
-        plotter.plot_2d()
-        plotter.plot_3d()
+    def _plotdata_u(self) -> tuple[torch.Tensor, torch.Tensor]:
+        raise NotImplementedError
 
     def _separate_lhss_rhss(
         self, dataset: torch.utils.data.dataset.TensorDataset
@@ -540,16 +661,63 @@ class LearnerPoissonFNO2d(LearnerPoissonFNO):
             dataset_eval=dataset_eval,
             dataset_train=dataset_train,
             saveload=saveload,
-            saveload_location=f"network-fno-2d-{name_learner}",
+            name_learner=f"network_fno_2d--{name_learner}",
         )
 
-    def plot(self) -> None:
+    def _plotdata_u(self) -> tuple[torch.Tensor, torch.Tensor]:
         lhss, rhss = self._one_lhss_rhss(self._dataset_eval)
-        self._plot_save(rhss[0, :, :, 0], f"{self._location}-theirs")
+        u_theirs = rhss[0, :, :, 0]
 
-        lhss = lhss.to(device=self._device, dtype=torch.float)
-        rhss_ours = self._network(lhss).detach().to("cpu")[0, :, :, 0]
-        self._plot_save(rhss_ours, f"{self._location}-ours")
+        with torch.no_grad():
+            lhss = lhss.to(device=self._device, dtype=torch.float)
+            self._network.eval()
+            u_ours = self._network(lhss).detach().to("cpu")[0, :, :, 0]
+
+        return u_theirs, u_ours
+
+
+class DatasetReorderCNO:
+    def __init__(self, dataset: torch.utils.data.dataset.TensorDataset):
+        self._dataset = dataset
+
+    def reorder(self) -> torch.utils.data.dataset.TensorDataset:
+        lhss, rhss = [], []
+        for lhs, rhs in self._dataset:
+            lhss.append(lhs.permute(2, 0, 1))
+            rhss.append(rhs.permute(2, 0, 1))
+        return torch.utils.data.TensorDataset(torch.stack(lhss), torch.stack(rhss))
+
+
+class LearnerPoissonCNO2d(LearnerPoissonFNO):
+    def __init__(
+        self,
+        grid_x1: grid.Grid,
+        grid_x2: grid.Grid,
+        dataset_eval: torch.utils.data.dataset.TensorDataset,
+        dataset_train: torch.utils.data.dataset.TensorDataset,
+        saveload: SaveloadTorch,
+        name_learner: str,
+    ):
+        super().__init__(
+            grid_x1,
+            grid_x2,
+            cno.CNO2d(in_channel=4, out_channel=1),
+            dataset_eval=DatasetReorderCNO(dataset_eval).reorder(),
+            dataset_train=DatasetReorderCNO(dataset_train).reorder(),
+            saveload=saveload,
+            name_learner=f"network_cno_2d--{name_learner}",
+        )
+
+    def _plotdata_u(self) -> tuple[torch.Tensor, torch.Tensor]:
+        lhss, rhss = self._one_lhss_rhss(self._dataset_eval)
+        u_theirs = rhss[0, 0, :, :]
+
+        with torch.no_grad():
+            lhss = lhss.to(device=self._device, dtype=torch.float)
+            self._network.eval()
+            u_ours = self._network(lhss).detach().to("cpu")[0, 0, :, :]
+
+        return u_theirs, u_ours
 
 
 class LearnerPoissonFC:
@@ -655,13 +823,63 @@ class LearnerPoissonFC:
         plotter.plot_3d()
 
 
+class DatasetSplits:
+    def __init__(
+        self,
+        dataset_full: DatasetPoisson,
+        n_instances_eval: int = 300,
+        n_instances_train: int = 100,
+    ):
+        self._dataset_full = dataset_full
+        self._n_instances = self._dataset_full.n_instances
+        self._n_instances_eval, self._n_instances_train = (
+            n_instances_eval,
+            n_instances_train,
+        )
+
+    def split(
+        self,
+    ) -> tuple[
+        torch.utils.data.dataset.TensorDataset, torch.utils.data.dataset.TensorDataset
+    ]:
+        indexes_eval, indexes_train = self._indexes_eval_train()
+
+        return (
+            self._dataset_full.dataset_raw_split(
+                indexes=indexes_eval, save_as_suffix="eval"
+            ),
+            self._dataset_full.dataset_raw_split(
+                indexes=indexes_train, save_as_suffix="train"
+            ),
+        )
+
+    def _indexes_eval_train(self) -> tuple[np.ndarray, np.ndarray]:
+        # NOTE:
+        # generate indexes in one call with |replace| set to |False| to guarantee strict
+        # separation of train and eval datasets
+        indexes = np.random.default_rng(seed=42).choice(
+            self._n_instances,
+            self._n_instances_eval + self._n_instances_train,
+            replace=False,
+        )
+        return (
+            indexes[: self._n_instances_eval],
+            indexes[-self._n_instances_train :],
+        )
+
+
 class Learners:
-    def __init__(self):
+    def __init__(self, n_instances_eval: int = 300, n_instances_train=100):
         self._grid_x1 = grid.Grid(n_pts=64, stepsize=0.01, start=0.0)
         self._grid_x2 = grid.Grid(n_pts=64, stepsize=0.01, start=0.0)
 
-        self._idx_min, self._idx_max = 10, 40
-        self._saveload = SaveloadTorch("poisson")
+        self._n_instances_eval, self._n_instances_train = (
+            n_instances_eval,
+            n_instances_train,
+        )
+
+        self._saveload_base = "poisson"
+        self._saveload = SaveloadTorch(self._saveload_base)
 
     def dataset_standard(self) -> None:
         name_dataset = "dataset-fno-2d-standard"
@@ -678,35 +896,212 @@ class Learners:
         learner = LearnerPoissonFNO2d(
             self._grid_x1,
             self._grid_x2,
-            dataset_eval=ds.dataset_masked_random(perc_to_mask=0.5),
-            dataset_train=ds.dataset_masked_random(perc_to_mask=0.5),
+            dataset_eval=ds.dataset_masked(mask_solution=MaskerRandom(0.5)),
+            dataset_train=ds.dataset_masked(mask_solution=MaskerRandom(0.5)),
             saveload=self._saveload,
             name_learner="standard",
         )
         learner.train()
         learner.plot()
 
-    def dataset_custom(self) -> None:
-        name = "custom"
-
-        ds = DatasetCustom(
+    def dataset_custom_sin(
+        self,
+        ds_size: int = 1000,
+        n_samples_per_instance: int = 3,
+    ) -> None:
+        name_problem = "custom_sin"
+        dataset_full = DatasetConstructedSin(
             self._grid_x1,
             self._grid_x2,
             saveload=self._saveload,
-            name_dataset=name,
+            name_dataset=name_problem,
+            n_instances=ds_size,
+            n_samples_per_instance=n_samples_per_instance,
         )
-        ds.plot_instance()
 
-        learner = LearnerPoissonFNO2d(
-            self._grid_x1,
-            self._grid_x2,
-            dataset_eval=ds.dataset_masked_random(perc_to_mask=0.5),
-            dataset_train=ds.dataset_masked_random(perc_to_mask=0.5),
-            saveload=self._saveload,
-            name_learner=name,
+        percs_to_mask = np.arange(start=0.1, stop=1.0, step=0.1)
+        masks_random = [MaskerRandom(perc_to_mask=perc) for perc in percs_to_mask]
+        masks_island = [MaskerIsland(perc_to_keep=1 - perc) for perc in percs_to_mask]
+
+        self._plot_fnos(
+            dataset_full,
+            percs_to_mask,
+            name_problem=name_problem,
+            masks=masks_random,
+            name_mask="random",
         )
-        learner.train(n_epochs=1001)
-        learner.plot()
+        self._plot_fnos(
+            dataset_full,
+            percs_to_mask,
+            name_problem=name_problem,
+            masks=masks_island,
+            name_mask="island",
+        )
+        self._plot_cnos(
+            dataset_full,
+            percs_to_mask,
+            name_problem=name_problem,
+            masks=masks_random,
+            name_mask="random",
+        )
+        self._plot_cnos(
+            dataset_full,
+            percs_to_mask,
+            name_problem=name_problem,
+            masks=masks_island,
+            name_mask="island",
+        )
+
+    def _plot_cnos(
+        self,
+        dataset_full: DatasetConstructed,
+        percs_to_mask: np.ndarray,
+        masks: typing.Sequence[Masker],
+        name_mask: str,
+        name_problem: str,
+    ) -> None:
+        errors = []
+        ds_eval_raw, ds_train_raw = DatasetSplits(
+            dataset_full,
+            n_instances_eval=self._n_instances_eval,
+            n_instances_train=self._n_instances_train,
+        ).split()
+
+        for perc, mask in zip(percs_to_mask, masks):
+            ds_eval_masked = dataset_full.dataset_masked(
+                from_dataset=ds_eval_raw,
+                mask_solution=mask,
+                save_as_suffix=f"eval_{self._n_instances_eval}",
+            )
+            ds_train_masked = dataset_full.dataset_masked(
+                from_dataset=ds_train_raw,
+                mask_solution=mask,
+                save_as_suffix=f"train_{self._n_instances_train}",
+            )
+            learner = LearnerPoissonCNO2d(
+                self._grid_x1,
+                self._grid_x2,
+                dataset_eval=ds_eval_masked,
+                dataset_train=ds_train_masked,
+                saveload=self._saveload,
+                name_learner=name_problem,
+            )
+            detail_mask = f"{name_mask}_{perc:.2}"
+            learner.load_network_trained(
+                n_epochs=1001,
+                save_as_suffix=detail_mask,
+            )
+            self._plot_comparison(
+                learner,
+                name_problem=name_problem,
+                name_model="CNO",
+                detail_mask=detail_mask,
+            )
+            errors.append(learner.eval(print_result=False))
+
+        self._plot_mask_to_error(
+            percs_to_mask,
+            errors,
+            name_problem=name_problem,
+            name_model="CNO",
+            name_mask=name_mask,
+        )
+
+    def _plot_fnos(
+        self,
+        dataset_full: DatasetConstructed,
+        percs_to_mask: np.ndarray,
+        masks: typing.Sequence[Masker],
+        name_mask: str,
+        name_problem: str,
+    ) -> None:
+        errors = []
+        ds_eval_raw, ds_train_raw = DatasetSplits(
+            dataset_full,
+            n_instances_eval=self._n_instances_eval,
+            n_instances_train=self._n_instances_train,
+        ).split()
+
+        for perc, mask in zip(percs_to_mask, masks):
+            ds_eval_masked = dataset_full.dataset_masked(
+                from_dataset=ds_eval_raw,
+                mask_solution=mask,
+                save_as_suffix=f"eval_{self._n_instances_eval}",
+            )
+            ds_train_masked = dataset_full.dataset_masked(
+                from_dataset=ds_train_raw,
+                mask_solution=mask,
+                save_as_suffix=f"train_{self._n_instances_train}",
+            )
+            learner = LearnerPoissonFNO2d(
+                self._grid_x1,
+                self._grid_x2,
+                dataset_eval=ds_eval_masked,
+                dataset_train=ds_train_masked,
+                saveload=self._saveload,
+                name_learner=name_problem,
+            )
+            detail_mask = f"{name_mask}_{perc:.2}"
+            learner.load_network_trained(
+                n_epochs=1001,
+                save_as_suffix=detail_mask,
+            )
+            self._plot_comparison(
+                learner,
+                name_problem=name_problem,
+                name_model="FNO",
+                detail_mask=detail_mask,
+            )
+            errors.append(learner.eval(print_result=False))
+
+        self._plot_mask_to_error(
+            percs_to_mask,
+            errors,
+            name_problem=name_problem,
+            name_model="FNO",
+            name_mask=name_mask,
+        )
+
+    def _plot_comparison(
+        self,
+        learner: LearnerPoissonFNO,
+        name_problem: str,
+        name_model: str,
+        detail_mask: str,
+    ) -> None:
+        saveload = SaveloadImage(self._saveload_base)
+        location = f"{name_problem}--{name_model}--{detail_mask}"
+        saveload.save(
+            learner.plot_comparison_2d(),
+            saveload.rebase_location(f"{location}--2d"),
+            overwrite=True,
+        )
+        saveload.save(
+            learner.plot_comparison_3d(),
+            saveload.rebase_location(f"{location}--3d"),
+            overwrite=True,
+        )
+
+    def _plot_mask_to_error(
+        self,
+        percs_to_mask: np.ndarray,
+        errors: list[float],
+        name_problem: str,
+        name_model: str,
+        name_mask: str,
+    ) -> None:
+        fig, ax = plt.subplots()
+        style = {"linestyle": "dashed", "marker": "x"}
+        ax.plot(percs_to_mask, errors, **style)
+        ax.set_xlabel(f"masking proportion [{name_mask}-style]")
+        ax.set_ylabel("error [L2]")
+        ax.set_title(f"error VS masking [{name_model}]")
+
+        saveload = SaveloadImage(self._saveload_base)
+        location = f"mask_to_error--{name_problem}--{name_model}"
+        if name_mask:
+            location = f"{location}--{name_mask}"
+        saveload.save(fig, saveload.rebase_location(location), overwrite=True)
 
 
 if __name__ == "__main__":
@@ -717,4 +1112,4 @@ if __name__ == "__main__":
     torch.manual_seed(42)
 
     learners = Learners()
-    learners.dataset_standard()
+    learners.dataset_custom_sin()
