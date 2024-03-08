@@ -492,6 +492,18 @@ class TestGrids:
                 ]
             ),
         )
+        assert torch.allclose(
+            grs.mask(target_raw, idx_min=1, idx_max=3),
+            torch.tensor(
+                [
+                    [0, 0, 0, 0, 0, 0],
+                    [0, 11, 12, 13, 0, 0],
+                    [0, 21, 22, 23, 0, 0],
+                    [0, 31, 32, 33, 0, 0],
+                    [0, 0, 0, 0, 0, 0],
+                ]
+            ),
+        )
 
     def test_sample_uniform(self) -> None:
         gr_1 = grid.Grid(n_pts=10, stepsize=0.1, start=-100)
