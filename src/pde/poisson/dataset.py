@@ -284,7 +284,7 @@ class DatasetSumOfGauss(DatasetConstructed):
 
         self._constant_factor = constant_factor
         self._rng_np = rng_np
-        self._coords_x1, self._coords_x2 = self._grids.coords_as_mesh()
+        self._coords_x1_np, self._coords_x2_np = self._grids.coords_as_mesh()
 
         self._weight_min, self._weight_max = sample_weight_min, sample_weight_max
         self._mu_with_sobol = sample_mu_with_sobol
@@ -343,14 +343,14 @@ class DatasetSumOfGauss(DatasetConstructed):
 
     def _calc_solution(self, mu_vec: np.ndarray, sigma_mat: np.ndarray) -> np.ndarray:
         return multivariate_normal(mean=mu_vec, cov=sigma_mat).pdf(
-            np.dstack((self._coords_x1, self._coords_x2))
+            np.dstack((self._coords_x1_np, self._coords_x2_np))
         )
 
     def _calc_solution_ours(self, mu_vec: np.ndarray, sigmas: np.ndarray) -> np.ndarray:
         r_var_1, r_var_2 = 1 / (sigmas[0] ** 2), 1 / (sigmas[1] ** 2)
         diff_s_1, diff_s_2 = (
-            (self._coords_x1 - mu_vec[0]) ** 2,
-            (self._coords_x2 - mu_vec[1]) ** 2,
+            (self._coords_x1_np - mu_vec[0]) ** 2,
+            (self._coords_x2_np - mu_vec[1]) ** 2,
         )
         return (
             1
@@ -361,8 +361,8 @@ class DatasetSumOfGauss(DatasetConstructed):
     def _calc_source(self, mu_vec: np.ndarray, sigmas: np.ndarray) -> np.ndarray:
         r_var_1, r_var_2 = 1 / (sigmas[0] ** 2), 1 / (sigmas[1] ** 2)
         diff_s_1, diff_s_2 = (
-            (self._coords_x1 - mu_vec[0]) ** 2,
-            (self._coords_x2 - mu_vec[1]) ** 2,
+            (self._coords_x1_np - mu_vec[0]) ** 2,
+            (self._coords_x2_np - mu_vec[1]) ** 2,
         )
         return (
             1
