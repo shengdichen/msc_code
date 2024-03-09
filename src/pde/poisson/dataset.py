@@ -12,7 +12,7 @@ from scipy.interpolate import RectBivariateSpline
 from scipy.stats import multivariate_normal
 
 from src.numerics import grid
-from src.pde.dataset import DatasetPDE2d
+from src.pde.dataset import DatasetMasked, DatasetPDE2d
 from src.util import plot
 from src.util.dataset import Masker
 from src.util.saveload import SaveloadImage, SaveloadTorch
@@ -290,6 +290,112 @@ class DatasetPoisson:
     @abc.abstractmethod
     def _generate_instance_solution(self) -> torch.Tensor:
         raise NotImplementedError
+
+
+class DatasetPoissonMaskedSolution(DatasetMasked):
+    def __init__(
+        self,
+        grid_x1: grid.Grid,
+        grid_x2: grid.Grid,
+        dataset_raw: torch.utils.data.dataset.TensorDataset,
+        mask: Masker,
+    ):
+        super().__init__(dataset_raw, [mask])
+
+        self._grid_x1, self._grid_x2 = grid_x1, grid_x2
+        self._grids = grid.Grids([self._grid_x1, self._grid_x2])
+
+        coords_x1, coords_x2 = self._grids.coords_as_mesh()
+        self._coords_x1, self._coords_x2 = (
+            torch.from_numpy(coords_x1),
+            torch.from_numpy(coords_x2),
+        )
+
+    def make(self) -> torch.utils.data.dataset.TensorDataset:
+        solutions, solutions_masked, sources = [], [], []
+
+        for solution, source in self._dataset_raw:
+            solutions.append(solution)
+            solutions_masked.append(self._masks[0].mask(solution))
+            sources.append(source)
+        return self._assemble(solutions, solutions_masked, sources)
+
+    def _assemble(
+        self,
+        solutions: torch.Tensor,
+        solutions_masked: torch.Tensor,
+        sources: torch.Tensor,
+    ) -> torch.utils.data.dataset.TensorDataset:
+        n_instances = len(self._dataset_raw)
+        lhss = torch.stack(
+            [
+                torch.stack(solutions_masked),
+                torch.stack(sources),
+                self._coords_x1.repeat(n_instances, 1, 1),
+                self._coords_x2.repeat(n_instances, 1, 1),
+            ],
+            dim=-1,
+        )
+        rhss = torch.stack(solutions).unsqueeze(-1)
+        return torch.utils.data.TensorDataset(lhss, rhss)
+
+
+class DatasetPoissonMaskedSolutionSource(DatasetMasked):
+    def __init__(
+        self,
+        grid_x1: grid.Grid,
+        grid_x2: grid.Grid,
+        dataset_raw: torch.utils.data.dataset.TensorDataset,
+        mask_solution: Masker,
+        mask_source: Masker,
+    ):
+        super().__init__(dataset_raw, [mask_solution, mask_source])
+
+        self._grid_x1, self._grid_x2 = grid_x1, grid_x2
+        self._grids = grid.Grids([self._grid_x1, self._grid_x2])
+
+        coords_x1, coords_x2 = self._grids.coords_as_mesh()
+        self._coords_x1, self._coords_x2 = (
+            torch.from_numpy(coords_x1),
+            torch.from_numpy(coords_x2),
+        )
+
+    def make(self) -> torch.utils.data.dataset.TensorDataset:
+        solutions, solutions_masked, sources, sources_masked = [], [], [], []
+
+        for solution, source in self._dataset_raw:
+            solutions.append(solution)
+            solutions_masked.append(self._masks[0].mask(solution))
+            sources.append(source)
+            sources_masked.append(self._masks[1].mask(solution))
+        return self._assemble(solutions, solutions_masked, sources, sources_masked)
+
+    def _assemble(
+        self,
+        solutions: torch.Tensor,
+        solutions_masked: torch.Tensor,
+        sources: torch.Tensor,
+        sources_masked: torch.Tensor,
+    ) -> torch.utils.data.dataset.TensorDataset:
+        n_instances = len(self._dataset_raw)
+
+        lhss = torch.stack(
+            [
+                torch.stack(solutions_masked),
+                torch.stack(sources_masked),
+                self._coords_x1.repeat(n_instances, 1, 1),
+                self._coords_x2.repeat(n_instances, 1, 1),
+            ],
+            dim=-1,
+        )
+        rhss = torch.stack(
+            [
+                torch.stack(solutions),
+                torch.stack(sources),
+            ],
+            dim=-1,
+        )
+        return torch.utils.data.TensorDataset(lhss, rhss)
 
 
 class DatasetConstructed(DatasetPoisson):
