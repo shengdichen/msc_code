@@ -245,7 +245,7 @@ class DatasetConstructedSin(DatasetConstructed):
             (idx_sum ** (const_r - 1)) * product,
             dim=(-2, -1),
         )
-        return source, solution
+        return solution, source
 
     def _sample_coords(self) -> tuple[torch.Tensor, torch.Tensor]:
         sample_x1, sample_x2 = np.meshgrid(
