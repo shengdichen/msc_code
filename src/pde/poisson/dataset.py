@@ -12,11 +12,200 @@ from scipy.interpolate import RectBivariateSpline
 from scipy.stats import multivariate_normal
 
 from src.numerics import grid
+from src.pde.dataset import DatasetPDE2d
 from src.util import plot
 from src.util.dataset import Masker
 from src.util.saveload import SaveloadImage, SaveloadTorch
 
 logger = logging.getLogger(__name__)
+
+
+class DatasetPoisson2d(DatasetPDE2d):
+    def solve(
+        self, n_instances: int
+    ) -> typing.Iterable[tuple[torch.Tensor, torch.Tensor]]:
+        for __ in range(n_instances):
+            yield self.solve_instance()
+
+    def solve_instance(self) -> tuple[torch.Tensor, torch.Tensor]:
+        """
+        return (solution, source)
+        """
+        raise NotImplementedError
+
+    def as_dataset(self, n_instances: int) -> torch.utils.data.dataset.TensorDataset:
+        solutions, sources = [], []
+        for solution, source in self.solve(n_instances):
+            solutions.append(solution)
+            sources.append(source)
+        return torch.utils.data.TensorDataset(
+            torch.stack(solutions), torch.stack(sources)
+        )
+
+
+class DatasetSin(DatasetPoisson2d):
+    def __init__(
+        self,
+        grid_x1: grid.Grid,
+        grid_x2: grid.Grid,
+        n_samples_per_instance=4,
+        constant_factor: float = 10.0,
+    ):
+        super().__init__(grid_x1, grid_x2)
+
+        coords_x1, coords_x2 = self._grids.coords_as_mesh()
+        self._coords_x1, self._coords_x2 = (
+            torch.from_numpy(coords_x1),
+            torch.from_numpy(coords_x2),
+        )
+
+        self._n_samples_per_instance = n_samples_per_instance
+        self._constant_factor = constant_factor
+
+    def solve_instance(self) -> tuple[torch.Tensor, torch.Tensor]:
+        weights = torch.distributions.Uniform(low=-1, high=1).sample(
+            [self._n_samples_per_instance] * self._grids.n_dims
+        )
+
+        sample_x1, sample_x2 = self._sample_coords()
+        idx_sum = sample_x1**2 + sample_x2**2
+
+        coords_x1 = self._coords_x1[..., None, None]
+        coords_x2 = self._coords_x2[..., None, None]
+        product = (
+            weights
+            * torch.sin(torch.pi * sample_x1 * coords_x1)
+            * torch.sin(torch.pi * sample_x2 * coords_x2)
+        )
+        const_r = 0.85
+        source = (
+            self._constant_factor * torch.pi / self._n_samples_per_instance**2
+        ) * torch.sum(
+            (idx_sum**const_r) * product,
+            dim=(-2, -1),
+        )
+        solution = (
+            self._constant_factor / torch.pi / self._n_samples_per_instance**2
+        ) * torch.sum(
+            (idx_sum ** (const_r - 1)) * product,
+            dim=(-2, -1),
+        )
+        return solution, source
+
+    def _sample_coords(self) -> tuple[torch.Tensor, torch.Tensor]:
+        sample_x1, sample_x2 = np.meshgrid(
+            torch.arange(1, self._n_samples_per_instance + 1).float(),
+            torch.arange(1, self._n_samples_per_instance + 1).float(),
+        )
+        return torch.from_numpy(sample_x1), torch.from_numpy(sample_x2)
+
+
+class DatasetGauss(DatasetPoisson2d):
+    def __init__(
+        self,
+        grid_x1: grid.Grid,
+        grid_x2: grid.Grid,
+        n_samples_per_instance=4,
+        constant_factor: float = 1.0,
+        rng_np: np.random.Generator = np.random.default_rng(42),
+        sample_weight_min: float = 0.3,
+        sample_weight_max: float = 0.7,
+        sample_mu_with_sobol: bool = False,
+        sample_sigma_same: bool = False,
+        sample_sigma_min: float = 0.04,
+        sample_sigma_max: float = 0.13,
+    ):
+        super().__init__(grid_x1, grid_x2)
+
+        self._constant_factor = constant_factor
+        self._rng_np = rng_np
+        self._n_samples_per_instance = n_samples_per_instance
+        self._coords_x1, self._coords_x2 = self._grids.coords_as_mesh()
+
+        self._weight_min, self._weight_max = sample_weight_min, sample_weight_max
+        self._mu_with_sobol = sample_mu_with_sobol
+        self._sigma_same = sample_sigma_same
+        self._sigma_min, self._sigma_max = sample_sigma_min, sample_sigma_max
+
+    def solve_instance(self) -> tuple[torch.Tensor, torch.Tensor]:
+        solution_final, source_final = (
+            self._grids.zeroes_like_numpy(),
+            self._grids.zeroes_like_numpy(),
+        )
+        for weight, mus, sigmas in zip(*self._make_sample_data()):
+            solution, source = self._make_sample(mus, sigmas)
+            solution_final += weight * solution
+            source_final += weight * source
+        return torch.from_numpy(solution_final), torch.from_numpy(source_final)
+
+    def _make_sample_data(self) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        weights = self._rng_np.uniform(
+            low=self._weight_min,
+            high=self._weight_max,
+            size=self._n_samples_per_instance,
+        )
+
+        if self._mu_with_sobol:
+            mu_vectors = self._grids.samples_sobol(self._n_samples_per_instance).numpy()
+        else:
+            mu_vectors = self._grids.sample_uniform(
+                size=self._n_samples_per_instance, rng=self._rng_np
+            )
+
+        if self._sigma_same:
+            sigmas = self._rng_np.uniform(
+                low=self._sigma_min,
+                high=self._sigma_max,
+                size=self._n_samples_per_instance,
+            )
+            sigma_vectors = np.stack([sigmas] * self._grids.n_dims, axis=-1)
+        else:
+            sigma_vectors = self._rng_np.uniform(
+                low=self._sigma_min,
+                high=self._sigma_max,
+                size=(self._n_samples_per_instance, self._grids.n_dims),
+            )
+
+        return weights, mu_vectors, sigma_vectors
+
+    def _make_sample(
+        self, mu_vec: np.ndarray, sigmas: torch.utils.data.dataset.TensorDataset
+    ) -> tuple[np.ndarray, np.ndarray]:
+        return (
+            self._constant_factor
+            * self._calc_solution(mu_vec, sigma_mat=np.diag(sigmas**2)),
+            self._constant_factor * self._calc_source(mu_vec, sigmas),
+        )
+
+    def _calc_solution(self, mu_vec: np.ndarray, sigma_mat: np.ndarray) -> np.ndarray:
+        return multivariate_normal(mean=mu_vec, cov=sigma_mat).pdf(
+            np.dstack((self._coords_x1, self._coords_x2))
+        )
+
+    def _calc_solution_ours(self, mu_vec: np.ndarray, sigmas: np.ndarray) -> np.ndarray:
+        r_var_1, r_var_2 = 1 / (sigmas[0] ** 2), 1 / (sigmas[1] ** 2)
+        diff_s_1, diff_s_2 = (
+            (self._coords_x1 - mu_vec[0]) ** 2,
+            (self._coords_x2 - mu_vec[1]) ** 2,
+        )
+        return (
+            1
+            / (2 * np.pi * np.prod(sigmas))
+            * np.exp(-0.5 * (r_var_1 * diff_s_1 + r_var_2 * diff_s_2))
+        )
+
+    def _calc_source(self, mu_vec: np.ndarray, sigmas: np.ndarray) -> np.ndarray:
+        r_var_1, r_var_2 = 1 / (sigmas[0] ** 2), 1 / (sigmas[1] ** 2)
+        diff_s_1, diff_s_2 = (
+            (self._coords_x1 - mu_vec[0]) ** 2,
+            (self._coords_x2 - mu_vec[1]) ** 2,
+        )
+        return (
+            1
+            / (2 * np.pi * np.prod(sigmas))
+            * (r_var_1**2 * diff_s_1 - r_var_1 + r_var_2**2 * diff_s_2 - r_var_2)
+            * np.exp(-0.5 * (r_var_1 * diff_s_1 + r_var_2 * diff_s_2))
+        )
 
 
 class DatasetPoisson:
