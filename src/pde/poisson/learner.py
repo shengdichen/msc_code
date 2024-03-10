@@ -23,24 +23,26 @@ class LearnerPoissonFNO:
         grid_x1: grid.Grid,
         grid_x2: grid.Grid,
         network_fno: torch.nn.Module,
-        dataset_eval: torch.utils.data.dataset.TensorDataset,
-        dataset_train: torch.utils.data.dataset.TensorDataset,
     ):
         self._device = DEFINITION.device_preferred
 
-        self._grid_x1, self._grid_x2 = grid_x1, grid_x2
-        self._grids = grid.Grids([self._grid_x1, self._grid_x2])
+        self._grids = grid.Grids([grid_x1, grid_x2])
         self._network = network_fno.to(self._device)
-        self._dataset_eval, self._dataset_train = dataset_eval, dataset_train
 
-    def train(self, n_epochs: int = 2001, freq_eval: int = 100) -> None:
+    def train(
+        self,
+        dataset: torch.utils.data.dataset.TensorDataset,
+        batch_size: int = 2,
+        n_epochs: int = 2001,
+        freq_eval: int = 100,
+    ) -> None:
         optimizer = torch.optim.Adam(self._network.parameters(), weight_decay=1e-5)
         scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=50, gamma=0.5)
 
         for epoch in range(n_epochs):
             loss_all = []
             for lhss_batch, rhss_batch in torch.utils.data.DataLoader(
-                self._dataset_train, batch_size=2
+                dataset, batch_size=batch_size
             ):
                 lhss_batch, rhss_batch = (
                     lhss_batch.to(device=self._device, dtype=torch.float),
@@ -57,15 +59,16 @@ class LearnerPoissonFNO:
             scheduler.step()
             if epoch % freq_eval == 0:
                 print(f"train> mse: {np.average(loss_all)}")
-                self.eval()
 
-    def eval(self, print_result: bool = True) -> float:
+    def eval(
+        self,
+        dataset: torch.utils.data.dataset.TensorDataset,
+        print_result: bool = False,
+    ) -> float:
         mse_abs_all, mse_rel_all = [], []
         with torch.no_grad():
             self._network.eval()
-            for lhss_batch, rhss_batch in torch.utils.data.DataLoader(
-                self._dataset_eval
-            ):
+            for lhss_batch, rhss_batch in torch.utils.data.DataLoader(dataset):
                 lhss_batch, rhss_batch = (
                     lhss_batch.to(device=self._device, dtype=torch.float),
                     rhss_batch.to(device=self._device, dtype=torch.float),
@@ -80,8 +83,10 @@ class LearnerPoissonFNO:
 
         return mse_rel_avg.item()
 
-    def plot_comparison_2d(self) -> mpl.figure.Figure:
-        u_theirs, u_ours = self._plotdata_u()
+    def plot_comparison_2d(
+        self, dataset: torch.utils.data.dataset.TensorDataset
+    ) -> mpl.figure.Figure:
+        u_theirs, u_ours = self._plotdata_u(dataset)
 
         fig, (ax_1, ax_2) = plt.subplots(
             1, 2, width_ratios=(1, 1), figsize=(10, 5), dpi=200
@@ -97,8 +102,10 @@ class LearnerPoissonFNO:
         ax_2.set_title("$u$ (ours)")
         return fig
 
-    def plot_comparison_3d(self) -> mpl.figure.Figure:
-        u_theirs, u_ours = self._plotdata_u()
+    def plot_comparison_3d(
+        self, dataset: torch.utils.data.dataset.TensorDataset
+    ) -> mpl.figure.Figure:
+        u_theirs, u_ours = self._plotdata_u(dataset)
 
         fig, (ax_1, ax_2) = plt.subplots(
             1,
@@ -118,7 +125,9 @@ class LearnerPoissonFNO:
         return fig
 
     @abc.abstractmethod
-    def _plotdata_u(self) -> tuple[torch.Tensor, torch.Tensor]:
+    def _plotdata_u(
+        self, dataset: torch.utils.data.dataset.TensorDataset
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         raise NotImplementedError
 
     def _one_lhss_rhss(
@@ -139,19 +148,17 @@ class LearnerPoissonFNO2d(LearnerPoissonFNO):
         grid_x1: grid.Grid,
         grid_x2: grid.Grid,
         network_fno: fno_2d.FNO2d,
-        dataset_eval: torch.utils.data.dataset.TensorDataset,
-        dataset_train: torch.utils.data.dataset.TensorDataset,
     ):
         super().__init__(
             grid_x1,
             grid_x2,
             network_fno,
-            dataset_eval=dataset_eval,
-            dataset_train=dataset_train,
         )
 
-    def _plotdata_u(self) -> tuple[torch.Tensor, torch.Tensor]:
-        lhss, rhss = self._one_lhss_rhss(self._dataset_eval)
+    def _plotdata_u(
+        self, dataset: torch.utils.data.dataset.TensorDataset
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        lhss, rhss = self._one_lhss_rhss(dataset)
         u_theirs = rhss[0, :, :, 0]
 
         with torch.no_grad():
@@ -180,19 +187,35 @@ class LearnerPoissonCNO2d(LearnerPoissonFNO):
         grid_x1: grid.Grid,
         grid_x2: grid.Grid,
         network_cno: cno.CNO2d,
-        dataset_eval: torch.utils.data.dataset.TensorDataset,
-        dataset_train: torch.utils.data.dataset.TensorDataset,
     ):
         super().__init__(
             grid_x1,
             grid_x2,
             network_cno,
-            dataset_eval=DatasetReorderCNO(dataset_eval).reorder(),
-            dataset_train=DatasetReorderCNO(dataset_train).reorder(),
         )
 
-    def _plotdata_u(self) -> tuple[torch.Tensor, torch.Tensor]:
-        lhss, rhss = self._one_lhss_rhss(self._dataset_eval)
+    def train(
+        self,
+        dataset: torch.utils.data.dataset.TensorDataset,
+        batch_size: int = 2,
+        n_epochs: int = 2001,
+        freq_eval: int = 100,
+    ) -> None:
+        return super().train(
+            DatasetReorderCNO(dataset).reorder(), batch_size, n_epochs, freq_eval
+        )
+
+    def eval(
+        self,
+        dataset: torch.utils.data.dataset.TensorDataset,
+        print_result: bool = False,
+    ) -> float:
+        return super().eval(DatasetReorderCNO(dataset).reorder(), print_result)
+
+    def _plotdata_u(
+        self, dataset: torch.utils.data.dataset.TensorDataset
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        lhss, rhss = self._one_lhss_rhss(dataset)
         u_theirs = rhss[0, 0, :, :]
 
         with torch.no_grad():
