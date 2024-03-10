@@ -25,8 +25,6 @@ class LearnerPoissonFNO:
         network_fno: torch.nn.Module,
         dataset_eval: torch.utils.data.dataset.TensorDataset,
         dataset_train: torch.utils.data.dataset.TensorDataset,
-        saveload: SaveloadTorch,
-        name_learner: str,
     ):
         self._device = DEFINITION.device_preferred
 
@@ -34,9 +32,6 @@ class LearnerPoissonFNO:
         self._grids = grid.Grids([self._grid_x1, self._grid_x2])
         self._network = network_fno.to(self._device)
         self._dataset_eval, self._dataset_train = dataset_eval, dataset_train
-
-        self._saveload, self._name_learner = saveload, name_learner
-        self._location = self._saveload.rebase_location(name_learner)
 
     def train(self, n_epochs: int = 2001, freq_eval: int = 100) -> None:
         optimizer = torch.optim.Adam(self._network.parameters(), weight_decay=1e-5)
@@ -64,21 +59,6 @@ class LearnerPoissonFNO:
                 print(f"train> mse: {np.average(loss_all)}")
                 self.eval()
 
-    def load_network_trained(
-        self, n_epochs: int = 2001, freq_eval: int = 100, save_as_suffix: str = "model"
-    ) -> torch.nn.Module:
-        def make() -> torch.nn.Module:
-            self.train(n_epochs=n_epochs, freq_eval=freq_eval)
-            return self._network
-
-        location = (
-            self._saveload.rebase_location(f"{self._name_learner}--{save_as_suffix}")
-            if save_as_suffix
-            else self._location
-        )
-        self._network = self._saveload.load_or_make(location, make)
-        return self._network
-
     def eval(self, print_result: bool = True) -> float:
         mse_abs_all, mse_rel_all = [], []
         with torch.no_grad():
@@ -99,9 +79,6 @@ class LearnerPoissonFNO:
             print(f"eval> (mse, mse%): {mse_abs_avg}, {mse_rel_avg}")
 
         return mse_rel_avg.item()
-
-    def plot(self) -> mpl.figure.Figure:
-        return self.plot_comparison_2d()
 
     def plot_comparison_2d(self) -> mpl.figure.Figure:
         u_theirs, u_ours = self._plotdata_u()
@@ -144,15 +121,6 @@ class LearnerPoissonFNO:
     def _plotdata_u(self) -> tuple[torch.Tensor, torch.Tensor]:
         raise NotImplementedError
 
-    def _separate_lhss_rhss(
-        self, dataset: torch.utils.data.dataset.TensorDataset
-    ) -> tuple[torch.Tensor, torch.Tensor]:
-        lhss, rhss = [], []
-        for lhs, rhs in dataset:
-            lhss.append(lhs)
-            rhss.append(rhs)
-        return torch.stack(lhss), torch.stack(rhss)
-
     def _one_lhss_rhss(
         self,
         dataset: torch.utils.data.dataset.TensorDataset,
@@ -170,19 +138,16 @@ class LearnerPoissonFNO2d(LearnerPoissonFNO):
         self,
         grid_x1: grid.Grid,
         grid_x2: grid.Grid,
+        network_fno: fno_2d.FNO2d,
         dataset_eval: torch.utils.data.dataset.TensorDataset,
         dataset_train: torch.utils.data.dataset.TensorDataset,
-        saveload: SaveloadTorch,
-        name_learner: str,
     ):
         super().__init__(
             grid_x1,
             grid_x2,
-            fno_2d.FNO2d(n_channels_lhs=4),
+            network_fno,
             dataset_eval=dataset_eval,
             dataset_train=dataset_train,
-            saveload=saveload,
-            name_learner=f"network_fno_2d--{name_learner}",
         )
 
     def _plotdata_u(self) -> tuple[torch.Tensor, torch.Tensor]:
@@ -214,19 +179,16 @@ class LearnerPoissonCNO2d(LearnerPoissonFNO):
         self,
         grid_x1: grid.Grid,
         grid_x2: grid.Grid,
+        network_cno: cno.CNO2d,
         dataset_eval: torch.utils.data.dataset.TensorDataset,
         dataset_train: torch.utils.data.dataset.TensorDataset,
-        saveload: SaveloadTorch,
-        name_learner: str,
     ):
         super().__init__(
             grid_x1,
             grid_x2,
-            cno.CNO2d(in_channel=4, out_channel=1),
+            network_cno,
             dataset_eval=DatasetReorderCNO(dataset_eval).reorder(),
             dataset_train=DatasetReorderCNO(dataset_train).reorder(),
-            saveload=saveload,
-            name_learner=f"network_cno_2d--{name_learner}",
         )
 
     def _plotdata_u(self) -> tuple[torch.Tensor, torch.Tensor]:
