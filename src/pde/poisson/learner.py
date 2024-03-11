@@ -40,7 +40,7 @@ class LearnerPoissonFNO:
         scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=50, gamma=0.5)
 
         for epoch in range(n_epochs):
-            loss_all = []
+            mse_abs_all, mse_rel_all = [], []
             for lhss_batch, rhss_batch in torch.utils.data.DataLoader(
                 dataset, batch_size=batch_size
             ):
@@ -49,16 +49,20 @@ class LearnerPoissonFNO:
                     rhss_batch.to(device=self._device, dtype=torch.float),
                 )
                 optimizer.zero_grad()
-                rhss_ours = self._network(lhss_batch)  # 10, 1001, 1
-                loss_batch = distance.Distance(rhss_ours, rhss_batch).mse()
-                loss_batch.backward()
+                dst = distance.Distance(self._network(lhss_batch), rhss_batch)
+                mse_abs = dst.mse()
+                mse_abs.backward()
                 optimizer.step()
 
-                loss_all.append(loss_batch.item())
+                mse_abs_all.append(mse_abs.item())
+                mse_rel_all.append(dst.mse_relative().item())
 
             scheduler.step()
             if epoch % freq_eval == 0:
-                print(f"train> mse: {np.average(loss_all)}")
+                print(
+                    "train> (mse, mse%): "
+                    f"{np.average(mse_abs_all)}, {np.average(mse_rel_all)}"
+                )
 
     def eval(
         self,
