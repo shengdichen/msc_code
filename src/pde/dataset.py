@@ -78,3 +78,7 @@ class DatasetMasked:
     @abc.abstractmethod
     def make(self) -> torch.utils.data.dataset.TensorDataset:
         raise NotImplementedError
+
+    @abc.abstractmethod
+    def as_name(self) -> str:
+        raise NotImplementedError
