@@ -311,6 +311,9 @@ class DatasetPoissonMaskedSolution(DatasetMasked):
             torch.from_numpy(coords_x2),
         )
 
+    def as_name(self) -> str:
+        return f"sol_{self._masks[0].as_name()}"
+
     def make(self) -> torch.utils.data.dataset.TensorDataset:
         solutions, solutions_masked, sources = [], [], []
 
@@ -359,6 +362,9 @@ class DatasetPoissonMaskedSolutionSource(DatasetMasked):
             torch.from_numpy(coords_x1),
             torch.from_numpy(coords_x2),
         )
+
+    def as_name(self) -> str:
+        return f"sol_{self._masks[0].as_name()}-source_{self._masks[1].as_name()}"
 
     def make(self) -> torch.utils.data.dataset.TensorDataset:
         solutions, solutions_masked, sources, sources_masked = [], [], [], []
