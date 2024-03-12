@@ -89,10 +89,21 @@ class LearnerPoissonFourier:
         ax_2.set_title("$u$ (ours)")
         return fig
 
-    @abc.abstractmethod
     def _plotdata_u(
         self, dataset: torch.utils.data.dataset.TensorDataset
     ) -> tuple[torch.Tensor, torch.Tensor]:
+        lhss, rhss = self._one_lhss_rhss(dataset)
+        u_theirs = self._extract_u(rhss)
+
+        with torch.no_grad():
+            lhss = lhss.to(device=self._device, dtype=torch.float)
+            self._network.eval()
+            u_ours = self._extract_u(self._network(lhss).detach().to("cpu"))
+
+        return u_theirs, u_ours
+
+    @abc.abstractmethod
+    def _extract_u(self, rhss: torch.Tensor) -> torch.Tensor:
         raise NotImplementedError
 
     def _one_lhss_rhss(
@@ -121,7 +132,12 @@ class LearnerPoissonFourier:
             yield lhss, rhss_theirs, self._network(lhss)
 
 
-class LearnerPoissonFNO(LearnerPoissonFourier):
+class LearnerPoissonFNOMaskedSolution(LearnerPoissonFourier):
+    def __init__(
+        self, grid_x1: grid.Grid, grid_x2: grid.Grid, network_fno: fno_2d.FNO2d
+    ):
+        super().__init__(grid_x1, grid_x2, network_fno)
+
     def train(
         self,
         dataset: torch.utils.data.dataset.TensorDataset,
@@ -180,14 +196,16 @@ class LearnerPoissonFNO(LearnerPoissonFourier):
 
         return mse_rel_avg.item()
 
-    @abc.abstractmethod
-    def _plotdata_u(
-        self, dataset: torch.utils.data.dataset.TensorDataset
-    ) -> tuple[torch.Tensor, torch.Tensor]:
-        raise NotImplementedError
+    def _extract_u(self, rhss: torch.Tensor) -> torch.Tensor:
+        return rhss[0, :, :, 0]
 
 
-class LearnerPoissonFNOMaskDouble(LearnerPoissonFourier):
+class LearnerPoissonFNOMaskedSolutionSource(LearnerPoissonFourier):
+    def __init__(
+        self, grid_x1: grid.Grid, grid_x2: grid.Grid, network_fno: fno_2d.FNO2d
+    ):
+        super().__init__(grid_x1, grid_x2, network_fno)
+
     def train(
         self,
         dataset: torch.utils.data.dataset.TensorDataset,
@@ -266,38 +284,8 @@ class LearnerPoissonFNOMaskDouble(LearnerPoissonFourier):
     ) -> torch.Tensor:
         return dst_solutions.mse() + 0.7 * dst_sources.mse()
 
-    @abc.abstractmethod
-    def _plotdata_u(
-        self, dataset: torch.utils.data.dataset.TensorDataset
-    ) -> tuple[torch.Tensor, torch.Tensor]:
-        raise NotImplementedError
-
-
-class LearnerPoissonFNO2d(LearnerPoissonFNO):
-    def __init__(
-        self,
-        grid_x1: grid.Grid,
-        grid_x2: grid.Grid,
-        network_fno: fno_2d.FNO2d,
-    ):
-        super().__init__(
-            grid_x1,
-            grid_x2,
-            network_fno,
-        )
-
-    def _plotdata_u(
-        self, dataset: torch.utils.data.dataset.TensorDataset
-    ) -> tuple[torch.Tensor, torch.Tensor]:
-        lhss, rhss = self._one_lhss_rhss(dataset)
-        u_theirs = rhss[0, :, :, 0]
-
-        with torch.no_grad():
-            lhss = lhss.to(device=self._device, dtype=torch.float)
-            self._network.eval()
-            u_ours = self._network(lhss).detach().to("cpu")[0, :, :, 0]
-
-        return u_theirs, u_ours
+    def _extract_u(self, rhss: torch.Tensor) -> torch.Tensor:
+        return rhss[0, :, :, 0]
 
 
 class DatasetReorderCNO:
@@ -312,18 +300,9 @@ class DatasetReorderCNO:
         return torch.utils.data.TensorDataset(torch.stack(lhss), torch.stack(rhss))
 
 
-class LearnerPoissonCNO2d(LearnerPoissonFNO):
-    def __init__(
-        self,
-        grid_x1: grid.Grid,
-        grid_x2: grid.Grid,
-        network_cno: cno.CNO2d,
-    ):
-        super().__init__(
-            grid_x1,
-            grid_x2,
-            network_cno,
-        )
+class LearnerPoissonCNOMaskedSolution(LearnerPoissonFNOMaskedSolution):
+    def __init__(self, grid_x1: grid.Grid, grid_x2: grid.Grid, network_cno: cno.CNO2d):
+        super().__init__(grid_x1, grid_x2, network_cno)
 
     def train(
         self,
@@ -343,18 +322,8 @@ class LearnerPoissonCNO2d(LearnerPoissonFNO):
     ) -> float:
         return super().eval(DatasetReorderCNO(dataset).reorder(), print_result)
 
-    def _plotdata_u(
-        self, dataset: torch.utils.data.dataset.TensorDataset
-    ) -> tuple[torch.Tensor, torch.Tensor]:
-        lhss, rhss = self._one_lhss_rhss(dataset)
-        u_theirs = rhss[0, 0, :, :]
-
-        with torch.no_grad():
-            lhss = lhss.to(device=self._device, dtype=torch.float)
-            self._network.eval()
-            u_ours = self._network(lhss).detach().to("cpu")[0, 0, :, :]
-
-        return u_theirs, u_ours
+    def _extract_u(self, rhss: torch.Tensor) -> torch.Tensor:
+        return rhss[0, 0, :, :]
 
 
 class LearnerPoissonFC:
