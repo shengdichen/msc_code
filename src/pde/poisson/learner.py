@@ -31,6 +31,10 @@ class LearnerPoissonFourier:
         self._network = network_fno.to(self._device)
 
     @abc.abstractmethod
+    def as_name(self) -> str:
+        raise NotImplementedError
+
+    @abc.abstractmethod
     def train(
         self,
         dataset: torch.utils.data.dataset.TensorDataset,
@@ -138,6 +142,9 @@ class LearnerPoissonFNOMaskedSolution(LearnerPoissonFourier):
     ):
         super().__init__(grid_x1, grid_x2, network_fno)
 
+    def as_name(self) -> str:
+        return "fno-2d"
+
     def train(
         self,
         dataset: torch.utils.data.dataset.TensorDataset,
@@ -205,6 +212,9 @@ class LearnerPoissonFNOMaskedSolutionSource(LearnerPoissonFourier):
         self, grid_x1: grid.Grid, grid_x2: grid.Grid, network_fno: fno_2d.FNO2d
     ):
         super().__init__(grid_x1, grid_x2, network_fno)
+
+    def as_name(self) -> str:
+        return "fno-2d"
 
     def train(
         self,
@@ -303,6 +313,9 @@ class DatasetReorderCNO:
 class LearnerPoissonCNOMaskedSolution(LearnerPoissonFNOMaskedSolution):
     def __init__(self, grid_x1: grid.Grid, grid_x2: grid.Grid, network_cno: cno.CNO2d):
         super().__init__(grid_x1, grid_x2, network_cno)
+
+    def as_name(self) -> str:
+        return "cno-2d"
 
     def train(
         self,
