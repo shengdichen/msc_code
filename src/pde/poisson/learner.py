@@ -1,4 +1,5 @@
 import abc
+import collections
 import logging
 import typing
 
@@ -17,7 +18,7 @@ from src.util.saveload import SaveloadImage, SaveloadTorch
 logger = logging.getLogger(__name__)
 
 
-class LearnerPoissonFNO:
+class LearnerPoissonFourier:
     def __init__(
         self,
         grid_x1: grid.Grid,
@@ -29,6 +30,7 @@ class LearnerPoissonFNO:
         self._grids = grid.Grids([grid_x1, grid_x2])
         self._network = network_fno.to(self._device)
 
+    @abc.abstractmethod
     def train(
         self,
         dataset: torch.utils.data.dataset.TensorDataset,
@@ -36,56 +38,15 @@ class LearnerPoissonFNO:
         n_epochs: int = 2001,
         freq_eval: int = 100,
     ) -> None:
-        optimizer = torch.optim.Adam(self._network.parameters(), weight_decay=1e-5)
-        scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=50, gamma=0.5)
+        raise NotImplementedError
 
-        for epoch in range(n_epochs):
-            mse_abs_all, mse_rel_all = [], []
-            for lhss_batch, rhss_batch in torch.utils.data.DataLoader(
-                dataset, batch_size=batch_size
-            ):
-                lhss_batch, rhss_batch = (
-                    lhss_batch.to(device=self._device, dtype=torch.float),
-                    rhss_batch.to(device=self._device, dtype=torch.float),
-                )
-                optimizer.zero_grad()
-                dst = distance.Distance(self._network(lhss_batch), rhss_batch)
-                mse_abs = dst.mse()
-                mse_abs.backward()
-                optimizer.step()
-
-                mse_abs_all.append(mse_abs.item())
-                mse_rel_all.append(dst.mse_relative().item())
-
-            scheduler.step()
-            if epoch % freq_eval == 0:
-                print(
-                    "train> (mse, mse%): "
-                    f"{np.average(mse_abs_all)}, {np.average(mse_rel_all)}"
-                )
-
+    @abc.abstractmethod
     def eval(
         self,
         dataset: torch.utils.data.dataset.TensorDataset,
         print_result: bool = False,
     ) -> float:
-        mse_abs_all, mse_rel_all = [], []
-        with torch.no_grad():
-            self._network.eval()
-            for lhss_batch, rhss_batch in torch.utils.data.DataLoader(dataset):
-                lhss_batch, rhss_batch = (
-                    lhss_batch.to(device=self._device, dtype=torch.float),
-                    rhss_batch.to(device=self._device, dtype=torch.float),
-                )
-                rhss_ours = self._network(lhss_batch)
-                dst = distance.Distance(rhss_ours, rhss_batch)
-                mse_abs_all.append(dst.mse().item())
-                mse_rel_all.append(dst.mse_relative().item())
-        mse_abs_avg, mse_rel_avg = np.average(mse_abs_all), np.average(mse_rel_all)
-        if print_result:
-            print(f"eval> (mse, mse%): {mse_abs_avg}, {mse_rel_avg}")
-
-        return mse_rel_avg.item()
+        raise NotImplementedError
 
     def plot_comparison_2d(
         self, dataset: torch.utils.data.dataset.TensorDataset
@@ -144,6 +105,172 @@ class LearnerPoissonFNO:
         if not flatten_first_dimension:
             return lhss.unsqueeze(0), rhss.unsqueeze(0)
         return lhss, rhss
+
+    def iterate_dataset(
+        self, dataset: torch.utils.data.dataset.TensorDataset, batch_size: int = 1
+    ) -> collections.abc.Generator[
+        tuple[np.ndarray, torch.Tensor, torch.Tensor], None, None
+    ]:
+        for lhss, rhss_theirs in torch.utils.data.DataLoader(
+            dataset, batch_size=batch_size
+        ):
+            lhss, rhss_theirs = (
+                lhss.to(device=self._device, dtype=torch.float),
+                rhss_theirs.to(device=self._device, dtype=torch.float),
+            )
+            yield lhss, rhss_theirs, self._network(lhss)
+
+
+class LearnerPoissonFNO(LearnerPoissonFourier):
+    def train(
+        self,
+        dataset: torch.utils.data.dataset.TensorDataset,
+        batch_size: int = 2,
+        n_epochs: int = 2001,
+        freq_eval: int = 100,
+    ) -> None:
+        optimizer = torch.optim.Adam(self._network.parameters(), weight_decay=1e-5)
+        scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=50, gamma=0.5)
+
+        for epoch in range(n_epochs):
+            mse_abs_all, mse_rel_all = [], []
+            for lhss_batch, rhss_batch in torch.utils.data.DataLoader(
+                dataset, batch_size=batch_size
+            ):
+                lhss_batch, rhss_batch = (
+                    lhss_batch.to(device=self._device, dtype=torch.float),
+                    rhss_batch.to(device=self._device, dtype=torch.float),
+                )
+                optimizer.zero_grad()
+                dst = distance.Distance(self._network(lhss_batch), rhss_batch)
+                mse_abs = dst.mse()
+                mse_abs.backward()
+                optimizer.step()
+
+                mse_abs_all.append(mse_abs.item())
+                mse_rel_all.append(dst.mse_relative().item())
+
+            scheduler.step()
+            if epoch % freq_eval == 0:
+                print(
+                    "train> (mse, mse%): "
+                    f"{np.average(mse_abs_all)}, {np.average(mse_rel_all)}"
+                )
+
+    def eval(
+        self,
+        dataset: torch.utils.data.dataset.TensorDataset,
+        print_result: bool = False,
+    ) -> float:
+        mse_abs_all, mse_rel_all = [], []
+        with torch.no_grad():
+            self._network.eval()
+            for lhss_batch, rhss_batch in torch.utils.data.DataLoader(dataset):
+                lhss_batch, rhss_batch = (
+                    lhss_batch.to(device=self._device, dtype=torch.float),
+                    rhss_batch.to(device=self._device, dtype=torch.float),
+                )
+                rhss_ours = self._network(lhss_batch)
+                dst = distance.Distance(rhss_ours, rhss_batch)
+                mse_abs_all.append(dst.mse().item())
+                mse_rel_all.append(dst.mse_relative().item())
+        mse_abs_avg, mse_rel_avg = np.average(mse_abs_all), np.average(mse_rel_all)
+        if print_result:
+            print(f"eval> (mse, mse%): {mse_abs_avg}, {mse_rel_avg}")
+
+        return mse_rel_avg.item()
+
+    @abc.abstractmethod
+    def _plotdata_u(
+        self, dataset: torch.utils.data.dataset.TensorDataset
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        raise NotImplementedError
+
+
+class LearnerPoissonFNOMaskDouble(LearnerPoissonFourier):
+    def train(
+        self,
+        dataset: torch.utils.data.dataset.TensorDataset,
+        batch_size: int = 2,
+        n_epochs: int = 2001,
+        freq_eval: int = 100,
+    ) -> None:
+        optimizer = torch.optim.Adam(self._network.parameters(), weight_decay=1e-5)
+        scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=50, gamma=0.5)
+
+        for epoch in range(n_epochs):
+            mse_solution, mse_source, mse_all = [], [], []
+            for __, rhss_theirs, rhss_ours in self.iterate_dataset(dataset, batch_size):
+                dst_solutions, dst_sources = self._calc_distances(
+                    rhss_ours, rhss_theirs
+                )
+                mse_abs = self._calc_loss(dst_solutions, dst_sources)
+                mse_abs.backward()
+                optimizer.step()
+                optimizer.zero_grad()
+
+                mse_solution.append(dst_solutions.mse_relative().item())
+                mse_source.append(dst_sources.mse_relative().item())
+                mse_all.append(mse_abs.item())
+
+            scheduler.step()
+            if epoch % freq_eval == 0:
+                print(
+                    "train> (solution%, source%; all): "
+                    f"{np.average(mse_solution)}, {np.average(mse_source)}; "
+                    f"{np.average(mse_all)}"
+                )
+
+    def eval(
+        self,
+        dataset: torch.utils.data.dataset.TensorDataset,
+        print_result: bool = False,
+    ) -> float:
+        mse_solution, mse_source, mse_all = [], [], []
+        with torch.no_grad():
+            self._network.eval()
+            for __, rhss_theirs, rhss_ours in self.iterate_dataset(
+                dataset, batch_size=1
+            ):
+                dst_solutions, dst_sources = self._calc_distances(
+                    rhss_ours, rhss_theirs
+                )
+                mse_solution.append(dst_solutions.mse_relative().item())
+                mse_source.append(dst_sources.mse_relative().item())
+                mse_all.append(self._calc_loss(dst_sources, dst_sources).item())
+
+        mse_all_avg = np.average(mse_all)
+        if print_result:
+            print(
+                "eval> (solution%, source%; all): "
+                f"{np.average(mse_solution)}, {np.average(mse_source)}; "
+                f"{mse_all_avg}"
+            )
+        return mse_all_avg.item()
+
+    def _calc_distances(
+        self, rhss_ours: torch.Tensor, rhss_theirs: torch.Tensor
+    ) -> tuple[distance.Distance, distance.Distance]:
+        solutions_ours, sources_ours = rhss_ours[:, :, :, 0], rhss_ours[:, :, :, 1]
+        solutions_theirs, sources_theirs = (
+            rhss_theirs[:, :, :, 0],
+            rhss_theirs[:, :, :, 1],
+        )
+        return (
+            distance.Distance(solutions_ours, solutions_theirs),
+            distance.Distance(sources_theirs, sources_ours),
+        )
+
+    def _calc_loss(
+        self, dst_solutions: distance.Distance, dst_sources: distance.Distance
+    ) -> torch.Tensor:
+        return dst_solutions.mse() + 0.7 * dst_sources.mse()
+
+    @abc.abstractmethod
+    def _plotdata_u(
+        self, dataset: torch.utils.data.dataset.TensorDataset
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        raise NotImplementedError
 
 
 class LearnerPoissonFNO2d(LearnerPoissonFNO):
