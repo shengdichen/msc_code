@@ -339,6 +339,35 @@ class LearnerPoissonCNOMaskedSolution(LearnerPoissonFNOMaskedSolution):
         return rhss[0, 0, :, :]
 
 
+class LearnerPoissonCNOMaskedSolutionSource(LearnerPoissonFNOMaskedSolutionSource):
+    def __init__(self, grid_x1: grid.Grid, grid_x2: grid.Grid, network_cno: cno.CNO2d):
+        super().__init__(grid_x1, grid_x2, network_cno)
+
+    def as_name(self) -> str:
+        return "cno-2d"
+
+    def train(
+        self,
+        dataset: torch.utils.data.dataset.TensorDataset,
+        batch_size: int = 2,
+        n_epochs: int = 2001,
+        freq_eval: int = 100,
+    ) -> None:
+        return super().train(
+            DatasetReorderCNO(dataset).reorder(), batch_size, n_epochs, freq_eval
+        )
+
+    def eval(
+        self,
+        dataset: torch.utils.data.dataset.TensorDataset,
+        print_result: bool = False,
+    ) -> float:
+        return super().eval(DatasetReorderCNO(dataset).reorder(), print_result)
+
+    def _extract_u(self, rhss: torch.Tensor) -> torch.Tensor:
+        return rhss[0, 0, :, :]
+
+
 class LearnerPoissonFC:
     def __init__(self, n_pts_mask: int = 30):
         self._device = DEFINITION.device_preferred
