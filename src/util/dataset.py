@@ -102,6 +102,10 @@ class Masker:
     def as_name(self) -> str:
         raise NotImplementedError
 
+    @abc.abstractmethod
+    def as_perc(self) -> float:
+        raise NotImplementedError
+
 
 class MaskerRandom(Masker):
     def __init__(
@@ -116,6 +120,9 @@ class MaskerRandom(Masker):
 
     def as_name(self) -> str:
         return f"random_{self._perc_to_mask:.2}"
+
+    def as_perc(self) -> float:
+        return self._perc_to_mask
 
     def mask(self, full: torch.Tensor) -> torch.Tensor:
         res = full.detach().clone()
@@ -145,6 +152,9 @@ class MaskerIsland(Masker):
 
     def as_name(self) -> str:
         return f"island_{self._perc_to_keep:.2}"
+
+    def as_perc(self) -> float:
+        return self._perc_to_keep
 
     def mask(self, full: torch.Tensor) -> torch.Tensor:
         lows, highs = self._range_idx_dim(full)
