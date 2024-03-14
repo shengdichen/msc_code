@@ -13,6 +13,9 @@ class DatasetPDE:
         self._grids = grids
 
     @abc.abstractmethod
+    def as_dataset(self, n_instances: int) -> torch.utils.data.dataset.TensorDataset:
+        raise NotImplementedError
+
     def solve(self, n_instances: int) -> typing.Iterable[typing.Iterable[torch.Tensor]]:
         for __ in range(n_instances):
             yield self.solve_instance()
@@ -27,6 +30,10 @@ class DatasetPDE2d(DatasetPDE):
         self._grid_x1, self._grid_x2 = grid_x1, grid_x2
 
         super().__init__(grid.Grids([self._grid_x1, self._grid_x2]))
+
+    @abc.abstractmethod
+    def as_dataset(self, n_instances: int) -> torch.utils.data.dataset.TensorDataset:
+        raise NotImplementedError
 
     @abc.abstractmethod
     def solve_instance(self) -> typing.Iterable[torch.Tensor]:
