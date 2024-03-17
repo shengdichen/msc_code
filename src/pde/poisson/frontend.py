@@ -1,298 +1,448 @@
+import abc
+import collections
 import logging
+import pathlib
 import typing
 
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
 
+from src.deepl import cno, fno_2d
 from src.numerics import grid
+from src.pde.dataset import DatasetMasked, DatasetSplits
 from src.pde.poisson.dataset import (DatasetConstructed, DatasetConstructedSin,
-                                     DatasetPoisson, DatasetSolver,
+                                     DatasetGauss,
+                                     DatasetPoissonMaskedSolution,
+                                     DatasetPoissonMaskedSolutionSource,
                                      DatasetSumOfGauss)
-from src.pde.poisson.learner import (LearnerPoissonCNO2d, LearnerPoissonFNO,
-                                     LearnerPoissonFNO2d)
+from src.pde.poisson.learner import (LearnerPoissonCNOMaskedSolution,
+                                     LearnerPoissonCNOMaskedSolutionSource,
+                                     LearnerPoissonFNOMaskedSolution,
+                                     LearnerPoissonFNOMaskedSolutionSource,
+                                     LearnerPoissonFourier)
 from src.util.dataset import Masker, MaskerIsland, MaskerRandom
 from src.util.saveload import SaveloadImage, SaveloadTorch
 
 logger = logging.getLogger(__name__)
 
 
-class DatasetSplits:
-    def __init__(
-        self,
-        dataset_full: DatasetPoisson,
-        n_instances_eval: int = 300,
-        n_instances_train: int = 100,
-    ):
-        self._dataset_full = dataset_full
-        self._n_instances = self._dataset_full.n_instances
-        self._n_instances_eval, self._n_instances_train = (
-            n_instances_eval,
-            n_instances_train,
+class Pipeline:
+    def __init__(self, network_name: str):
+        self._grid_x1 = grid.Grid(n_pts=64, stepsize=0.01, start=0.0)
+        self._grid_x2 = grid.Grid(n_pts=64, stepsize=0.01, start=0.0)
+        self._grids = grid.Grids([self._grid_x1, self._grid_x2])
+
+        self._dataset_name, self._network_name = "sum_of_gauss", network_name
+        self._saveload_base = f"poisson/{self._dataset_name}"
+        self._saveload = SaveloadTorch(self._saveload_base)
+
+        self._percs = np.arange(start=0.1, stop=1.0, step=0.1)
+        self._ds_eval_raw, self._ds_train_raw = self._dataset_splits()
+
+    def _name_model(self, name_dataset: str) -> pathlib.Path:
+        return self._saveload.rebase_location(
+            f"network--{self._network_name}--{name_dataset}"
         )
 
-    def split(
+    def _dataset_splits(
         self,
     ) -> tuple[
         torch.utils.data.dataset.TensorDataset, torch.utils.data.dataset.TensorDataset
     ]:
-        indexes_eval, indexes_train = self._indexes_eval_train()
+        n_eval, n_train = 2500, 500
+        location_eval, location_train = (
+            self._saveload.rebase_location(f"dataset--eval-{n_eval}"),
+            self._saveload.rebase_location(f"dataset--train-{n_train}"),
+        )
+        if not (location_eval.exists() and location_train.exists()):
+            n_raw = 3000
+            location_raw = self._saveload.rebase_location(f"dataset--raw-{n_raw}")
+            if not self._saveload.exists(location_raw):
+                self._saveload.save(
+                    DatasetGauss(self._grid_x1, self._grid_x2).as_dataset(n_raw),
+                    location_raw,
+                )
+            ds_eval, ds_train = DatasetSplits(self._saveload.load(location_raw)).split(
+                n_eval, n_train
+            )
+            self._saveload.save(ds_eval, location_eval, overwrite=True)
+            self._saveload.save(ds_train, location_train, overwrite=True)
 
         return (
-            self._dataset_full.dataset_raw_split(
-                indexes=indexes_eval, save_as_suffix="eval"
-            ),
-            self._dataset_full.dataset_raw_split(
-                indexes=indexes_train, save_as_suffix="train"
-            ),
+            self._saveload.load(location_eval),
+            self._saveload.load(location_train),
         )
 
-    def _indexes_eval_train(self) -> tuple[np.ndarray, np.ndarray]:
-        # NOTE:
-        # generate indexes in one call with |replace| set to |False| to guarantee strict
-        # separation of train and eval datasets
-        indexes = np.random.default_rng(seed=42).choice(
-            self._n_instances,
-            self._n_instances_eval + self._n_instances_train,
-            replace=False,
-        )
-        return (
-            indexes[: self._n_instances_eval],
-            indexes[-self._n_instances_train :],
-        )
-
-
-class Learners:
-    def __init__(self, n_instances_eval: int = 300, n_instances_train=100):
-        self._grid_x1 = grid.Grid(n_pts=64, stepsize=0.01, start=0.0)
-        self._grid_x2 = grid.Grid(n_pts=64, stepsize=0.01, start=0.0)
-
-        self._n_instances_eval, self._n_instances_train = (
-            n_instances_eval,
-            n_instances_train,
-        )
-
-        self._saveload_base = "poisson"
-        self._saveload = SaveloadTorch(self._saveload_base)
-
-    def dataset_standard(self) -> None:
-        name_dataset = "dataset-fno-2d-standard"
-        ds = DatasetSolver(
-            self._grid_x1,
-            self._grid_x2,
-            saveload=self._saveload,
-            name_dataset=name_dataset,
-            source=grid.Grids([self._grid_x1, self._grid_x2]).constants_like(-200),
-            boundary_mean=-20,
-            boundary_sigma=1,
-        )
-
-        learner = LearnerPoissonFNO2d(
-            self._grid_x1,
-            self._grid_x2,
-            dataset_eval=ds.dataset_masked(mask_solution=MaskerRandom(0.5)),
-            dataset_train=ds.dataset_masked(mask_solution=MaskerRandom(0.5)),
-            saveload=self._saveload,
-            name_learner="standard",
-        )
-        learner.train()
-        learner.plot()
-
-    def dataset_custom_sin(
+    @abc.abstractmethod
+    def models(
         self,
-        ds_size: int = 1000,
-        n_samples_per_instance: int = 3,
-    ) -> None:
-        name_problem = "custom_sin"
-        dataset_full = DatasetConstructedSin(
-            self._grid_x1,
-            self._grid_x2,
-            saveload=self._saveload,
-            name_dataset=name_problem,
-            n_instances=ds_size,
-            n_samples_per_instance=n_samples_per_instance,
-        )
-        self._pipeline(dataset_full, name_problem)
+    ) -> collections.abc.Generator[
+        tuple[DatasetMasked, LearnerPoissonFourier], None, None
+    ]:
+        pass
 
-    def dataset_sum_of_gauss(self) -> None:
-        name_problem = "custom_sum_of_gauss"
-        dataset_full = DatasetSumOfGauss(
-            self._grid_x1,
-            self._grid_x2,
-            saveload=self._saveload,
-            name_dataset=name_problem,
-            n_instances=1000,
-            n_samples_per_instance=8,
-            sample_mu_with_sobol=False,
-            sample_sigma_same=False,
-        )
-        self._pipeline(dataset_full, name_problem)
+    def train(self) -> None:
+        for __ in self.models():
+            pass
 
-    def _pipeline(
-        self, dataset_full: torch.utils.data.dataset.TensorDataset, name_problem: str
-    ) -> None:
-        percs_to_mask = np.arange(start=0.1, stop=1.0, step=0.1)
-        masks_random = [MaskerRandom(perc_to_mask=perc) for perc in percs_to_mask]
-        masks_island = [MaskerIsland(perc_to_keep=1 - perc) for perc in percs_to_mask]
-
-        self._plot_fnos(
-            dataset_full,
-            percs_to_mask,
-            name_problem=name_problem,
-            masks=masks_random,
-            name_mask="random",
-        )
-        self._plot_fnos(
-            dataset_full,
-            percs_to_mask,
-            name_problem=name_problem,
-            masks=masks_island,
-            name_mask="island",
-        )
-        self._plot_cnos(
-            dataset_full,
-            percs_to_mask,
-            name_problem=name_problem,
-            masks=masks_random,
-            name_mask="random",
-        )
-        self._plot_cnos(
-            dataset_full,
-            percs_to_mask,
-            name_problem=name_problem,
-            masks=masks_island,
-            name_mask="island",
-        )
-
-    def _plot_cnos(
+    def _plot_compare(
         self,
-        dataset_full: DatasetConstructed,
-        percs_to_mask: np.ndarray,
-        masks: typing.Sequence[Masker],
-        name_mask: str,
-        name_problem: str,
+        learner: LearnerPoissonFourier,
+        dataset_train: DatasetMasked,
+        dataset_eval: DatasetMasked,
     ) -> None:
-        errors = []
-        ds_eval_raw, ds_train_raw = DatasetSplits(
-            dataset_full,
-            n_instances_eval=self._n_instances_eval,
-            n_instances_train=self._n_instances_train,
-        ).split()
-
-        for perc, mask in zip(percs_to_mask, masks):
-            ds_eval_masked = dataset_full.dataset_masked(
-                from_dataset=ds_eval_raw,
-                mask_solution=mask,
-                save_as_suffix=f"eval_{self._n_instances_eval}",
-            )
-            ds_train_masked = dataset_full.dataset_masked(
-                from_dataset=ds_train_raw,
-                mask_solution=mask,
-                save_as_suffix=f"train_{self._n_instances_train}",
-            )
-            learner = LearnerPoissonCNO2d(
-                self._grid_x1,
-                self._grid_x2,
-                dataset_eval=ds_eval_masked,
-                dataset_train=ds_train_masked,
-                saveload=self._saveload,
-                name_learner=name_problem,
-            )
-            detail_mask = f"{name_mask}_{perc:.2}"
-            learner.load_network_trained(
-                n_epochs=1001,
-                save_as_suffix=detail_mask,
-            )
-            self._plot_comparison(
-                learner,
-                name_problem=name_problem,
-                name_model="CNO",
-                detail_mask=detail_mask,
-            )
-            errors.append(learner.eval(print_result=False))
-
-        self._plot_mask_to_error(
-            percs_to_mask,
-            errors,
-            name_problem=name_problem,
-            name_model="CNO",
-            name_mask=name_mask,
+        ds = dataset_eval.make()
+        saveload = SaveloadImage(self._saveload_base)
+        location = f"plot_compare--{dataset_train.as_name()}--{dataset_eval.as_name()}"
+        saveload.save(
+            learner.plot_comparison_2d(ds),
+            saveload.rebase_location(f"{location}--2d"),
+            overwrite=False,
+        )
+        saveload.save(
+            learner.plot_comparison_3d(ds),
+            saveload.rebase_location(f"{location}--3d"),
+            overwrite=False,
         )
 
-    def _plot_fnos(
-        self,
-        dataset_full: DatasetConstructed,
-        percs_to_mask: np.ndarray,
-        masks: typing.Sequence[Masker],
-        name_mask: str,
-        name_problem: str,
-    ) -> None:
-        errors = []
-        ds_eval_raw, ds_train_raw = DatasetSplits(
-            dataset_full,
-            n_instances_eval=self._n_instances_eval,
-            n_instances_train=self._n_instances_train,
-        ).split()
 
-        for perc, mask in zip(percs_to_mask, masks):
-            ds_eval_masked = dataset_full.dataset_masked(
-                from_dataset=ds_eval_raw,
-                mask_solution=mask,
-                save_as_suffix=f"eval_{self._n_instances_eval}",
-            )
-            ds_train_masked = dataset_full.dataset_masked(
-                from_dataset=ds_train_raw,
-                mask_solution=mask,
-                save_as_suffix=f"train_{self._n_instances_train}",
-            )
-            learner = LearnerPoissonFNO2d(
-                self._grid_x1,
-                self._grid_x2,
-                dataset_eval=ds_eval_masked,
-                dataset_train=ds_train_masked,
-                saveload=self._saveload,
-                name_learner=name_problem,
-            )
-            detail_mask = f"{name_mask}_{perc:.2}"
-            learner.load_network_trained(
-                n_epochs=1001,
-                save_as_suffix=detail_mask,
-            )
-            self._plot_comparison(
-                learner,
-                name_problem=name_problem,
-                name_model="FNO",
-                detail_mask=detail_mask,
-            )
-            errors.append(learner.eval(print_result=False))
+class PipelineMaskedSolution(Pipeline):
+    def models(
+        self, include_random_masks: bool = True, include_island_masks: bool = True
+    ) -> collections.abc.Generator[
+        tuple[DatasetMasked, LearnerPoissonFourier], None, None
+    ]:
+        for perc in self._percs:
+            if include_random_masks:
+                dataset = DatasetPoissonMaskedSolution(
+                    self._grid_x1,
+                    self._grid_x2,
+                    self._ds_train_raw,
+                    MaskerRandom(perc_to_mask=perc),
+                )
+                yield dataset, self._model_trained(dataset)
+            if include_island_masks:
+                dataset = DatasetPoissonMaskedSolution(
+                    self._grid_x1,
+                    self._grid_x2,
+                    self._ds_train_raw,
+                    MaskerIsland(perc_to_keep=1 - perc),
+                )
+                yield dataset, self._model_trained(dataset)
 
-        self._plot_mask_to_error(
-            percs_to_mask,
-            errors,
-            name_problem=name_problem,
-            name_model="FNO",
-            name_mask=name_mask,
-        )
+    @abc.abstractmethod
+    def _model_trained(self, dataset: DatasetMasked) -> LearnerPoissonFourier:
+        pass
 
-    def _plot_comparison(
-        self,
-        learner: LearnerPoissonFNO,
-        name_problem: str,
-        name_model: str,
-        detail_mask: str,
+    def datasets_masked(
+        self, from_eval: bool = True, random_style: bool = True
+    ) -> typing.Generator[DatasetMasked, None, None]:
+        for perc in np.arange(start=0.1, stop=1.0, step=0.1):
+            dataset_raw = self._ds_eval_raw if from_eval else self._ds_train_raw
+            mask = (
+                MaskerRandom(perc_to_mask=perc)
+                if random_style
+                else MaskerIsland(perc_to_keep=1 - perc)
+            )
+            yield DatasetPoissonMaskedSolution(
+                self._grid_x1, self._grid_x2, dataset_raw, mask
+            )
+
+    def print_result_eval(self) -> None:
+        for dataset_train, learner in self.models():
+            print(f"eval> model trained on {dataset_train.as_name()}")
+            for dataset_eval in self.datasets_masked(from_eval=False):
+                print(f"eval> dataset {dataset_eval.as_name()}")
+                learner.eval(dataset_eval.make(), print_result=True)
+                print()
+            print()
+
+    def plot_model_2d_3d(self) -> None:
+        for dataset_train, learner in self.models():
+            for dataset_eval in self.datasets_masked():
+                self._plot_compare(learner, dataset_train, dataset_eval)
+
+    def plot_models_all_mask_one(
+        self, perc_random: float = 0.5, perc_island: float = 0.5
     ) -> None:
         saveload = SaveloadImage(self._saveload_base)
-        location = f"{name_problem}--{name_model}--{detail_mask}"
-        saveload.save(
-            learner.plot_comparison_2d(),
-            saveload.rebase_location(f"{location}--2d"),
-            overwrite=True,
+        location = saveload.rebase_location(f"mask_one--{self._network_name}")
+        if saveload.exists(location):
+            logger.info(f"plot already done [{location}],  skipping")
+            return
+
+        mask_random, mask_island = MaskerRandom(perc_random), MaskerIsland(perc_island)
+        errors_t_random_e_random, errors_t_random_e_island = self._errors(
+            random_style=True, mask_random=mask_random, mask_island=mask_island
         )
-        saveload.save(
-            learner.plot_comparison_3d(),
-            saveload.rebase_location(f"{location}--3d"),
-            overwrite=True,
+        errors_t_island_e_random, errors_t_island_e_island = self._errors(
+            random_style=False, mask_random=mask_random, mask_island=mask_island
         )
+
+        fig, ax = plt.subplots(dpi=200)
+        style = {"linestyle": "dashed", "marker": "x"}
+        ax.plot(
+            self._percs,
+            errors_t_random_e_random,
+            **style,
+            label=f"train: random(*); eval: {mask_random.as_name()}",
+        )
+        ax.plot(
+            self._percs,
+            errors_t_random_e_island,
+            **style,
+            label=f"train: random(*); eval: {mask_island.as_name()}",
+        )
+        ax.plot(
+            self._percs,
+            errors_t_island_e_random,
+            **style,
+            label=f"train: island(*); eval: {mask_random.as_name()}",
+        )
+        ax.plot(
+            self._percs,
+            errors_t_island_e_island,
+            **style,
+            label=f"train: island(*); eval: eval: {mask_island.as_name()}",
+        )
+        ax.set_xlabel("masking proportion")
+        ax.set_ylabel("error [$L^2$]")
+        ax.set_title(
+            "error VS masking \n"
+            f"{self._network_name} on "
+            f'["{self._dataset_name}"]'
+        )
+        ax.legend()
+
+        saveload.save(fig, location, overwrite=True)
+        plt.close(fig)
+
+    def _errors(
+        self, random_style: bool, mask_random: Masker, mask_island: Masker
+    ) -> tuple[list[float], list[float]]:
+        errors_t_random_e_random, errors_t_random_e_island = [], []
+        for __, learner in self.models(
+            include_random_masks=random_style, include_island_masks=not random_style
+        ):
+            errors_t_random_e_random.append(
+                learner.eval(
+                    DatasetPoissonMaskedSolution(
+                        self._grid_x1, self._grid_x2, self._ds_eval_raw, mask_random
+                    ).make()
+                )
+            )
+            errors_t_random_e_island.append(
+                learner.eval(
+                    DatasetPoissonMaskedSolution(
+                        self._grid_x1, self._grid_x2, self._ds_eval_raw, mask_island
+                    ).make()
+                )
+            )
+        return errors_t_random_e_random, errors_t_random_e_island
+
+    def plot_model_one_masks_all(self) -> None:
+        for dataset_train, learner in self.models():
+            self._plot_model_one_masks_all(learner, dataset_train)
+
+    def _plot_model_one_masks_all(
+        self,
+        learner: LearnerPoissonFourier,
+        dataset_train: DatasetMasked,
+    ) -> None:
+        saveload = SaveloadImage(self._saveload_base)
+        location = saveload.rebase_location(
+            f"all_masks--{self._network_name}--{dataset_train.as_name()}"
+        )
+        if saveload.exists(location):
+            logger.info(f"plot already done [{location}],  skipping")
+        else:
+            fig, ax = plt.subplots(dpi=200)
+            style = {"linestyle": "dashed", "marker": "x"}
+            ax.plot(
+                self._percs,
+                self._errors_eval(learner, random_style=True),
+                **style,
+                label="random masking",
+            )
+            ax.plot(
+                self._percs,
+                self._errors_eval(learner, random_style=False),
+                **style,
+                label="island masking",
+            )
+            ax.set_xlabel("masking proportion")
+            ax.set_ylabel("error [$L^2$]")
+            ax.set_title(
+                "error VS masking \n"
+                f"{learner.as_name()} on "
+                f'["{self._dataset_name}" with "{dataset_train.as_name()}"]'
+            )
+            ax.legend()
+
+            saveload.save(fig, location, overwrite=True)
+            plt.close(fig)
+
+    def _errors_eval(
+        self, learner: LearnerPoissonFourier, random_style: bool = True
+    ) -> typing.Sequence[float]:
+        errors = []
+        for ds in self.datasets_masked(random_style=random_style):
+            errors.append(learner.eval(ds.make()))
+        return errors
+
+
+class PipelineFNOMaskedSolution(PipelineMaskedSolution):
+    def __init__(self):
+        super().__init__(network_name="fno")
+
+    def _model_trained(
+        self, dataset: DatasetMasked, batch_size: int = 20
+    ) -> LearnerPoissonFNOMaskedSolution:
+        location = self._name_model(dataset.as_name())
+        if self._saveload.exists(location):
+            learner = LearnerPoissonFNOMaskedSolution(
+                self._grid_x1,
+                self._grid_x2,
+                self._saveload.load(location),
+            )
+        else:
+            network = fno_2d.FNO2d(n_channels_lhs=4, n_channels_rhs=1)
+            learner = LearnerPoissonFNOMaskedSolution(
+                self._grid_x1,
+                self._grid_x2,
+                network,
+            )
+            learner.train(dataset.make(), n_epochs=1001, batch_size=batch_size)
+            self._saveload.save(network, location)
+        return learner
+
+
+class PipelineCNOMaskedSolution(PipelineMaskedSolution):
+    def __init__(self):
+        super().__init__(network_name="cno")
+
+    def _model_trained(
+        self, dataset: DatasetMasked, batch_size: int = 20
+    ) -> LearnerPoissonCNOMaskedSolution:
+        location = self._name_model(dataset.as_name())
+        if self._saveload.exists(location):
+            learner = LearnerPoissonCNOMaskedSolution(
+                self._grid_x1,
+                self._grid_x2,
+                self._saveload.load(location),
+            )
+        else:
+            network = cno.CNO2d(in_channel=4, out_channel=1)
+            learner = LearnerPoissonCNOMaskedSolution(
+                self._grid_x1,
+                self._grid_x2,
+                network,
+            )
+            learner.train(dataset.make(), n_epochs=1001, batch_size=batch_size)
+            self._saveload.save(network, location)
+        return learner
+
+
+class PipelineMaskedSolutionSource(Pipeline):
+    def models(
+        self,
+    ) -> collections.abc.Generator[
+        tuple[DatasetPoissonMaskedSolutionSource, LearnerPoissonFourier],
+        None,
+        None,
+    ]:
+        for perc in self._percs:
+            mask_solution = MaskerRandom(perc_to_mask=perc)
+            mask_source = MaskerRandom(perc_to_mask=perc)
+
+            dataset = DatasetPoissonMaskedSolutionSource(
+                self._grid_x1,
+                self._grid_x2,
+                self._ds_train_raw,
+                mask_solution=mask_solution,
+                mask_source=mask_source,
+            )
+            yield dataset, self._model_trained(dataset)
+
+    @abc.abstractmethod
+    def _model_trained(
+        self, dataset: DatasetMasked
+    ) -> LearnerPoissonFNOMaskedSolutionSource:
+        location = self._name_model(dataset.as_name())
+        if self._saveload.exists(location):
+            learner = LearnerPoissonFNOMaskedSolutionSource(
+                self._grid_x1,
+                self._grid_x2,
+                self._saveload.load(location),
+            )
+        else:
+            network = fno_2d.FNO2d(n_channels_lhs=4, n_channels_rhs=2)
+            learner = LearnerPoissonFNOMaskedSolutionSource(
+                self._grid_x1,
+                self._grid_x2,
+                network,
+            )
+            learner.train(dataset.make(), n_epochs=1001)
+            self._saveload.save(network, location)
+        return learner
+
+    # def print_result_eval(self) -> None:
+    #     for dataset_train, learner in self.models():
+    #         print(f"eval> model trained on {dataset_train.as_name()}")
+    #         for dataset_eval in self.datasets_masked(from_eval=False):
+    #             print(f"eval> dataset {dataset_eval.as_name()}")
+    #             learner.eval(dataset_eval.make(), print_result=True)
+    #             print()
+    #         print()
+
+    def print_result_eval(self) -> None:
+        for dataset_train, model in self.models():
+            print(f"eval> {dataset_train.as_name()}")
+            # for perc in self._percs:
+            #     self._eval_one(
+            #         model,
+            #         DatasetPoissonMaskedSolutionSource(
+            #             self._grid_x1,
+            #             self._grid_x2,
+            #             self._ds_eval_raw,
+            #             mask_solution=MaskerRandom(perc),
+            #             mask_source=MaskerRandom(perc),
+            #         ),
+            #     )
+            for perc in self._percs:
+                learner.eval(
+                    DatasetPoissonMaskedSolutionSource(
+                        self._grid_x1,
+                        self._grid_x2,
+                        self._ds_eval_raw,
+                        mask_solution=MaskerIsland(1 - perc),
+                        mask_source=MaskerIsland(1 - perc),
+                    ).make(),
+                    print_result=True,
+                )
+
+    def _eval_one(
+        self,
+        learner: LearnerPoissonFourier,
+        dataset_eval: DatasetMasked,
+    ) -> None:
+        learner.eval(dataset_eval.make())
+
+    def plot_mask(self) -> None:
+        for dataset_train, model in self.models():
+            for perc in self._percs:
+                self._plot_compare(
+                    learner,
+                    dataset_train,
+                    DatasetPoissonMaskedSolutionSource(
+                        self._grid_x1,
+                        self._grid_x2,
+                        self._ds_eval_raw,
+                        mask_solution=MaskerRandom(perc_to_mask=perc),
+                        mask_source=MaskerRandom(perc_to_mask=perc),
+                    ),
+                )
 
     def _plot_mask_to_error(
         self,
@@ -316,6 +466,58 @@ class Learners:
         saveload.save(fig, saveload.rebase_location(location), overwrite=True)
 
 
+class PipelineFNOMaskedSolutionSource(PipelineMaskedSolutionSource):
+    def __init__(self):
+        super().__init__(network_name="fno")
+
+    def _model_trained(
+        self, dataset: DatasetMasked
+    ) -> LearnerPoissonFNOMaskedSolutionSource:
+        location = self._name_model(dataset.as_name())
+        if self._saveload.exists(location):
+            learner = LearnerPoissonFNOMaskedSolutionSource(
+                self._grid_x1,
+                self._grid_x2,
+                self._saveload.load(location),
+            )
+        else:
+            network = fno_2d.FNO2d(n_channels_lhs=4, n_channels_rhs=2)
+            learner = LearnerPoissonFNOMaskedSolutionSource(
+                self._grid_x1,
+                self._grid_x2,
+                network,
+            )
+            learner.train(dataset.make(), n_epochs=1001)
+            self._saveload.save(network, location)
+        return learner
+
+
+class PipelineCNOMaskedSolutionSource(PipelineMaskedSolutionSource):
+    def __init__(self):
+        super().__init__(network_name="cno")
+
+    def _model_trained(
+        self, dataset: DatasetMasked
+    ) -> LearnerPoissonCNOMaskedSolutionSource:
+        location = self._name_model(dataset.as_name())
+        if self._saveload.exists(location):
+            learner = LearnerPoissonCNOMaskedSolutionSource(
+                self._grid_x1,
+                self._grid_x2,
+                self._saveload.load(location),
+            )
+        else:
+            network = cno.CNO2d(in_channel=4, out_channel=2)
+            learner = LearnerPoissonCNOMaskedSolutionSource(
+                self._grid_x1,
+                self._grid_x2,
+                network,
+            )
+            learner.train(dataset.make(), n_epochs=1001)
+            self._saveload.save(network, location)
+        return learner
+
+
 if __name__ == "__main__":
     logging.basicConfig(
         format="%(module)s [%(levelname)s]> %(message)s", level=logging.INFO
@@ -323,5 +525,18 @@ if __name__ == "__main__":
 
     torch.manual_seed(42)
 
-    learners = Learners()
-    learners.dataset_sum_of_gauss()
+    fnos_m = PipelineFNOMaskedSolution()
+    fnos_m.train()
+    fnos_m.print_result_eval()
+
+    cnos_m = PipelineCNOMaskedSolution()
+    cnos_m.train()
+    cnos_m.print_result_eval()
+
+    fnos_mm = PipelineFNOMaskedSolutionSource()
+    fnos_mm.train()
+    fnos_mm.print_result_eval()
+
+    cnos_mm = PipelineCNOMaskedSolutionSource()
+    cnos_mm.train()
+    cnos_mm.print_result_eval()
