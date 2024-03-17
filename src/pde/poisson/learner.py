@@ -41,6 +41,7 @@ class LearnerPoissonFourier:
         batch_size: int = 2,
         n_epochs: int = 2001,
         freq_eval: int = 100,
+        dataset_eval: typing.Optional[torch.utils.data.dataset.TensorDataset] = None,
     ) -> None:
         raise NotImplementedError
 
@@ -151,6 +152,7 @@ class LearnerPoissonFNOMaskedSolution(LearnerPoissonFourier):
         batch_size: int = 2,
         n_epochs: int = 2001,
         freq_eval: int = 100,
+        dataset_eval: typing.Optional[torch.utils.data.dataset.TensorDataset] = None,
     ) -> None:
         optimizer = torch.optim.Adam(self._network.parameters(), weight_decay=1e-5)
         scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=50, gamma=0.5)
@@ -179,6 +181,9 @@ class LearnerPoissonFNOMaskedSolution(LearnerPoissonFourier):
                     "train> (mse, mse%): "
                     f"{np.average(mse_abs_all)}, {np.average(mse_rel_all)}"
                 )
+                if dataset_eval:
+                    self.eval(dataset_eval, print_result=True)
+                    print()
 
     def eval(
         self,
@@ -188,15 +193,13 @@ class LearnerPoissonFNOMaskedSolution(LearnerPoissonFourier):
         mse_abs_all, mse_rel_all = [], []
         with torch.no_grad():
             self._network.eval()
-            for lhss_batch, rhss_batch in torch.utils.data.DataLoader(dataset):
-                lhss_batch, rhss_batch = (
-                    lhss_batch.to(device=self._device, dtype=torch.float),
-                    rhss_batch.to(device=self._device, dtype=torch.float),
-                )
-                rhss_ours = self._network(lhss_batch)
-                dst = distance.Distance(rhss_ours, rhss_batch)
+            for __, rhss_theirs, rhss_ours in self.iterate_dataset(
+                dataset, batch_size=1
+            ):
+                dst = distance.Distance(rhss_ours, rhss_theirs)
                 mse_abs_all.append(dst.mse().item())
                 mse_rel_all.append(dst.mse_relative().item())
+        self._network.train()
         mse_abs_avg, mse_rel_avg = np.average(mse_abs_all), np.average(mse_rel_all)
         if print_result:
             print(f"eval> (mse, mse%): {mse_abs_avg}, {mse_rel_avg}")
@@ -222,6 +225,7 @@ class LearnerPoissonFNOMaskedSolutionSource(LearnerPoissonFourier):
         batch_size: int = 2,
         n_epochs: int = 2001,
         freq_eval: int = 100,
+        dataset_eval: typing.Optional[torch.utils.data.dataset.TensorDataset] = None,
     ) -> None:
         optimizer = torch.optim.Adam(self._network.parameters(), weight_decay=1e-5)
         scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=50, gamma=0.5)
@@ -248,6 +252,9 @@ class LearnerPoissonFNOMaskedSolutionSource(LearnerPoissonFourier):
                     f"{np.average(mse_solution)}, {np.average(mse_source)}; "
                     f"{np.average(mse_all)}"
                 )
+                if dataset_eval:
+                    self.eval(dataset_eval, print_result=True)
+                    print()
 
     def eval(
         self,
@@ -323,9 +330,14 @@ class LearnerPoissonCNOMaskedSolution(LearnerPoissonFNOMaskedSolution):
         batch_size: int = 2,
         n_epochs: int = 2001,
         freq_eval: int = 100,
+        dataset_eval: typing.Optional[torch.utils.data.dataset.TensorDataset] = None,
     ) -> None:
         return super().train(
-            DatasetReorderCNO(dataset).reorder(), batch_size, n_epochs, freq_eval
+            DatasetReorderCNO(dataset).reorder(),
+            batch_size,
+            n_epochs,
+            freq_eval,
+            dataset_eval,
         )
 
     def eval(
@@ -352,9 +364,14 @@ class LearnerPoissonCNOMaskedSolutionSource(LearnerPoissonFNOMaskedSolutionSourc
         batch_size: int = 2,
         n_epochs: int = 2001,
         freq_eval: int = 100,
+        dataset_eval: typing.Optional[torch.utils.data.dataset.TensorDataset] = None,
     ) -> None:
         return super().train(
-            DatasetReorderCNO(dataset).reorder(), batch_size, n_epochs, freq_eval
+            DatasetReorderCNO(dataset).reorder(),
+            batch_size,
+            n_epochs,
+            freq_eval,
+            dataset_eval,
         )
 
     def eval(
