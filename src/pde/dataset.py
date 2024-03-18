@@ -39,6 +39,10 @@ class DatasetPDE2d(DatasetPDE):
     def solve_instance(self) -> typing.Iterable[torch.Tensor]:
         raise NotImplementedError
 
+    @abc.abstractmethod
+    def as_name(self) -> str:
+        raise NotImplementedError
+
 
 class DatasetSplits:
     def __init__(self, dataset_full: torch.utils.data.dataset.TensorDataset):
