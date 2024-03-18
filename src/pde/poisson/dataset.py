@@ -49,7 +49,7 @@ class DatasetSin(DatasetPoisson2d):
         grid_x1: grid.Grid,
         grid_x2: grid.Grid,
         n_samples_per_instance=4,
-        constant_factor: float = 10.0,
+        constant_factor: float = 1.0,
     ):
         super().__init__(grid_x1, grid_x2)
 
