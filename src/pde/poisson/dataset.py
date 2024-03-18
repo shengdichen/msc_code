@@ -62,6 +62,9 @@ class DatasetSin(DatasetPoisson2d):
         self._n_samples_per_instance = n_samples_per_instance
         self._constant_factor = constant_factor
 
+    def as_name(self) -> str:
+        return "sum_of_sine"
+
     def solve_instance(self) -> tuple[torch.Tensor, torch.Tensor]:
         weights = torch.distributions.Uniform(low=-1, high=1).sample(
             [self._n_samples_per_instance] * self._grids.n_dims
@@ -126,6 +129,9 @@ class DatasetGauss(DatasetPoisson2d):
         self._mu_with_sobol = sample_mu_with_sobol
         self._sigma_same = sample_sigma_same
         self._sigma_min, self._sigma_max = sample_sigma_min, sample_sigma_max
+
+    def as_name(self) -> str:
+        return "sum_of_gauss"
 
     def solve_instance(self) -> tuple[torch.Tensor, torch.Tensor]:
         solution_final, source_final = (
