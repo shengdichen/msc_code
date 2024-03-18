@@ -19,7 +19,9 @@ class PlotUtil:
         self._set_label_xy(ax)
         ax.grid(True)
 
-    def plot_3d(self, ax: mpl.axes.Axes, target: torch.Tensor) -> None:
+    def plot_3d(
+        self, ax: mpl.axes.Axes, target: torch.Tensor, label_z: str = "u"
+    ) -> None:
         surface = ax.plot_surface(
             self._coords_x1,
             self._coords_x2,
@@ -29,7 +31,7 @@ class PlotUtil:
         )
 
         self._set_label_xy(ax)
-        ax.set_zlabel("$u$")
+        ax.set_zlabel(f"${label_z}$")
 
         return surface
 
