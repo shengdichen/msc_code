@@ -262,90 +262,6 @@ class DatasetGauss(DatasetPoisson2d):
         )
 
 
-class DatasetPoisson:
-    def __init__(
-        self,
-        grid_x1: grid.Grid,
-        grid_x2: grid.Grid,
-        n_instances: int,
-        name_dataset: str,
-        saveload: SaveloadTorch,
-    ):
-        self._grid_x1, self._grid_x2 = grid_x1, grid_x2
-        self._grids = grid.Grids([self._grid_x1, self._grid_x2])
-
-        self._n_instances = n_instances
-        self._saveload_location, self._saveload = (
-            f"dataset--{name_dataset}",
-            saveload,
-        )
-
-    @property
-    def n_instances(self) -> int:
-        return self._n_instances
-
-    def dataset_raw(
-        self,
-    ) -> torch.utils.data.dataset.TensorDataset:
-        def make() -> torch.utils.data.dataset.TensorDataset:
-            return self._make_dataset_raw()
-
-        return self._load_or_make(
-            make,
-            location=f"{self._saveload_location}--raw_{self._n_instances}",
-        )
-
-    @abc.abstractmethod
-    def _make_dataset_raw(self) -> torch.utils.data.dataset.TensorDataset:
-        raise NotImplementedError
-
-    def dataset_raw_split(
-        self,
-        indexes: typing.Union[np.ndarray, collections.abc.Sequence[int]],
-        autosave: typing.Optional[bool] = True,
-        save_as_suffix: typing.Optional[typing.Union[str, pathlib.Path]] = None,
-    ) -> torch.utils.data.dataset.TensorDataset:
-        def make() -> torch.utils.data.dataset.TensorDataset:
-            return torch.utils.data.Subset(self.dataset_raw(), indexes)
-
-        return self._load_or_make(
-            make,
-            location=f"{self._saveload_location}--{save_as_suffix}_{len(indexes)}",
-            autosave=autosave,
-        )
-
-    @abc.abstractmethod
-    def dataset_masked(self) -> torch.utils.data.dataset.TensorDataset:
-        raise NotImplementedError
-
-    def _load_or_make(
-        self,
-        make: typing.Callable[..., torch.utils.data.dataset.TensorDataset],
-        location: typing.Optional[typing.Union[str, pathlib.Path]] = None,
-        autosave: typing.Optional[bool] = True,
-    ) -> torch.utils.data.dataset.TensorDataset:
-        if autosave:
-            location = location or self._saveload_location
-            return self._saveload.load_or_make(
-                self._saveload.rebase_location(location), make
-            )
-        return make()
-
-    def plot_instance(self) -> None:
-        plotter = plot.PlotFrame(
-            self._grids,
-            self._generate_instance_solution(),
-            self._saveload_location,
-            SaveloadImage(self._saveload.base),
-        )
-        plotter.plot_2d()
-        plotter.plot_3d()
-
-    @abc.abstractmethod
-    def _generate_instance_solution(self) -> torch.Tensor:
-        raise NotImplementedError
-
-
 class DatasetPoissonMaskedSolution(DatasetMasked):
     def __init__(
         self,
@@ -458,7 +374,91 @@ class DatasetPoissonMaskedSolutionSource(DatasetMasked):
         return torch.utils.data.TensorDataset(lhss, rhss)
 
 
-class DatasetConstructed(DatasetPoisson):
+class DatasetPoissonLegacy:
+    def __init__(
+        self,
+        grid_x1: grid.Grid,
+        grid_x2: grid.Grid,
+        n_instances: int,
+        name_dataset: str,
+        saveload: SaveloadTorch,
+    ):
+        self._grid_x1, self._grid_x2 = grid_x1, grid_x2
+        self._grids = grid.Grids([self._grid_x1, self._grid_x2])
+
+        self._n_instances = n_instances
+        self._saveload_location, self._saveload = (
+            f"dataset--{name_dataset}",
+            saveload,
+        )
+
+    @property
+    def n_instances(self) -> int:
+        return self._n_instances
+
+    def dataset_raw(
+        self,
+    ) -> torch.utils.data.dataset.TensorDataset:
+        def make() -> torch.utils.data.dataset.TensorDataset:
+            return self._make_dataset_raw()
+
+        return self._load_or_make(
+            make,
+            location=f"{self._saveload_location}--raw_{self._n_instances}",
+        )
+
+    @abc.abstractmethod
+    def _make_dataset_raw(self) -> torch.utils.data.dataset.TensorDataset:
+        raise NotImplementedError
+
+    def dataset_raw_split(
+        self,
+        indexes: typing.Union[np.ndarray, collections.abc.Sequence[int]],
+        autosave: typing.Optional[bool] = True,
+        save_as_suffix: typing.Optional[typing.Union[str, pathlib.Path]] = None,
+    ) -> torch.utils.data.dataset.TensorDataset:
+        def make() -> torch.utils.data.dataset.TensorDataset:
+            return torch.utils.data.Subset(self.dataset_raw(), indexes)
+
+        return self._load_or_make(
+            make,
+            location=f"{self._saveload_location}--{save_as_suffix}_{len(indexes)}",
+            autosave=autosave,
+        )
+
+    @abc.abstractmethod
+    def dataset_masked(self) -> torch.utils.data.dataset.TensorDataset:
+        raise NotImplementedError
+
+    def _load_or_make(
+        self,
+        make: typing.Callable[..., torch.utils.data.dataset.TensorDataset],
+        location: typing.Optional[typing.Union[str, pathlib.Path]] = None,
+        autosave: typing.Optional[bool] = True,
+    ) -> torch.utils.data.dataset.TensorDataset:
+        if autosave:
+            location = location or self._saveload_location
+            return self._saveload.load_or_make(
+                self._saveload.rebase_location(location), make
+            )
+        return make()
+
+    def plot_instance(self) -> None:
+        plotter = plot.PlotFrame(
+            self._grids,
+            self._generate_instance_solution(),
+            self._saveload_location,
+            SaveloadImage(self._saveload.base),
+        )
+        plotter.plot_2d()
+        plotter.plot_3d()
+
+    @abc.abstractmethod
+    def _generate_instance_solution(self) -> torch.Tensor:
+        raise NotImplementedError
+
+
+class DatasetConstructed(DatasetPoissonLegacy):
     def __init__(
         self,
         grid_x1: grid.Grid,
@@ -548,183 +548,6 @@ class DatasetConstructed(DatasetPoisson):
     @abc.abstractmethod
     def _generate_instance(self) -> tuple[torch.Tensor, torch.Tensor]:
         raise NotImplementedError
-
-
-class DatasetConstructedSin(DatasetConstructed):
-    def __init__(
-        self,
-        grid_x1: grid.Grid,
-        grid_x2: grid.Grid,
-        saveload: SaveloadTorch,
-        name_dataset: str,
-        n_instances: int = 10,
-        n_samples_per_instance=4,
-        constant_factor: float = 10.0,
-    ):
-        super().__init__(
-            grid_x1,
-            grid_x2,
-            saveload=saveload,
-            name_dataset=name_dataset,
-            n_instances=n_instances,
-            n_samples_per_instance=n_samples_per_instance,
-        )
-
-        self._constant_factor = constant_factor
-
-    def _generate_instance(self) -> tuple[torch.Tensor, torch.Tensor]:
-        weights = torch.distributions.Uniform(low=-1, high=1).sample(
-            [self._n_samples_per_instance] * self._grids.n_dims
-        )
-
-        sample_x1, sample_x2 = self._sample_coords()
-        idx_sum = sample_x1**2 + sample_x2**2
-
-        coords_x1 = self._coords_x1[..., None, None]
-        coords_x2 = self._coords_x2[..., None, None]
-        product = (
-            weights
-            * torch.sin(torch.pi * sample_x1 * coords_x1)
-            * torch.sin(torch.pi * sample_x2 * coords_x2)
-        )
-        const_r = 0.85
-        source = (
-            self._constant_factor * torch.pi / self._n_samples_per_instance**2
-        ) * torch.sum(
-            (idx_sum**const_r) * product,
-            dim=(-2, -1),
-        )
-        solution = (
-            self._constant_factor / torch.pi / self._n_samples_per_instance**2
-        ) * torch.sum(
-            (idx_sum ** (const_r - 1)) * product,
-            dim=(-2, -1),
-        )
-        return solution, source
-
-    def _sample_coords(self) -> tuple[torch.Tensor, torch.Tensor]:
-        sample_x1, sample_x2 = np.meshgrid(
-            torch.arange(1, self._n_samples_per_instance + 1).float(),
-            torch.arange(1, self._n_samples_per_instance + 1).float(),
-        )
-        return torch.from_numpy(sample_x1), torch.from_numpy(sample_x2)
-
-
-class DatasetSumOfGauss(DatasetConstructed):
-    def __init__(
-        self,
-        grid_x1: grid.Grid,
-        grid_x2: grid.Grid,
-        saveload: SaveloadTorch,
-        name_dataset: str,
-        n_instances: int = 10,
-        n_samples_per_instance=4,
-        constant_factor: float = 1.0,
-        rng_np: np.random.Generator = np.random.default_rng(42),
-        sample_weight_min: float = 0.3,
-        sample_weight_max: float = 0.7,
-        sample_mu_with_sobol: bool = False,
-        sample_sigma_same: bool = False,
-        sample_sigma_min: float = 0.04,
-        sample_sigma_max: float = 0.13,
-    ):
-        super().__init__(
-            grid_x1,
-            grid_x2,
-            saveload=saveload,
-            name_dataset=name_dataset,
-            n_instances=n_instances,
-            n_samples_per_instance=n_samples_per_instance,
-        )
-
-        self._constant_factor = constant_factor
-        self._rng_np = rng_np
-        self._coords_x1_np, self._coords_x2_np = self._grids.coords_as_mesh()
-
-        self._weight_min, self._weight_max = sample_weight_min, sample_weight_max
-        self._mu_with_sobol = sample_mu_with_sobol
-        self._sigma_same = sample_sigma_same
-        self._sigma_min, self._sigma_max = sample_sigma_min, sample_sigma_max
-
-    def _generate_instance(self) -> tuple[torch.Tensor, torch.Tensor]:
-        solution_final, source_final = (
-            self._grids.zeroes_like_numpy(),
-            self._grids.zeroes_like_numpy(),
-        )
-        for weight, mus, sigmas in zip(*self._make_sample_data()):
-            solution, source = self._make_sample(mus, sigmas)
-            solution_final += weight * solution
-            source_final += weight * source
-        return torch.from_numpy(solution_final), torch.from_numpy(source_final)
-
-    def _make_sample_data(self) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-        weights = self._rng_np.uniform(
-            low=self._weight_min,
-            high=self._weight_max,
-            size=self._n_samples_per_instance,
-        )
-
-        if self._mu_with_sobol:
-            mu_vectors = self._grids.samples_sobol(self._n_samples_per_instance).numpy()
-        else:
-            mu_vectors = self._grids.sample_uniform(
-                size=self._n_samples_per_instance, rng=self._rng_np
-            )
-
-        if self._sigma_same:
-            sigmas = self._rng_np.uniform(
-                low=self._sigma_min,
-                high=self._sigma_max,
-                size=self._n_samples_per_instance,
-            )
-            sigma_vectors = np.stack([sigmas] * self._grids.n_dims, axis=-1)
-        else:
-            sigma_vectors = self._rng_np.uniform(
-                low=self._sigma_min,
-                high=self._sigma_max,
-                size=(self._n_samples_per_instance, self._grids.n_dims),
-            )
-
-        return weights, mu_vectors, sigma_vectors
-
-    def _make_sample(
-        self, mu_vec: np.ndarray, sigmas: torch.utils.data.dataset.TensorDataset
-    ) -> tuple[np.ndarray, np.ndarray]:
-        return (
-            self._constant_factor
-            * self._calc_solution(mu_vec, sigma_mat=np.diag(sigmas**2)),
-            self._constant_factor * self._calc_source(mu_vec, sigmas),
-        )
-
-    def _calc_solution(self, mu_vec: np.ndarray, sigma_mat: np.ndarray) -> np.ndarray:
-        return multivariate_normal(mean=mu_vec, cov=sigma_mat).pdf(
-            np.dstack((self._coords_x1_np, self._coords_x2_np))
-        )
-
-    def _calc_solution_ours(self, mu_vec: np.ndarray, sigmas: np.ndarray) -> np.ndarray:
-        r_var_1, r_var_2 = 1 / (sigmas[0] ** 2), 1 / (sigmas[1] ** 2)
-        diff_s_1, diff_s_2 = (
-            (self._coords_x1_np - mu_vec[0]) ** 2,
-            (self._coords_x2_np - mu_vec[1]) ** 2,
-        )
-        return (
-            1
-            / (2 * np.pi * np.prod(sigmas))
-            * np.exp(-0.5 * (r_var_1 * diff_s_1 + r_var_2 * diff_s_2))
-        )
-
-    def _calc_source(self, mu_vec: np.ndarray, sigmas: np.ndarray) -> np.ndarray:
-        r_var_1, r_var_2 = 1 / (sigmas[0] ** 2), 1 / (sigmas[1] ** 2)
-        diff_s_1, diff_s_2 = (
-            (self._coords_x1_np - mu_vec[0]) ** 2,
-            (self._coords_x2_np - mu_vec[1]) ** 2,
-        )
-        return (
-            1
-            / (2 * np.pi * np.prod(sigmas))
-            * (r_var_1**2 * diff_s_1 - r_var_1 + r_var_2**2 * diff_s_2 - r_var_2)
-            * np.exp(-0.5 * (r_var_1 * diff_s_1 + r_var_2 * diff_s_2))
-        )
 
 
 class SolverPoisson:
@@ -848,7 +671,7 @@ class SolverPoisson:
         plotter.plot_3d()
 
 
-class DatasetSolver(DatasetPoisson):
+class DatasetSolver(DatasetPoissonLegacy):
     def __init__(
         self,
         grid_x1: grid.Grid,
