@@ -91,6 +91,9 @@ class DatasetSin(DatasetPoisson2d):
         grid_x1: grid.Grid,
         grid_x2: grid.Grid,
         n_samples_per_instance=4,
+        sample_weight_min: float = -1.0,
+        sample_weight_max: float = 1.0,
+        constant_r: float = 0.85,
         constant_factor: float = 1.0,
     ):
         super().__init__(grid_x1, grid_x2)
@@ -102,7 +105,8 @@ class DatasetSin(DatasetPoisson2d):
         )
 
         self._n_samples_per_instance = n_samples_per_instance
-        self._constant_factor = constant_factor
+        self._weight_min, self._weight_max = sample_weight_min, sample_weight_max
+        self._constant_r, self._constant_factor = constant_r, constant_factor
 
     def as_name(self) -> str:
         return "sum_of_sine"
@@ -111,9 +115,9 @@ class DatasetSin(DatasetPoisson2d):
         return self._plot("Sum of Sines")
 
     def solve_instance(self) -> tuple[torch.Tensor, torch.Tensor]:
-        weights = torch.distributions.Uniform(low=-1, high=1).sample(
-            [self._n_samples_per_instance] * self._grids.n_dims
-        )
+        weights = torch.distributions.Uniform(
+            low=self._weight_min, high=self._weight_max
+        ).sample([self._n_samples_per_instance] * self._grids.n_dims)
 
         sample_x1, sample_x2 = self._sample_coords()
         idx_sum = sample_x1**2 + sample_x2**2
@@ -125,17 +129,16 @@ class DatasetSin(DatasetPoisson2d):
             * torch.sin(torch.pi * sample_x1 * coords_x1)
             * torch.sin(torch.pi * sample_x2 * coords_x2)
         )
-        const_r = 0.85
         source = (
             self._constant_factor * torch.pi / self._n_samples_per_instance**2
         ) * torch.sum(
-            (idx_sum**const_r) * product,
+            (idx_sum**self._constant_r) * product,
             dim=(-2, -1),
         )
         solution = (
             self._constant_factor / torch.pi / self._n_samples_per_instance**2
         ) * torch.sum(
-            (idx_sum ** (const_r - 1)) * product,
+            (idx_sum ** (self._constant_r - 1)) * product,
             dim=(-2, -1),
         )
         return solution, source
