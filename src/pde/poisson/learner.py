@@ -159,15 +159,8 @@ class LearnerPoissonFNOMaskedSolution(LearnerPoissonFourier):
 
         for epoch in range(n_epochs):
             mse_abs_all, mse_rel_all = [], []
-            for lhss_batch, rhss_batch in torch.utils.data.DataLoader(
-                dataset, batch_size=batch_size
-            ):
-                lhss_batch, rhss_batch = (
-                    lhss_batch.to(device=self._device, dtype=torch.float),
-                    rhss_batch.to(device=self._device, dtype=torch.float),
-                )
-                optimizer.zero_grad()
-                dst = distance.Distance(self._network(lhss_batch), rhss_batch)
+            for __, rhss_theirs, rhss_ours in self.iterate_dataset(dataset, batch_size):
+                dst = distance.Distance(rhss_theirs, rhss_ours)
                 mse_abs = dst.mse()
                 mse_abs.backward()
                 optimizer.step()
@@ -199,6 +192,7 @@ class LearnerPoissonFNOMaskedSolution(LearnerPoissonFourier):
                 dst = distance.Distance(rhss_ours, rhss_theirs)
                 mse_abs_all.append(dst.mse().item())
                 mse_rel_all.append(dst.mse_relative().item())
+
         self._network.train()
         mse_abs_avg, mse_rel_avg = np.average(mse_abs_all), np.average(mse_rel_all)
         if print_result:
@@ -274,6 +268,7 @@ class LearnerPoissonFNOMaskedSolutionSource(LearnerPoissonFourier):
                 mse_source.append(dst_sources.mse_relative().item())
                 mse_all.append(self._calc_loss(dst_sources, dst_sources).item())
 
+        self._network.train()
         mse_all_avg = np.average(mse_all)
         if print_result:
             print(
