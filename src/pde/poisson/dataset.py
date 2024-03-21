@@ -283,6 +283,7 @@ class DatasetPoissonMaskedSolution(DatasetMasked):
             torch.from_numpy(coords_x1),
             torch.from_numpy(coords_x2),
         )
+        self._putil = plot.PlotUtil(self._grids)
 
     def as_name(self) -> str:
         return f"sol_{self._masks[0].as_name()}"
@@ -314,6 +315,28 @@ class DatasetPoissonMaskedSolution(DatasetMasked):
         )
         rhss = torch.stack(solutions).unsqueeze(-1)
         return torch.utils.data.TensorDataset(lhss, rhss)
+
+    def plot_instance(
+        self,
+        n_instances: int = 1,
+        dataset: typing.Optional[torch.utils.data.dataset.TensorDataset] = None,
+    ) -> mpl.figure.Figure:
+        dataset = dataset or self.make()
+        fig, (axs_unmasked, axs_masked) = plt.subplots(
+            2, n_instances, figsize=(10, 7.3), dpi=200, subplot_kw={"aspect": 1.0}
+        )
+        colormap = mpl.colormaps["viridis"]
+
+        for i, (lhss, rhss) in enumerate(dataset):
+            solution_unmasked, solution_masked = rhss[:, :, 0], lhss[:, :, 0]
+            ax_unmasked, ax_masked = axs_unmasked[i], axs_masked[i]
+            ax_unmasked.set_title(f"$u_{i+1}$")
+            ax_masked.set_title(f"$u_{i+1}$ masked")
+            self._putil.plot_2d(ax_unmasked, solution_unmasked, colormap=colormap)
+            self._putil.plot_2d(ax_masked, solution_masked, colormap=colormap)
+            if i == n_instances - 1:
+                break
+        return fig
 
 
 class DatasetPoissonMaskedSolutionSource(DatasetMasked):
