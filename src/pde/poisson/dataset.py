@@ -45,13 +45,13 @@ class DatasetPoisson2d(DatasetPDE2d):
         )
 
     @abc.abstractmethod
-    def plot(self) -> mpl.figure.Figure:
+    def plot(self, set_title_upper: bool = True) -> mpl.figure.Figure:
         raise NotImplementedError
 
-    def _plot(self, title_u: typing.Optional[str]) -> mpl.figure.Figure:
-        fig = plt.figure(figsize=(10, 6), dpi=200)
-        if title_u:
-            fig.suptitle(f'Dataset "{title_u}"')
+    def _plot(self, title_upper: typing.Optional[str]) -> mpl.figure.Figure:
+        fig = plt.figure(figsize=(17, 9), dpi=200)
+        if title_upper:
+            fig.suptitle(f'Dataset "{title_upper}"')
 
         self._plot_solution_row(fig.add_subplot(2, 4, 1, aspect=1.0))
         self._plot_solution_row(fig.add_subplot(2, 4, 2, aspect=1.0))
@@ -66,7 +66,7 @@ class DatasetPoisson2d(DatasetPDE2d):
         self._putil.plot_2d(ax_1_1, solution)
         ax_1_2 = fig.add_subplot(2, 4, 6, projection="3d")
         ax_1_2.set_title(f"solution {title_u}")
-        self._putil.plot_3d(ax_1_2, solution)
+        self._putil.plot_3d(ax_1_2, solution, label_z="")
 
         title_f = "$f(\\cdot, \\cdot)\\quad$"
         ax_1_3 = fig.add_subplot(2, 4, 7, aspect=1.0)
@@ -74,7 +74,7 @@ class DatasetPoisson2d(DatasetPDE2d):
         self._putil.plot_2d(ax_1_3, source)
         ax_1_4 = fig.add_subplot(2, 4, 8, projection="3d")
         ax_1_4.set_title(f"source {title_f}")
-        self._putil.plot_3d(ax_1_4, source, label_z="f")
+        self._putil.plot_3d(ax_1_4, source, label_z="")
 
         return fig
 
@@ -111,8 +111,8 @@ class DatasetSin(DatasetPoisson2d):
     def as_name(self) -> str:
         return "sum_of_sine"
 
-    def plot(self) -> mpl.figure.Figure:
-        return self._plot("Sum of Sines")
+    def plot(self, set_title_upper: bool = True) -> mpl.figure.Figure:
+        return self._plot("Sum of Sine" if set_title_upper else "")
 
     def solve_instance(self) -> tuple[torch.Tensor, torch.Tensor]:
         weights = torch.distributions.Uniform(
@@ -181,8 +181,8 @@ class DatasetGauss(DatasetPoisson2d):
     def as_name(self) -> str:
         return "sum_of_gauss"
 
-    def plot(self) -> mpl.figure.Figure:
-        return self._plot("Sum of Gaussians")
+    def plot(self, set_title_upper: bool = True) -> mpl.figure.Figure:
+        return self._plot("Sum of Gaussians" if set_title_upper else "")
 
     def solve_instance(self) -> tuple[torch.Tensor, torch.Tensor]:
         solution_final, source_final = (
