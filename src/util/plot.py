@@ -30,7 +30,11 @@ class PlotUtil:
         return ax.contourf(self._coords_x1, self._coords_x2, target, cmap=colormap)
 
     def plot_3d(
-        self, ax: mpl.axes.Axes, target: torch.Tensor, label_z: str = "u"
+        self,
+        ax: mpl.axes.Axes,
+        target: torch.Tensor,
+        show_label_xy: bool = True,
+        label_z: str = "u",
     ) -> None:
         surface = ax.plot_surface(
             self._coords_x1,
@@ -40,8 +44,10 @@ class PlotUtil:
             edgecolor="k",
         )
 
-        self._set_label_xy(ax)
-        ax.set_zlabel(f"${label_z}$")
+        if show_label_xy:
+            self._set_label_xy(ax)
+        if label_z:
+            ax.set_zlabel(f"${label_z}$")
 
         return surface
 
