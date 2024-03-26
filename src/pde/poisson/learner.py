@@ -136,6 +136,12 @@ class LearnerPoissonFourier:
             )
             yield lhss, rhss_theirs, self._network(lhss)
 
+    @abc.abstractmethod
+    def errors(
+        self, dataset: torch.utils.data.dataset.TensorDataset
+    ) -> typing.Sequence[float]:
+        raise NotImplementedError
+
 
 class LearnerPoissonFNOMaskedSolution(LearnerPoissonFourier):
     def __init__(
@@ -199,6 +205,23 @@ class LearnerPoissonFNOMaskedSolution(LearnerPoissonFourier):
             print(f"eval> (mse, mse%): {mse_abs_avg}, {mse_rel_avg}")
 
         return mse_rel_avg.item()
+
+    def errors(
+        self,
+        dataset: torch.utils.data.dataset.TensorDataset,
+    ) -> typing.Sequence[float]:
+        mse_rel_all = []
+        with torch.no_grad():
+            self._network.eval()
+            for __, rhss_theirs, rhss_ours in self.iterate_dataset(
+                dataset, batch_size=1
+            ):
+                mse_rel_all.append(
+                    distance.Distance(rhss_ours, rhss_theirs).mse_relative().item()
+                )
+
+        self._network.train()
+        return (np.average(mse_rel_all),)
 
     def _extract_u(self, rhss: torch.Tensor) -> torch.Tensor:
         return rhss[0, :, :, 0]
@@ -278,6 +301,24 @@ class LearnerPoissonFNOMaskedSolutionSource(LearnerPoissonFourier):
             )
         return mse_all_avg.item()
 
+    def errors(
+        self, dataset: torch.utils.data.dataset.TensorDataset
+    ) -> typing.Sequence[float]:
+        mse_solution, mse_source = [], []
+        with torch.no_grad():
+            self._network.eval()
+            for __, rhss_theirs, rhss_ours in self.iterate_dataset(
+                dataset, batch_size=1
+            ):
+                dst_solutions, dst_sources = self._calc_distances(
+                    rhss_ours, rhss_theirs
+                )
+                mse_solution.append(dst_solutions.mse_relative().item())
+                mse_source.append(dst_sources.mse_relative().item())
+
+        self._network.train()
+        return np.average(mse_solution), np.average(mse_source)
+
     def _calc_distances(
         self, rhss_ours: torch.Tensor, rhss_theirs: torch.Tensor
     ) -> tuple[distance.Distance, distance.Distance]:
@@ -342,6 +383,12 @@ class LearnerPoissonCNOMaskedSolution(LearnerPoissonFNOMaskedSolution):
     ) -> float:
         return super().eval(DatasetReorderCNO(dataset).reorder(), print_result)
 
+    def errors(
+        self,
+        dataset: torch.utils.data.dataset.TensorDataset,
+    ) -> typing.Sequence[float]:
+        return super().errors(DatasetReorderCNO(dataset).reorder())
+
     def _extract_u(self, rhss: torch.Tensor) -> torch.Tensor:
         return rhss[0, 0, :, :]
 
@@ -378,6 +425,11 @@ class LearnerPoissonCNOMaskedSolutionSource(LearnerPoissonFNOMaskedSolutionSourc
 
     def _extract_u(self, rhss: torch.Tensor) -> torch.Tensor:
         return rhss[0, 0, :, :]
+
+    def errors(
+        self, dataset: torch.utils.data.dataset.TensorDataset
+    ) -> typing.Sequence[float]:
+        return super().errors(DatasetReorderCNO(dataset).reorder())
 
 
 class LearnerPoissonFC:
