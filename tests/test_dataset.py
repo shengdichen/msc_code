@@ -109,6 +109,7 @@ class TestMask:
             ]
         )
         masker = dataset.MaskerRandom(0.3, seed=42)
+
         assert torch.allclose(
             masker.mask(full),
             torch.tensor(
@@ -122,6 +123,7 @@ class TestMask:
                 ]
             ),
         )
+        # repeated drawing yields different result
         assert torch.allclose(
             masker.mask(full),
             torch.tensor(
@@ -151,22 +153,23 @@ class TestMask:
             ]
         )
         masker = dataset.MaskerIsland(0.5)
-        assert torch.allclose(
-            masker.mask(full),
-            torch.tensor(
-                [
-                    [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-                    [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-                    [0, 0, 32, 33, 34, 35, 38, 0, 0, 0],
-                    [0, 0, 42, 43, 44, 45, 49, 0, 0, 0],
-                    [0, 0, 52, 53, 54, 55, 50, 0, 0, 0],
-                    [0, 0, 62, 63, 64, 65, 61, 0, 0, 0],
-                    [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-                    [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-                    [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-                ]
-            ),
-        )
+        for __ in range(2):  # repeated drawing yield the same result
+            assert torch.allclose(
+                masker.mask(full),
+                torch.tensor(
+                    [
+                        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+                        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+                        [0, 0, 32, 33, 34, 35, 38, 0, 0, 0],
+                        [0, 0, 42, 43, 44, 45, 49, 0, 0, 0],
+                        [0, 0, 52, 53, 54, 55, 50, 0, 0, 0],
+                        [0, 0, 62, 63, 64, 65, 61, 0, 0, 0],
+                        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+                        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+                        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+                    ]
+                ),
+            )
 
 
 class TestFilter:

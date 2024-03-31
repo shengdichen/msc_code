@@ -238,6 +238,13 @@ class TestGrid:
             gr.min_max_n_pts(from_start=30, to_end=25)
             gr.min_max_n_pts(from_start=25, to_end=30)
 
+    def test_sample_uniform(self) -> None:
+        gr = grid.Grid(n_pts=50, stepsize=0.1, start=3)
+        assert np.allclose(
+            gr.sample_uniform(size=2, rng=np.random.default_rng(42)),
+            np.array([6.79238464, 5.15050435]),
+        )
+
 
 class TestGrids:
     def test_indexes(self):
@@ -484,6 +491,36 @@ class TestGrids:
                     [0, 0, 0, 0, 0, 0],
                 ]
             ),
+        )
+        assert torch.allclose(
+            grs.mask(target_raw, idx_min=1, idx_max=3),
+            torch.tensor(
+                [
+                    [0, 0, 0, 0, 0, 0],
+                    [0, 11, 12, 13, 0, 0],
+                    [0, 21, 22, 23, 0, 0],
+                    [0, 31, 32, 33, 0, 0],
+                    [0, 0, 0, 0, 0, 0],
+                ]
+            ),
+        )
+
+    def test_sample_uniform(self) -> None:
+        gr_1 = grid.Grid(n_pts=10, stepsize=0.1, start=-100)
+        gr_2 = grid.Grid(n_pts=10, stepsize=0.1, start=0)
+        gr_3 = grid.Grid(n_pts=10, stepsize=0.1, start=+100)
+        grs = grid.Grids([gr_1, gr_2, gr_3])
+
+        assert np.allclose(
+            grs.sample_uniform(rng=np.random.default_rng(42)),
+            [[-99.30343956, 0.3949906, 100.77273813]],
+        )
+        assert np.allclose(
+            (grs.sample_uniform(size=2, rng=np.random.default_rng(42))),
+            [
+                [-99.30343956, 0.77273813, 100.08475961],
+                [-99.6050094, 0.62763123, 100.87806012],
+            ],
         )
 
 

@@ -7,7 +7,8 @@ import torch
 
 from src.numerics import grid
 from src.pde.poisson.dataset import (DatasetConstructed, DatasetConstructedSin,
-                                     DatasetPoisson, DatasetSolver)
+                                     DatasetPoisson, DatasetSolver,
+                                     DatasetSumOfGauss)
 from src.pde.poisson.learner import (LearnerPoissonCNO2d, LearnerPoissonFNO,
                                      LearnerPoissonFNO2d)
 from src.util.dataset import Masker, MaskerIsland, MaskerRandom
@@ -111,7 +112,25 @@ class Learners:
             n_instances=ds_size,
             n_samples_per_instance=n_samples_per_instance,
         )
+        self._pipeline(dataset_full, name_problem)
 
+    def dataset_sum_of_gauss(self) -> None:
+        name_problem = "custom_sum_of_gauss"
+        dataset_full = DatasetSumOfGauss(
+            self._grid_x1,
+            self._grid_x2,
+            saveload=self._saveload,
+            name_dataset=name_problem,
+            n_instances=1000,
+            n_samples_per_instance=8,
+            sample_mu_with_sobol=False,
+            sample_sigma_same=False,
+        )
+        self._pipeline(dataset_full, name_problem)
+
+    def _pipeline(
+        self, dataset_full: torch.utils.data.dataset.TensorDataset, name_problem: str
+    ) -> None:
         percs_to_mask = np.arange(start=0.1, stop=1.0, step=0.1)
         masks_random = [MaskerRandom(perc_to_mask=perc) for perc in percs_to_mask]
         masks_island = [MaskerIsland(perc_to_keep=1 - perc) for perc in percs_to_mask]
@@ -305,4 +324,4 @@ if __name__ == "__main__":
     torch.manual_seed(42)
 
     learners = Learners()
-    learners.dataset_custom_sin()
+    learners.dataset_sum_of_gauss()
