@@ -5,7 +5,7 @@ import numpy as np
 import torch
 
 from src.numerics import grid
-from src.util import dataset
+from src.util import dataset, plot
 
 
 class DatasetPDE:
@@ -30,6 +30,7 @@ class DatasetPDE2d(DatasetPDE):
         self._grid_x1, self._grid_x2 = grid_x1, grid_x2
 
         super().__init__(grid.Grids([self._grid_x1, self._grid_x2]))
+        self._putil = plot.PlotUtil(self._grids)
 
     @abc.abstractmethod
     def as_dataset(self, n_instances: int) -> torch.utils.data.dataset.TensorDataset:
@@ -37,6 +38,10 @@ class DatasetPDE2d(DatasetPDE):
 
     @abc.abstractmethod
     def solve_instance(self) -> typing.Iterable[torch.Tensor]:
+        raise NotImplementedError
+
+    @abc.abstractmethod
+    def as_name(self) -> str:
         raise NotImplementedError
 
 

@@ -1,3 +1,5 @@
+import typing
+
 import matplotlib as mpl
 import torch
 from matplotlib import pyplot as plt
@@ -14,12 +16,26 @@ class PlotUtil:
         self._grids = grids
         self._coords_x1, self._coords_x2 = self._grids.coords_as_mesh()
 
-    def plot_2d(self, ax: mpl.axes.Axes, target: torch.Tensor) -> None:
-        ax.contourf(self._coords_x1, self._coords_x2, target, cmap="viridis")
+    def plot_2d(
+        self,
+        ax: mpl.axes.Axes,
+        target: torch.Tensor,
+        colormap: typing.Optional[
+            typing.Union[mpl.colors.ListedColormap, str]
+        ] = "viridis",
+    ) -> mpl.contour.QuadContourSet:
         self._set_label_xy(ax)
         ax.grid(True)
+        colormap = colormap or "viridis"
+        return ax.contourf(self._coords_x1, self._coords_x2, target, cmap=colormap)
 
-    def plot_3d(self, ax: mpl.axes.Axes, target: torch.Tensor) -> None:
+    def plot_3d(
+        self,
+        ax: mpl.axes.Axes,
+        target: torch.Tensor,
+        show_label_xy: bool = True,
+        label_z: str = "u",
+    ) -> None:
         surface = ax.plot_surface(
             self._coords_x1,
             self._coords_x2,
@@ -28,8 +44,10 @@ class PlotUtil:
             edgecolor="k",
         )
 
-        self._set_label_xy(ax)
-        ax.set_zlabel("$u$")
+        if show_label_xy:
+            self._set_label_xy(ax)
+        if label_z:
+            ax.set_zlabel(f"${label_z}$")
 
         return surface
 

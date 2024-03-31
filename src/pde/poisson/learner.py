@@ -41,6 +41,7 @@ class LearnerPoissonFourier:
         batch_size: int = 2,
         n_epochs: int = 2001,
         freq_eval: int = 100,
+        dataset_eval: typing.Optional[torch.utils.data.dataset.TensorDataset] = None,
     ) -> None:
         raise NotImplementedError
 
@@ -135,6 +136,12 @@ class LearnerPoissonFourier:
             )
             yield lhss, rhss_theirs, self._network(lhss)
 
+    @abc.abstractmethod
+    def errors(
+        self, dataset: torch.utils.data.dataset.TensorDataset
+    ) -> typing.Sequence[float]:
+        raise NotImplementedError
+
 
 class LearnerPoissonFNOMaskedSolution(LearnerPoissonFourier):
     def __init__(
@@ -151,21 +158,15 @@ class LearnerPoissonFNOMaskedSolution(LearnerPoissonFourier):
         batch_size: int = 2,
         n_epochs: int = 2001,
         freq_eval: int = 100,
+        dataset_eval: typing.Optional[torch.utils.data.dataset.TensorDataset] = None,
     ) -> None:
         optimizer = torch.optim.Adam(self._network.parameters(), weight_decay=1e-5)
         scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=50, gamma=0.5)
 
         for epoch in range(n_epochs):
             mse_abs_all, mse_rel_all = [], []
-            for lhss_batch, rhss_batch in torch.utils.data.DataLoader(
-                dataset, batch_size=batch_size
-            ):
-                lhss_batch, rhss_batch = (
-                    lhss_batch.to(device=self._device, dtype=torch.float),
-                    rhss_batch.to(device=self._device, dtype=torch.float),
-                )
-                optimizer.zero_grad()
-                dst = distance.Distance(self._network(lhss_batch), rhss_batch)
+            for __, rhss_theirs, rhss_ours in self.iterate_dataset(dataset, batch_size):
+                dst = distance.Distance(rhss_theirs, rhss_ours)
                 mse_abs = dst.mse()
                 mse_abs.backward()
                 optimizer.step()
@@ -179,6 +180,9 @@ class LearnerPoissonFNOMaskedSolution(LearnerPoissonFourier):
                     "train> (mse, mse%): "
                     f"{np.average(mse_abs_all)}, {np.average(mse_rel_all)}"
                 )
+                if dataset_eval:
+                    self.eval(dataset_eval, print_result=True)
+                    print()
 
     def eval(
         self,
@@ -188,20 +192,36 @@ class LearnerPoissonFNOMaskedSolution(LearnerPoissonFourier):
         mse_abs_all, mse_rel_all = [], []
         with torch.no_grad():
             self._network.eval()
-            for lhss_batch, rhss_batch in torch.utils.data.DataLoader(dataset):
-                lhss_batch, rhss_batch = (
-                    lhss_batch.to(device=self._device, dtype=torch.float),
-                    rhss_batch.to(device=self._device, dtype=torch.float),
-                )
-                rhss_ours = self._network(lhss_batch)
-                dst = distance.Distance(rhss_ours, rhss_batch)
+            for __, rhss_theirs, rhss_ours in self.iterate_dataset(
+                dataset, batch_size=1
+            ):
+                dst = distance.Distance(rhss_ours, rhss_theirs)
                 mse_abs_all.append(dst.mse().item())
                 mse_rel_all.append(dst.mse_relative().item())
+
+        self._network.train()
         mse_abs_avg, mse_rel_avg = np.average(mse_abs_all), np.average(mse_rel_all)
         if print_result:
             print(f"eval> (mse, mse%): {mse_abs_avg}, {mse_rel_avg}")
 
         return mse_rel_avg.item()
+
+    def errors(
+        self,
+        dataset: torch.utils.data.dataset.TensorDataset,
+    ) -> typing.Sequence[float]:
+        mse_rel_all = []
+        with torch.no_grad():
+            self._network.eval()
+            for __, rhss_theirs, rhss_ours in self.iterate_dataset(
+                dataset, batch_size=1
+            ):
+                mse_rel_all.append(
+                    distance.Distance(rhss_ours, rhss_theirs).mse_relative().item()
+                )
+
+        self._network.train()
+        return (np.average(mse_rel_all),)
 
     def _extract_u(self, rhss: torch.Tensor) -> torch.Tensor:
         return rhss[0, :, :, 0]
@@ -222,6 +242,7 @@ class LearnerPoissonFNOMaskedSolutionSource(LearnerPoissonFourier):
         batch_size: int = 2,
         n_epochs: int = 2001,
         freq_eval: int = 100,
+        dataset_eval: typing.Optional[torch.utils.data.dataset.TensorDataset] = None,
     ) -> None:
         optimizer = torch.optim.Adam(self._network.parameters(), weight_decay=1e-5)
         scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=50, gamma=0.5)
@@ -248,6 +269,9 @@ class LearnerPoissonFNOMaskedSolutionSource(LearnerPoissonFourier):
                     f"{np.average(mse_solution)}, {np.average(mse_source)}; "
                     f"{np.average(mse_all)}"
                 )
+                if dataset_eval:
+                    self.eval(dataset_eval, print_result=True)
+                    print()
 
     def eval(
         self,
@@ -267,6 +291,7 @@ class LearnerPoissonFNOMaskedSolutionSource(LearnerPoissonFourier):
                 mse_source.append(dst_sources.mse_relative().item())
                 mse_all.append(self._calc_loss(dst_sources, dst_sources).item())
 
+        self._network.train()
         mse_all_avg = np.average(mse_all)
         if print_result:
             print(
@@ -275,6 +300,24 @@ class LearnerPoissonFNOMaskedSolutionSource(LearnerPoissonFourier):
                 f"{mse_all_avg}"
             )
         return mse_all_avg.item()
+
+    def errors(
+        self, dataset: torch.utils.data.dataset.TensorDataset
+    ) -> typing.Sequence[float]:
+        mse_solution, mse_source = [], []
+        with torch.no_grad():
+            self._network.eval()
+            for __, rhss_theirs, rhss_ours in self.iterate_dataset(
+                dataset, batch_size=1
+            ):
+                dst_solutions, dst_sources = self._calc_distances(
+                    rhss_ours, rhss_theirs
+                )
+                mse_solution.append(dst_solutions.mse_relative().item())
+                mse_source.append(dst_sources.mse_relative().item())
+
+        self._network.train()
+        return np.average(mse_solution), np.average(mse_source)
 
     def _calc_distances(
         self, rhss_ours: torch.Tensor, rhss_theirs: torch.Tensor
@@ -323,9 +366,14 @@ class LearnerPoissonCNOMaskedSolution(LearnerPoissonFNOMaskedSolution):
         batch_size: int = 2,
         n_epochs: int = 2001,
         freq_eval: int = 100,
+        dataset_eval: typing.Optional[torch.utils.data.dataset.TensorDataset] = None,
     ) -> None:
         return super().train(
-            DatasetReorderCNO(dataset).reorder(), batch_size, n_epochs, freq_eval
+            DatasetReorderCNO(dataset).reorder(),
+            batch_size,
+            n_epochs,
+            freq_eval,
+            dataset_eval,
         )
 
     def eval(
@@ -334,6 +382,12 @@ class LearnerPoissonCNOMaskedSolution(LearnerPoissonFNOMaskedSolution):
         print_result: bool = False,
     ) -> float:
         return super().eval(DatasetReorderCNO(dataset).reorder(), print_result)
+
+    def errors(
+        self,
+        dataset: torch.utils.data.dataset.TensorDataset,
+    ) -> typing.Sequence[float]:
+        return super().errors(DatasetReorderCNO(dataset).reorder())
 
     def _extract_u(self, rhss: torch.Tensor) -> torch.Tensor:
         return rhss[0, 0, :, :]
@@ -352,9 +406,14 @@ class LearnerPoissonCNOMaskedSolutionSource(LearnerPoissonFNOMaskedSolutionSourc
         batch_size: int = 2,
         n_epochs: int = 2001,
         freq_eval: int = 100,
+        dataset_eval: typing.Optional[torch.utils.data.dataset.TensorDataset] = None,
     ) -> None:
         return super().train(
-            DatasetReorderCNO(dataset).reorder(), batch_size, n_epochs, freq_eval
+            DatasetReorderCNO(dataset).reorder(),
+            batch_size,
+            n_epochs,
+            freq_eval,
+            dataset_eval,
         )
 
     def eval(
@@ -366,6 +425,11 @@ class LearnerPoissonCNOMaskedSolutionSource(LearnerPoissonFNOMaskedSolutionSourc
 
     def _extract_u(self, rhss: torch.Tensor) -> torch.Tensor:
         return rhss[0, 0, :, :]
+
+    def errors(
+        self, dataset: torch.utils.data.dataset.TensorDataset
+    ) -> typing.Sequence[float]:
+        return super().errors(DatasetReorderCNO(dataset).reorder())
 
 
 class LearnerPoissonFC:
