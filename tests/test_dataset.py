@@ -1,9 +1,7 @@
 import torch
 
-from src.numerics import grid
-from src.numerics.equality import EqualityTorch
+from src.numerics import equality, grid
 from src.util import dataset
-from src.util.dataset import DatasetPde, Filter
 
 
 class _Data:
@@ -45,7 +43,7 @@ class TestDatasetPde:
         ]
         rhss_raw = [10, 20, 30, 40]
 
-        dataset_ours = DatasetPde.from_lhss_rhss_raw(lhss_raw, rhss_raw).dataset
+        dataset_ours = dataset.DatasetPde.from_lhss_rhss_raw(lhss_raw, rhss_raw).dataset
         assert isinstance(dataset_ours, torch.utils.data.dataset.Dataset)
 
     def test_from_lhss_rhss_torch(self):
@@ -58,13 +56,15 @@ class TestDatasetPde:
         ]
         rhss_raw = [10, 20, 30, 40]
 
-        dataset_ours = DatasetPde.from_lhss_rhss_raw(lhss_raw, rhss_raw).dataset
+        dataset_ours = dataset.DatasetPde.from_lhss_rhss_raw(lhss_raw, rhss_raw).dataset
         assert isinstance(dataset_ours, torch.utils.data.dataset.Dataset)
 
     def test_from_datasets(self):
-        d_pde = DatasetPde.from_datasets(_Data.make_dataset(), _Data.make_dataset())
+        d_pde = dataset.DatasetPde.from_datasets(
+            _Data.make_dataset(), _Data.make_dataset()
+        )
 
-        assert EqualityTorch(
+        assert equality.EqualityTorch(
             d_pde.lhss,
             torch.tensor(
                 [
@@ -79,7 +79,7 @@ class TestDatasetPde:
                 ]
             ),
         ).is_close()
-        assert EqualityTorch(
+        assert equality.EqualityTorch(
             d_pde.rhss,
             torch.tensor(
                 [
@@ -190,16 +190,16 @@ class TestFilter:
             rhss_internal.append(10.0)
 
         return (
-            DatasetPde.from_lhss_rhss_raw(lhss_boundary, rhss_boundary),
-            DatasetPde.from_lhss_rhss_raw(lhss_internal, rhss_internal),
+            dataset.DatasetPde.from_lhss_rhss_raw(lhss_boundary, rhss_boundary),
+            dataset.DatasetPde.from_lhss_rhss_raw(lhss_internal, rhss_internal),
         )
 
     def test_filter(self):
         _, internal = self._make_dataset()
-        ft = Filter(internal)
+        ft = dataset.Filter(internal)
 
         boundary, internal = ft.filter((3.2, 3.5), (4.3, 4.6))
-        assert EqualityTorch(
+        assert equality.EqualityTorch(
             boundary.lhss,
             torch.tensor(
                 [
@@ -218,7 +218,7 @@ class TestFilter:
                 ]
             ),
         ).is_close()
-        assert EqualityTorch(
+        assert equality.EqualityTorch(
             boundary.rhss,
             torch.tensor(
                 [
@@ -238,7 +238,7 @@ class TestFilter:
             ),
         ).is_close()
 
-        assert EqualityTorch(
+        assert equality.EqualityTorch(
             internal.lhss,
             torch.tensor(
                 [
@@ -249,7 +249,7 @@ class TestFilter:
                 ],
             ),
         ).is_close()
-        assert EqualityTorch(
+        assert equality.EqualityTorch(
             internal.rhss,
             torch.tensor(
                 [
