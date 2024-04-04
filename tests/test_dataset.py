@@ -5,98 +5,6 @@ from src.pde.poisson import dataset as poisson_ds
 from src.util import dataset
 
 
-class _Data:
-    @staticmethod
-    def make_dataset() -> torch.utils.data.dataset.TensorDataset:
-        lhss = torch.tensor(
-            [
-                [1, 2],
-                [1, 2],
-                [3, 7],
-                [7, 3],
-            ],
-            dtype=torch.float,
-        )
-        rhss = torch.tensor(
-            [
-                [10],
-                [20],
-                [30],
-                [40],
-            ],
-            dtype=torch.float,
-        )
-
-        return torch.utils.data.TensorDataset(lhss, rhss)
-
-    @staticmethod
-    def make_dataset_large() -> torch.utils.data.dataset.TensorDataset:
-        pass
-
-
-class TestDatasetPde:
-    def test_from_lhss_rhss_raw(self):
-        lhss_raw = [
-            [1, 2],
-            [1, 2],
-            [3, 7],
-            [7, 3],
-        ]
-        rhss_raw = [10, 20, 30, 40]
-
-        dataset_ours = dataset.DatasetPde.from_lhss_rhss_raw(lhss_raw, rhss_raw).dataset
-        assert isinstance(dataset_ours, torch.utils.data.dataset.Dataset)
-
-    def test_from_lhss_rhss_torch(self):
-        # TODO: adapt this test to torch
-        lhss_raw = [
-            [1, 2],
-            [1, 2],
-            [3, 7],
-            [7, 3],
-        ]
-        rhss_raw = [10, 20, 30, 40]
-
-        dataset_ours = dataset.DatasetPde.from_lhss_rhss_raw(lhss_raw, rhss_raw).dataset
-        assert isinstance(dataset_ours, torch.utils.data.dataset.Dataset)
-
-    def test_from_datasets(self):
-        d_pde = dataset.DatasetPde.from_datasets(
-            _Data.make_dataset(), _Data.make_dataset()
-        )
-
-        assert equality.EqualityTorch(
-            d_pde.lhss,
-            torch.tensor(
-                [
-                    [1, 2],
-                    [1, 2],
-                    [3, 7],
-                    [7, 3],
-                    [1, 2],
-                    [1, 2],
-                    [3, 7],
-                    [7, 3],
-                ]
-            ),
-        ).is_close()
-        assert equality.EqualityTorch(
-            d_pde.rhss,
-            torch.tensor(
-                [
-                    [10],
-                    [20],
-                    [30],
-                    [40],
-                    [10],
-                    [20],
-                    [30],
-                    [40],
-                ]
-            ),
-        ).is_close()
-
-
 class TestMask:
     def test_mask_random(self):
         full = torch.tensor(
@@ -184,15 +92,19 @@ class TestFilter:
 
         for val_x1, val_x2 in grids.boundaries():
             lhss_boundary.append([val_x1, val_x2])
-            rhss_boundary.append(42.0)
+            rhss_boundary.append([42.0])
 
         for val_x1, val_x2 in grids.internals():
             lhss_internal.append([val_x1, val_x2])
-            rhss_internal.append(10.0)
+            rhss_internal.append([10.0])
 
         return (
-            dataset.DatasetPde.from_lhss_rhss_raw(lhss_boundary, rhss_boundary),
-            dataset.DatasetPde.from_lhss_rhss_raw(lhss_internal, rhss_internal),
+            dataset.DatasetPde(
+                torch.tensor(lhss_boundary), torch.tensor(rhss_boundary)
+            ),
+            dataset.DatasetPde(
+                torch.tensor(lhss_internal), torch.tensor(rhss_internal)
+            ),
         )
 
     def test_filter(self):
