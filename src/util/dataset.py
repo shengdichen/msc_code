@@ -100,12 +100,14 @@ class MaskerRandom(Masker):
     def __init__(
         self,
         perc_to_mask: float = 0.5,
+        value_mask: float = 0.0,
         seed: typing.Optional[int] = None,
     ):
         super().__init__()
 
         self._rng = np.random.default_rng(seed=seed)
-        self._perc_to_mask = perc_to_mask
+        self._perc_to_mask, self._value_mask = perc_to_mask, value_mask
+
         self._name = f"random_{self._perc_to_mask:.2}"
 
     def as_name(self) -> str:
@@ -116,14 +118,14 @@ class MaskerRandom(Masker):
 
     def mask(self, full: torch.Tensor) -> torch.Tensor:
         if math.isclose(self._perc_to_mask, 1.0):
-            return torch.zeros_like(full)
+            return (self._value_mask * torch.ones_like(full)).type_as(full)
 
         res = full.detach().clone()
         if math.isclose(self._perc_to_mask, 0.0):
             return res
         for idx in self._indexes_to_mask(full):
-            res[tuple(idx)] = 0
-        return res
+            res[tuple(idx)] = self._value_mask
+        return res.type_as(full)
 
     def _indexes_to_mask(self, full: torch.Tensor) -> np.ndarray:
         n_gridpts_to_mask = int(self._perc_to_mask * np.prod(full.shape))
@@ -140,10 +142,10 @@ class MaskerRandom(Masker):
 
 
 class MaskerIsland(Masker):
-    def __init__(self, perc_to_keep: float):
+    def __init__(self, perc_to_keep: float, value_mask: float = 0.0):
         super().__init__()
 
-        self._perc_to_keep = perc_to_keep
+        self._perc_to_keep, self._value_mask = perc_to_keep, value_mask
         self._name = f"island_{self._perc_to_keep:.2}"
 
     def as_name(self) -> str:
@@ -156,7 +158,7 @@ class MaskerIsland(Masker):
         if math.isclose(self._perc_to_keep, 1.0):
             return full.detach().clone()
 
-        res = torch.zeros_like(full)
+        res = (self._value_mask * torch.ones_like(full)).type_as(full)
         if math.isclose(self._perc_to_keep, 0.0):
             return res
 
