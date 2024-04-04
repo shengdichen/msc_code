@@ -24,14 +24,8 @@ class DatasetPde:
 
     @staticmethod
     def _check_lhss_rhss(lhss: torch.Tensor, rhss: torch.Tensor) -> None:
-        if len(lhss) != len(rhss):
-            raise ValueError("umatched number of lhs and rhs")
-        if len(lhss.shape) != 2:
-            raise ValueError("every lhs must be a tensor")
-        if len(rhss.shape) != 2:
-            raise ValueError(
-                "every rhs must be a tensor [consider calling view(-1 ,1) on it]"
-            )
+        if len(lhss.shape) != len(rhss.shape):
+            raise ValueError("different number of dimensions of lhss and rhss")
 
     @property
     def lhss(self) -> torch.Tensor:
@@ -40,6 +34,10 @@ class DatasetPde:
     @property
     def rhss(self) -> torch.Tensor:
         return self._rhss
+
+    @property
+    def lhss_rhss(self) -> tuple[torch.Tensor, torch.Tensor]:
+        return self._lhss, self._rhss
 
     @property
     def dataset(self) -> torch.utils.data.dataset.TensorDataset:
@@ -57,26 +55,18 @@ class DatasetPde:
         return self._n_datapts == 0
 
     @classmethod
-    def from_lhss_rhss_raw(
-        cls, lhss: list[list[float]], rhss: list[float]
-    ) -> "DatasetPde":
-        lhss = torch.tensor(lhss, dtype=torch.float)
-        rhss = torch.tensor(rhss, dtype=torch.float).view(-1, 1)
-        return cls(lhss, rhss)
-
-    @classmethod
-    def from_lhss_rhss_torch(
+    def from_torch(
         cls, lhss: list[torch.Tensor], rhss: list[torch.Tensor]
     ) -> "DatasetPde":
         if not lhss:
             lhss_torch, rhss_torch = torch.tensor([]), torch.tensor([])
         else:
-            lhss_torch, rhss_torch = torch.stack(lhss), torch.stack(rhss).view(-1, 1)
-
+            lhss_torch = torch.stack(lhss)
+            rhss_torch = torch.stack(rhss)
         return cls(lhss_torch, rhss_torch)
 
     @classmethod
-    def from_datasets(
+    def from_dataset(
         cls, *datasets: torch.utils.data.dataset.TensorDataset
     ) -> "DatasetPde":
         lhss: list[torch.Tensor] = []
@@ -85,8 +75,7 @@ class DatasetPde:
             for lhs, rhs in dataset:
                 lhss.append(lhs)
                 rhss.append(rhs)
-
-        return cls.from_lhss_rhss_torch(lhss, rhss)
+        return cls.from_torch(lhss, rhss)
 
     @staticmethod
     def one_big_batch(dataset: torch.utils.data.dataset.TensorDataset) -> list:
@@ -194,8 +183,8 @@ class Filter:
                     rhss_internal.append(rhs)
 
         return (
-            DatasetPde.from_lhss_rhss_torch(lhss_boundary, rhss_boundary),
-            DatasetPde.from_lhss_rhss_torch(lhss_internal, rhss_internal),
+            DatasetPde.from_torch(lhss_boundary, rhss_boundary),
+            DatasetPde.from_torch(lhss_internal, rhss_internal),
         )
 
     def _check_ranges(self, *ranges: tuple[float, float]) -> None:
@@ -216,6 +205,120 @@ class Filter:
             ):
                 return True
         return False
+
+
+class Reorderer:
+    @staticmethod
+    def components_to_second(
+        dataset: torch.utils.data.dataset.TensorDataset,
+    ) -> torch.utils.data.dataset.TensorDataset:
+        """
+        lhss: [n_instances, x..., n_channels] -> [n_instances, n_channels, x...]
+        rhss: [n_instances, x..., 1] -> [n_instances, 1, x...]
+        """
+        lhss, rhss = DatasetPde.from_dataset(dataset).lhss_rhss
+
+        idxs = list(range(lhss.dim()))
+        idxs.insert(1, idxs.pop())  # e.g. (0, 3, 1, 2) if 4-dimensional
+        return torch.utils.data.TensorDataset(lhss.permute(idxs), rhss.permute(idxs))
+
+    @staticmethod
+    def components_to_last(
+        dataset: torch.utils.data.dataset.TensorDataset,
+    ) -> torch.utils.data.dataset.TensorDataset:
+        """
+        lhss: [n_instances, n_channels, x...] -> [n_instances, x..., n_channels]
+        rhss: [n_instances, 1, x...] -> [n_instances, x..., 1]
+        """
+        lhss, rhss = DatasetPde.from_dataset(dataset).lhss_rhss
+
+        idxs = list(range(lhss.dim()))
+        idxs.append(idxs.pop(1))  # e.g. (0, 2, 3, 1) if 4-dimensional
+        return torch.utils.data.TensorDataset(lhss.permute(idxs), rhss.permute(idxs))
+
+
+class Normalizer:
+    """
+    lhss: [n_samples, n_channels, x...]
+    rhss: [n_samples, 1, x...]
+    """
+
+    def __init__(
+        self,
+        min_lhss: torch.Tensor,
+        max_lhss: torch.Tensor,
+        min_rhss: torch.Tensor,
+        max_rhss: torch.Tensor,
+    ):
+        self._min_lhss, self._max_lhss = min_lhss, max_lhss
+        self._min_rhss, self._max_rhss = min_rhss, max_rhss
+
+    @classmethod
+    def from_dataset(
+        cls, dataset: torch.utils.data.dataset.TensorDataset
+    ) -> "Normalizer":
+        return cls.from_lhss_rhss(*DatasetPde.from_dataset(dataset).lhss_rhss)
+
+    @classmethod
+    def from_lhss_rhss(cls, lhss: torch.Tensor, rhss: torch.Tensor) -> "Normalizer":
+        return cls(*cls._minmax_lhss(lhss), *cls._minmax_rhss(rhss))
+
+    @staticmethod
+    def _minmax_lhss(lhss: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+        lhss = Normalizer._swap_axes_sample_channel(lhss)  # channel to 1st axis
+        lhss_flat = lhss.reshape(lhss.shape[0], -1)  # flatten each channel
+        min_, max_ = lhss_flat.min(1).values, lhss_flat.max(1).values
+
+        # expand to dimension of original lhss
+        for __ in range(lhss.dim() - 1):
+            min_ = min_.unsqueeze(-1)
+            max_ = max_.unsqueeze(-1)
+
+        # swap (min & max) back to 2nd axis
+        return (
+            Normalizer._swap_axes_sample_channel(min_),
+            Normalizer._swap_axes_sample_channel(max_),
+        )
+
+    @staticmethod
+    def _swap_axes_sample_channel(target: torch.Tensor) -> torch.Tensor:
+        # NOTE:
+        #   (samples, channels) := (axis_1, axis_2) or (axis_2, axis_1)
+        idxs = list(range(target.dim()))
+        idxs[0], idxs[1] = idxs[1], idxs[0]
+        return target.permute(idxs)
+
+    @staticmethod
+    def _minmax_rhss(rhss: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+        return rhss.min(), rhss.max()
+
+    def normalize_dataset(
+        self, dataset: torch.utils.data.dataset.TensorDataset
+    ) -> torch.utils.data.dataset.TensorDataset:
+        lhss, rhss = DatasetPde.from_dataset(dataset).lhss_rhss
+        return torch.utils.data.TensorDataset(
+            self.normalize_lhss(lhss), self.normalize_rhss(rhss)
+        )
+
+    def normalize_lhss(self, lhss: torch.Tensor) -> torch.Tensor:
+        return self._normalize(lhss, self._min_lhss, self._max_lhss)
+
+    def normalize_rhss(self, rhss: torch.Tensor) -> torch.Tensor:
+        return self._normalize(rhss, self._min_rhss, self._max_rhss)
+
+    @staticmethod
+    def _normalize(
+        target: torch.Tensor, min_: torch.Tensor, max_: torch.Tensor
+    ) -> torch.Tensor:
+        return (target - min_) / (max_ - min_)
+
+    def denormalize_rhss(self, rhss: torch.Tensor) -> torch.Tensor:
+        return self._denormalize(rhss, self._min_rhss, self._max_rhss)
+
+    def _denormalize(
+        self, target: torch.Tensor, min_: torch.Tensor, max_: torch.Tensor
+    ) -> torch.Tensor:
+        return target * (max_ - min_) + min_
 
 
 class MultiEval:

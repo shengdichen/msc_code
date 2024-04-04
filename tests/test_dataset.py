@@ -1,6 +1,7 @@
 import torch
 
 from src.numerics import equality, grid
+from src.pde.poisson import dataset as poisson_ds
 from src.util import dataset
 
 
@@ -260,3 +261,74 @@ class TestFilter:
                 ]
             ),
         ).is_close()
+
+
+class TestReordering:
+    def _make_ds(
+        self, size_x1: int = 10, size_x2: int = 15, n_instances: int = 5
+    ) -> torch.utils.data.dataset.TensorDataset:
+        grid_x1 = grid.Grid(size_x1, stepsize=0.1, start=3.0)
+        grid_x2 = grid.Grid(size_x2, stepsize=0.1, start=4.0)
+        ds = poisson_ds.DatasetPoissonMaskedSolution(
+            grid_x1,
+            grid_x2,
+            poisson_ds.DatasetSin(grid_x1, grid_x2).as_dataset(n_instances),
+            dataset.MaskerIsland(0.5),
+        ).make()
+        return ds
+
+    def test_components_to_second(self) -> None:
+        size_x1, size_x2, n_instances = 10, 15, 5
+        ds_raw = self._make_ds(size_x1, size_x2, n_instances)
+
+        ds = dataset.Reorderer.components_to_second(ds_raw)
+        for lhs, rhs in ds:
+            assert lhs.shape == (4, size_x1, size_x2)
+            assert rhs.shape == (1, size_x1, size_x2)
+
+    def test_components_to_last(self) -> None:
+        size_x1, size_x2, n_instances = 10, 15, 5
+        ds_raw = self._make_ds(size_x1, size_x2, n_instances)
+
+        ds = dataset.Reorderer.components_to_last(
+            dataset.Reorderer.components_to_second(ds_raw)
+        )
+        for lhs, rhs in ds:
+            assert lhs.shape == (size_x1, size_x2, 4)
+            assert rhs.shape == (size_x1, size_x2, 1)
+
+
+class TestNormalization:
+    def _make_ds(
+        self, size_x1: int = 5, size_x2: int = 5, n_instances: int = 5
+    ) -> torch.utils.data.dataset.TensorDataset:
+        grid_x1 = grid.Grid(size_x1, stepsize=0.1, start=3.0)
+        grid_x2 = grid.Grid(size_x2, stepsize=0.1, start=4.0)
+        ds = poisson_ds.DatasetPoissonMaskedSolution(
+            grid_x1,
+            grid_x2,
+            poisson_ds.DatasetSin(grid_x1, grid_x2).as_dataset(n_instances),
+            dataset.MaskerIsland(0.5),
+        ).make()
+        return dataset.Reorderer().components_to_second(ds)
+
+    def _make_grid_normalized(self) -> tuple[torch.Tensor, torch.Tensor]:
+        grid_x1 = grid.Grid(5, stepsize=0.25, start=0.0)
+        grid_x2 = grid.Grid(5, stepsize=0.25, start=0.0)
+        coords_x1, coords_x2 = grid.Grids([grid_x1, grid_x2]).coords_as_mesh_torch()
+        return coords_x1, coords_x2
+
+    def test_normalize_dataset(self) -> None:
+        ds = self._make_ds()
+        ds = dataset.Normalizer.from_dataset(ds).normalize_dataset(ds)
+        coords_x1, coords_x2 = self._make_grid_normalized()
+
+        for lhs, rhs in ds:
+            assert rhs.min() >= 0.0
+            assert rhs.max() <= 1.0
+            for lhs_component in lhs:
+                assert lhs_component.min() >= 0.0
+                assert lhs_component.max() <= 1.0
+
+            assert equality.EqualityTorch(lhs[2], coords_x1)
+            assert equality.EqualityTorch(lhs[3], coords_x2)
