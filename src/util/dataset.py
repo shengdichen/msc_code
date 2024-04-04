@@ -106,15 +106,21 @@ class MaskerRandom(Masker):
 
         self._rng = np.random.default_rng(seed=seed)
         self._perc_to_mask = perc_to_mask
+        self._name = f"random_{self._perc_to_mask:.2}"
 
     def as_name(self) -> str:
-        return f"random_{self._perc_to_mask:.2}"
+        return self._name
 
     def as_perc(self) -> float:
         return self._perc_to_mask
 
     def mask(self, full: torch.Tensor) -> torch.Tensor:
+        if math.isclose(self._perc_to_mask, 1.0):
+            return torch.zeros_like(full)
+
         res = full.detach().clone()
+        if math.isclose(self._perc_to_mask, 0.0):
+            return res
         for idx in self._indexes_to_mask(full):
             res[tuple(idx)] = 0
         return res
@@ -138,16 +144,23 @@ class MaskerIsland(Masker):
         super().__init__()
 
         self._perc_to_keep = perc_to_keep
+        self._name = f"island_{self._perc_to_keep:.2}"
 
     def as_name(self) -> str:
-        return f"island_{self._perc_to_keep:.2}"
+        return self._name
 
     def as_perc(self) -> float:
         return self._perc_to_keep
 
     def mask(self, full: torch.Tensor) -> torch.Tensor:
-        lows, highs = self._range_idx_dim(full)
+        if math.isclose(self._perc_to_keep, 1.0):
+            return full.detach().clone()
+
         res = torch.zeros_like(full)
+        if math.isclose(self._perc_to_keep, 0.0):
+            return res
+
+        lows, highs = self._range_idx_dim(full)
         for idxs in itertools.product(*(range(len_dim) for len_dim in full.shape)):
             idxs_np = np.array(idxs)
             if np.all(idxs_np >= lows) and np.all(idxs_np < highs):

@@ -6,6 +6,35 @@ from src.util import dataset
 
 
 class TestMask:
+    def test_mask_random_extremes(self):
+        full = torch.tensor(
+            [
+                [11, 12, 13, 14, 15],
+                [21, 22, 23, 24, 25],
+                [31, 32, 33, 34, 35],
+                [41, 42, 43, 44, 45],
+                [51, 52, 53, 54, 55],
+                [61, 62, 63, 64, 65],
+            ]
+        )
+        masker = dataset.MaskerRandom(0.0)
+        assert torch.allclose(
+            masker.mask(full),
+            torch.tensor(
+                [
+                    [11, 12, 13, 14, 15],
+                    [21, 22, 23, 24, 25],
+                    [31, 32, 33, 34, 35],
+                    [41, 42, 43, 44, 45],
+                    [51, 52, 53, 54, 55],
+                    [61, 62, 63, 64, 65],
+                ]
+            ),
+        )
+
+        masker = dataset.MaskerRandom(1.0)
+        assert torch.allclose(masker.mask(full), torch.zeros_like(full))
+
     def test_mask_random(self):
         full = torch.tensor(
             [
@@ -47,6 +76,33 @@ class TestMask:
             ),
         )
 
+    def test_mask_island_extremes(self) -> None:
+        full = torch.tensor(
+            [
+                [11, 12, 13, 14, 15],
+                [21, 22, 23, 24, 25],
+                [31, 32, 33, 34, 35],
+                [41, 42, 43, 44, 45],
+                [51, 52, 53, 54, 55],
+                [61, 62, 63, 64, 65],
+            ]
+        )
+        masker = dataset.MaskerIsland(1.0)
+        assert torch.allclose(masker.mask(full), full)
+
+        masker = dataset.MaskerIsland(0.0)
+        full = torch.tensor(
+            [
+                [11, 12, 13, 14, 15],
+                [21, 22, 23, 24, 25],
+                [31, 32, 33, 34, 35],
+                [41, 42, 43, 44, 45],
+                [51, 52, 53, 54, 55],
+                [61, 62, 63, 64, 65],
+            ]
+        )
+        assert torch.allclose(masker.mask(full), torch.zeros_like(full))
+
     def test_mask_island(self) -> None:
         full = torch.tensor(
             [
@@ -62,7 +118,7 @@ class TestMask:
             ]
         )
         masker = dataset.MaskerIsland(0.5)
-        for __ in range(2):  # repeated drawing yield the same result
+        for __ in range(2):  # repeated drawing yields the same result
             assert torch.allclose(
                 masker.mask(full),
                 torch.tensor(
