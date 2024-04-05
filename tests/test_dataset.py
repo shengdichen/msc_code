@@ -48,7 +48,7 @@ class TestMask:
                 [61, 62, 63, 64, 65],
             ]
         )
-        masker = dataset.MaskerRandom(0.3, seed=42)
+        masker = dataset.MaskerRandom(0.3, value_mask=0, seed=42)
 
         assert torch.allclose(
             masker.mask(full),
@@ -145,7 +145,7 @@ class TestMask:
                 [90, 91, 92, 93, 94, 95, 94, 97, 98, 99],
             ]
         )
-        masker = dataset.MaskerIsland(0.5)
+        masker = dataset.MaskerIsland(0.5, value_mask=0)
         for __ in range(2):  # repeated drawing yields the same result
             assert torch.allclose(
                 masker.mask(full),

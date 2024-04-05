@@ -100,7 +100,7 @@ class MaskerRandom(Masker):
     def __init__(
         self,
         perc_to_mask: float = 0.5,
-        value_mask: float = 0.0,
+        value_mask: float = 0.5,
         seed: typing.Optional[int] = None,
     ):
         super().__init__()
@@ -142,7 +142,7 @@ class MaskerRandom(Masker):
 
 
 class MaskerIsland(Masker):
-    def __init__(self, perc_to_keep: float, value_mask: float = 0.0):
+    def __init__(self, perc_to_keep: float, value_mask: float = 0.5):
         super().__init__()
 
         self._perc_to_keep, self._value_mask = perc_to_keep, value_mask
