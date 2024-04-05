@@ -298,33 +298,30 @@ class TestReordering:
     ) -> torch.utils.data.dataset.TensorDataset:
         grid_x1 = grid.Grid(size_x1, stepsize=0.1, start=3.0)
         grid_x2 = grid.Grid(size_x2, stepsize=0.1, start=4.0)
-        ds = poisson_ds.DatasetPoissonMaskedSolution(
+        return poisson_ds.DatasetPoissonMaskedSolution(
             grid_x1,
             grid_x2,
             poisson_ds.DatasetSin(grid_x1, grid_x2).as_dataset(n_instances),
             dataset.MaskerIsland(0.5),
         ).make()
-        return ds
 
-    def test_components_to_second(self) -> None:
+    def test_reordering(self) -> None:
         size_x1, size_x2, n_instances = 10, 15, 5
-        ds_raw = self._make_ds(size_x1, size_x2, n_instances)
+        ds = self._make_ds(size_x1, size_x2, n_instances)
 
-        ds = dataset.Reorderer.components_to_second(ds_raw)
         for lhs, rhs in ds:
             assert lhs.shape == (4, size_x1, size_x2)
             assert rhs.shape == (1, size_x1, size_x2)
 
-    def test_components_to_last(self) -> None:
-        size_x1, size_x2, n_instances = 10, 15, 5
-        ds_raw = self._make_ds(size_x1, size_x2, n_instances)
-
-        ds = dataset.Reorderer.components_to_last(
-            dataset.Reorderer.components_to_second(ds_raw)
-        )
+        ds = dataset.Reorderer.components_to_last(ds)
         for lhs, rhs in ds:
             assert lhs.shape == (size_x1, size_x2, 4)
             assert rhs.shape == (size_x1, size_x2, 1)
+
+        ds = dataset.Reorderer.components_to_second(ds)
+        for lhs, rhs in ds:
+            assert lhs.shape == (4, size_x1, size_x2)
+            assert rhs.shape == (1, size_x1, size_x2)
 
 
 class TestNormalization:
