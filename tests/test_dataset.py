@@ -1,3 +1,5 @@
+import math
+
 import torch
 
 from src.numerics import equality, grid
@@ -359,3 +361,74 @@ class TestNormalization:
 
             assert equality.EqualityTorch(lhs[2], coords_x1)
             assert equality.EqualityTorch(lhs[3], coords_x2)
+
+
+class TestDatasetPoisson:
+    def _size_grid(self) -> int:
+        return 5
+
+    def _value_mask(self) -> float:
+        return 7.3  # deliberately NOT within [0, 1] range
+
+    def _make_ds(self, n_instances: int = 2) -> torch.utils.data.dataset.TensorDataset:
+        grid_x1 = grid.Grid(self._size_grid(), stepsize=0.1, start=3.0)
+        grid_x2 = grid.Grid(self._size_grid(), stepsize=0.1, start=4.0)
+        return poisson_ds.DatasetPoissonMaskedSolution(
+            grid_x1,
+            grid_x2,
+            poisson_ds.DatasetSin(grid_x1, grid_x2).as_dataset(n_instances),
+            dataset.MaskerRandom(0.5, value_mask=self._value_mask()),
+        ).make()
+
+    def test_run(self) -> None:
+        torch.manual_seed(42)
+        ds = self._make_ds()
+        for lhs, rhs in ds:
+            assert torch.count_nonzero(lhs[0] == self._value_mask()) >= math.floor(
+                self._size_grid() ** 2 / 2
+            )  # solution, masked
+            assert equality.EqualityTorch(
+                lhs[1:],
+                torch.tensor(
+                    [
+                        [
+                            [0.3889, 0.3889, 0.3889, 0.3889, 0.3889],
+                            [0.3889, 0.2878, 0.4116, 0.6881, 0.8310],
+                            [0.3889, 0.1782, 0.2821, 0.6305, 0.8581],
+                            [0.3889, 0.1326, 0.1119, 0.3177, 0.5258],
+                            [0.3889, 0.2235, 0.1381, 0.1610, 0.2540],
+                        ],  # source
+                        [
+                            [0.0000, 0.0000, 0.0000, 0.0000, 0.0000],
+                            [0.2500, 0.2500, 0.2500, 0.2500, 0.2500],
+                            [0.5000, 0.5000, 0.5000, 0.5000, 0.5000],
+                            [0.7500, 0.7500, 0.7500, 0.7500, 0.7500],
+                            [1.0000, 1.0000, 1.0000, 1.0000, 1.0000],
+                        ],  # coords_x1
+                        [
+                            [0.0000, 0.2500, 0.5000, 0.7500, 1.0000],
+                            [0.0000, 0.2500, 0.5000, 0.7500, 1.0000],
+                            [0.0000, 0.2500, 0.5000, 0.7500, 1.0000],
+                            [0.0000, 0.2500, 0.5000, 0.7500, 1.0000],
+                            [0.0000, 0.2500, 0.5000, 0.7500, 1.0000],
+                        ],  # coords_x2
+                    ],
+                    dtype=torch.float64,
+                ),
+            ).is_close()
+
+            assert equality.EqualityTorch(
+                rhs,
+                torch.tensor(
+                    [
+                        [
+                            [0.4215, 0.4215, 0.4215, 0.4215, 0.4215],
+                            [0.4215, 0.3376, 0.4702, 0.7614, 0.9392],
+                            [0.4215, 0.2101, 0.3276, 0.7163, 1.0000],
+                            [0.4215, 0.1111, 0.0983, 0.3713, 0.6410],
+                            [0.4215, 0.1466, 0.0488, 0.1442, 0.2942],
+                        ]  # solution, unmasked
+                    ]
+                ),
+            ).is_close()
+            break  # only test first instance

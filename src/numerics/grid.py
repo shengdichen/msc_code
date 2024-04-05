@@ -228,6 +228,13 @@ class Grids:
         indexing = "ij" if indexing_machine_like else "xy"
         return np.meshgrid(*(gr.step() for gr in self._grids), indexing=indexing)
 
+    def coords_as_mesh_torch(
+        self, indexing_machine_like: bool = True
+    ) -> list[torch.Tensor]:
+        return [
+            torch.from_numpy(mat) for mat in self.coords_as_mesh(indexing_machine_like)
+        ]
+
     def flattten(self, target: torch.Tensor) -> torch.Tensor:
         res = []
         for indexes in self.indexes():
