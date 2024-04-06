@@ -41,7 +41,9 @@ class LearnerPoissonFourier:
         batch_size: int = 2,
         n_epochs: int = 2001,
         freq_eval: int = 100,
-        dataset_eval: typing.Optional[torch.utils.data.dataset.TensorDataset] = None,
+        datasets_eval: typing.Optional[
+            typing.Sequence[torch.utils.data.dataset.TensorDataset]
+        ] = None,
     ) -> None:
         raise NotImplementedError
 
@@ -158,7 +160,9 @@ class LearnerPoissonFNOMaskedSolution(LearnerPoissonFourier):
         batch_size: int = 2,
         n_epochs: int = 2001,
         freq_eval: int = 100,
-        dataset_eval: typing.Optional[torch.utils.data.dataset.TensorDataset] = None,
+        datasets_eval: typing.Optional[
+            typing.Sequence[torch.utils.data.dataset.TensorDataset]
+        ] = None,
     ) -> None:
         optimizer = torch.optim.Adam(self._network.parameters(), weight_decay=1e-5)
         scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=50, gamma=0.5)
@@ -180,9 +184,10 @@ class LearnerPoissonFNOMaskedSolution(LearnerPoissonFourier):
                     "train> (mse, mse%): "
                     f"{np.average(mse_abs_all)}, {np.average(mse_rel_all)}"
                 )
-                if dataset_eval:
-                    self.eval(dataset_eval, print_result=True)
-                    print()
+                if datasets_eval:
+                    for dataset_eval in datasets_eval:
+                        self.eval(dataset_eval, print_result=True)
+                print()
 
     def eval(
         self,
@@ -242,7 +247,9 @@ class LearnerPoissonFNOMaskedSolutionSource(LearnerPoissonFourier):
         batch_size: int = 2,
         n_epochs: int = 2001,
         freq_eval: int = 100,
-        dataset_eval: typing.Optional[torch.utils.data.dataset.TensorDataset] = None,
+        datasets_eval: typing.Optional[
+            typing.Sequence[torch.utils.data.dataset.TensorDataset]
+        ] = None,
     ) -> None:
         optimizer = torch.optim.Adam(self._network.parameters(), weight_decay=1e-5)
         scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=50, gamma=0.5)
@@ -269,9 +276,10 @@ class LearnerPoissonFNOMaskedSolutionSource(LearnerPoissonFourier):
                     f"{np.average(mse_solution)}, {np.average(mse_source)}; "
                     f"{np.average(mse_all)}"
                 )
-                if dataset_eval:
-                    self.eval(dataset_eval, print_result=True)
-                    print()
+                if datasets_eval:
+                    for dataset_eval in datasets_eval:
+                        self.eval(dataset_eval, print_result=True)
+                print()
 
     def eval(
         self,
