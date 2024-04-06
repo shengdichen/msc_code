@@ -193,7 +193,7 @@ class LearnerPoissonFNOMaskedSolution(LearnerPoissonFourier):
         with torch.no_grad():
             self._network.eval()
             for __, rhss_theirs, rhss_ours in self.iterate_dataset(
-                dataset, batch_size=1
+                dataset, batch_size=30
             ):
                 dst = distance.Distance(rhss_ours, rhss_theirs)
                 mse_abs_all.append(dst.mse().item())
