@@ -266,36 +266,35 @@ class DatasetGauss(DatasetPoisson2d):
         )
 
 
-class DatasetPoissonMaskedSolution(DatasetMasked):
+class DatasetPoissonMaskedSolution:
     def __init__(
         self,
         grid_x1: grid.Grid,
         grid_x2: grid.Grid,
-        dataset_raw: torch.utils.data.dataset.TensorDataset,
-        mask: Masker,
     ):
-        super().__init__(dataset_raw, [mask])
-
         self._grids = grid.Grids([grid_x1, grid_x2])
-
         self._coords_x1, self._coords_x2 = self._grids.coords_as_mesh_torch()
+
         self._normalizer: dataset_util.Normalizer
         self._putil = plot.PlotUtil(self._grids)
 
-        self._name = f"sol_{self._masks[0].as_name()}"
-
-    def as_name(self) -> str:
-        return self._name
-
-    def make(self) -> torch.utils.data.dataset.TensorDataset:
+    def make(
+        self,
+        dataset: torch.utils.data.dataset.TensorDataset,
+        mask: dataset_util.Masker,
+        components_to_last: bool = False,
+    ) -> torch.utils.data.dataset.TensorDataset:
         lhss, rhss = [], []
-        for solution, source in self._dataset_raw:
+        for solution, source in dataset:
             lhss.append(
                 torch.stack([solution, source, self._coords_x1, self._coords_x2])
             )
             rhss.append(solution.unsqueeze(0))
         dataset = torch.utils.data.TensorDataset(torch.stack(lhss), torch.stack(rhss))
-        return self._mask(self._normalize(dataset))
+        dataset = self._apply_mask(self._normalize(dataset), mask)
+        if not components_to_last:
+            return dataset
+        return dataset_util.Reorderer().components_to_last(dataset)
 
     def _normalize(
         self, dataset: torch.utils.data.dataset.TensorDataset
@@ -303,20 +302,19 @@ class DatasetPoissonMaskedSolution(DatasetMasked):
         self._normalizer = dataset_util.Normalizer.from_dataset(dataset)
         return self._normalizer.normalize_dataset(dataset)
 
-    def _mask(
-        self, dataset: torch.utils.data.dataset.TensorDataset
+    def _apply_mask(
+        self, dataset: torch.utils.data.dataset.TensorDataset, mask: dataset_util.Masker
     ) -> torch.utils.data.dataset.TensorDataset:
         lhss, rhss = dataset_util.DatasetPde.from_dataset(dataset).lhss_rhss
         for lhs in lhss:
-            lhs[0] = self._masks[0].mask(lhs[0])
+            lhs[0] = mask.mask(lhs[0])
         return torch.utils.data.TensorDataset(lhss, rhss)
 
     def plot_instance(
         self,
+        dataset: torch.utils.data.dataset.TensorDataset,
         n_instances: int = 1,
-        dataset: typing.Optional[torch.utils.data.dataset.TensorDataset] = None,
     ) -> mpl.figure.Figure:
-        dataset = dataset or self.make()
         fig, (axs_unmasked, axs_masked) = plt.subplots(
             2, n_instances, figsize=(10, 7.3), dpi=200, subplot_kw={"aspect": 1.0}
         )
@@ -334,47 +332,42 @@ class DatasetPoissonMaskedSolution(DatasetMasked):
         return fig
 
 
-class DatasetPoissonMaskedSolutionSource(DatasetMasked):
+class DatasetPoissonMaskedSolutionSource:
     def __init__(
         self,
         grid_x1: grid.Grid,
         grid_x2: grid.Grid,
-        dataset_raw: torch.utils.data.dataset.TensorDataset,
-        mask_solution: Masker,
-        mask_source: Masker,
     ):
-        super().__init__(dataset_raw, [mask_solution, mask_source])
-
         self._grid_x1, self._grid_x2 = grid_x1, grid_x2
         self._grids = grid.Grids([self._grid_x1, self._grid_x2])
+        self._coords_x1, self._coords_x2 = self._grids.coords_as_mesh_torch()
 
-        coords_x1, coords_x2 = self._grids.coords_as_mesh()
-        self._coords_x1, self._coords_x2 = (
-            torch.from_numpy(coords_x1),
-            torch.from_numpy(coords_x2),
-        )
-
-    def as_name(self) -> str:
-        return f"sol_{self._masks[0].as_name()}-source_{self._masks[1].as_name()}"
-
-    def make(self) -> torch.utils.data.dataset.TensorDataset:
+    def make(
+        self,
+        dataset: torch.utils.data.dataset.TensorDataset,
+        mask_solution: dataset_util.Masker,
+        mask_source: dataset_util.Masker,
+    ) -> torch.utils.data.dataset.TensorDataset:
         solutions, solutions_masked, sources, sources_masked = [], [], [], []
 
-        for solution, source in self._dataset_raw:
+        for solution, source in dataset:
             solutions.append(solution)
-            solutions_masked.append(self._masks[0].mask(solution))
+            solutions_masked.append(mask_solution.mask(solution))
             sources.append(source)
-            sources_masked.append(self._masks[1].mask(solution))
-        return self._assemble(solutions, solutions_masked, sources, sources_masked)
+            sources_masked.append(mask_source.mask(solution))
+        return self._assemble(
+            dataset, solutions, solutions_masked, sources, sources_masked
+        )
 
     def _assemble(
         self,
+        dataset: torch.utils.data.dataset.TensorDataset,
         solutions: torch.Tensor,
         solutions_masked: torch.Tensor,
         sources: torch.Tensor,
         sources_masked: torch.Tensor,
     ) -> torch.utils.data.dataset.TensorDataset:
-        n_instances = len(self._dataset_raw)
+        n_instances = len(dataset)
 
         lhss = torch.stack(
             [

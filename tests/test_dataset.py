@@ -301,9 +301,10 @@ class TestReordering:
         return poisson_ds.DatasetPoissonMaskedSolution(
             grid_x1,
             grid_x2,
+        ).make(
             poisson_ds.DatasetSin(grid_x1, grid_x2).as_dataset(n_instances),
             dataset.MaskerIsland(0.5),
-        ).make()
+        )
 
     def test_reordering(self) -> None:
         size_x1, size_x2, n_instances = 10, 15, 5
@@ -333,9 +334,10 @@ class TestNormalization:
         ds = poisson_ds.DatasetPoissonMaskedSolution(
             grid_x1,
             grid_x2,
+        ).make(
             poisson_ds.DatasetSin(grid_x1, grid_x2).as_dataset(n_instances),
             dataset.MaskerIsland(0.5),
-        ).make()
+        )
         return dataset.Reorderer().components_to_second(ds)
 
     def _make_grid_normalized(self) -> tuple[torch.Tensor, torch.Tensor]:
@@ -373,9 +375,10 @@ class TestDatasetPoisson:
         return poisson_ds.DatasetPoissonMaskedSolution(
             grid_x1,
             grid_x2,
+        ).make(
             poisson_ds.DatasetSin(grid_x1, grid_x2).as_dataset(n_instances),
             dataset.MaskerRandom(0.5, value_mask=self._value_mask()),
-        ).make()
+        )
 
     def test_run(self) -> None:
         torch.manual_seed(42)

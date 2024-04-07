@@ -112,16 +112,10 @@ class DatasetPDE2d(DatasetPDE):
 
 
 class DatasetMasked:
-    def __init__(
-        self,
-        dataset_raw: torch.utils.data.dataset.TensorDataset,
-        masks: typing.Sequence[dataset.Masker],
-    ):
-        self._dataset_raw = dataset_raw
-        self._masks = masks
-
     @abc.abstractmethod
-    def make(self) -> torch.utils.data.dataset.TensorDataset:
+    def make(
+        self, dataset: torch.utils.data.dataset.TensorDataset
+    ) -> torch.utils.data.dataset.TensorDataset:
         raise NotImplementedError
 
     @abc.abstractmethod
