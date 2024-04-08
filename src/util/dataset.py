@@ -254,8 +254,8 @@ class Reorderer:
 
 class Normalizer:
     """
-    lhss: [n_samples, n_channels, x...]
-    rhss: [n_samples, 1, x...]
+    lhss: [n_samples, n_channels_lhs, x...]
+    rhss: [n_samples, n_channels_rhs, x...]
     """
 
     def __init__(
@@ -265,7 +265,9 @@ class Normalizer:
         min_rhss: torch.Tensor,
         max_rhss: torch.Tensor,
     ):
+        # both: [1, n_channels_lhs, 1...]
         self._min_lhss, self._max_lhss = min_lhss, max_lhss
+        # both: [1, n_channels_rhs, 1...]
         self._min_rhss, self._max_rhss = min_rhss, max_rhss
 
     @classmethod
@@ -276,16 +278,16 @@ class Normalizer:
 
     @classmethod
     def from_lhss_rhss(cls, lhss: torch.Tensor, rhss: torch.Tensor) -> "Normalizer":
-        return cls(*cls._minmax_lhss(lhss), *cls._minmax_rhss(rhss))
+        return cls(*cls._minmax(lhss), *cls._minmax(rhss))
 
     @staticmethod
-    def _minmax_lhss(lhss: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
-        lhss = Normalizer._swap_axes_sample_channel(lhss)  # channel to 1st axis
-        lhss_flat = lhss.reshape(lhss.shape[0], -1)  # flatten each channel
-        min_, max_ = lhss_flat.min(1).values, lhss_flat.max(1).values
+    def _minmax(target: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor, torch.Size]:
+        target = Normalizer._swap_axes_sample_channel(target)  # channel to 1st axis
+        target_flat = target.reshape(target.shape[0], -1)  # flatten each channel
+        min_, max_ = target_flat.min(1).values, target_flat.max(1).values
 
-        # expand to dimension of original lhss
-        for __ in range(lhss.dim() - 1):
+        # expand to original dimension
+        for __ in range(target.dim() - 1):
             min_ = min_.unsqueeze(-1)
             max_ = max_.unsqueeze(-1)
 
@@ -302,10 +304,6 @@ class Normalizer:
         idxs = list(range(target.dim()))
         idxs[0], idxs[1] = idxs[1], idxs[0]
         return target.permute(idxs)
-
-    @staticmethod
-    def _minmax_rhss(rhss: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
-        return rhss.min(), rhss.max()
 
     def normalize_dataset(
         self, dataset: torch.utils.data.dataset.TensorDataset
