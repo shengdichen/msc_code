@@ -399,20 +399,21 @@ class TestDatasetPoisson:
     def _value_mask(self) -> float:
         return 7.3  # deliberately NOT within [0, 1] range
 
-    def _make_ds(self, n_instances: int = 2) -> torch.utils.data.dataset.TensorDataset:
-        grid_x1 = grid.Grid(self._size_grid(), stepsize=0.1, start=3.0)
-        grid_x2 = grid.Grid(self._size_grid(), stepsize=0.1, start=4.0)
-        return poisson_ds.DatasetPoissonMaskedSolution(
-            grid_x1,
-            grid_x2,
-        ).make(
-            poisson_ds.DatasetSin(grid_x1, grid_x2).as_dataset(n_instances),
+    def _grid(self) -> tuple[grid.Grid, grid.Grid]:
+        return (
+            grid.Grid(self._size_grid(), stepsize=0.1, start=3.0),
+            grid.Grid(self._size_grid(), stepsize=0.1, start=4.0),
+        )
+
+    def test_mask_single(self) -> None:
+        torch.manual_seed(42)
+        grid_x1, grid_x2 = self._grid()
+
+        ds = poisson_ds.DatasetPoissonMaskedSolution(grid_x1, grid_x2).make(
+            poisson_ds.DatasetSin(grid_x1, grid_x2).as_dataset(n_instances=2),
             dataset.MaskerRandom(0.5, value_mask=self._value_mask()),
         )
 
-    def test_run(self) -> None:
-        torch.manual_seed(42)
-        ds = self._make_ds()
         for lhs, rhs in ds:
             assert torch.count_nonzero(lhs[0] == self._value_mask()) >= math.floor(
                 self._size_grid() ** 2 / 2
@@ -462,3 +463,24 @@ class TestDatasetPoisson:
                 ),
             ).is_close()
             break  # only test first instance
+
+    def test_mask_double(self) -> None:
+        torch.manual_seed(42)
+        grid_x1, grid_x2 = self._grid()
+
+        ds = poisson_ds.DatasetPoissonMaskedSolutionSource(grid_x1, grid_x2).make(
+            poisson_ds.DatasetSin(grid_x1, grid_x2, constant_factor=200).as_dataset(
+                n_instances=2
+            ),
+            dataset.MaskerRandom(0.5, value_mask=self._value_mask()),
+            dataset.MaskerRandom(0.5, value_mask=self._value_mask()),
+        )
+
+        for lhs, __ in ds:
+            assert torch.count_nonzero(lhs[0] == self._value_mask()) >= math.floor(
+                self._size_grid() ** 2 / 2
+            )  # solution, masked
+            assert torch.count_nonzero(lhs[1] == self._value_mask()) >= math.floor(
+                self._size_grid() ** 2 / 2
+            )  # source, masked
+            break
