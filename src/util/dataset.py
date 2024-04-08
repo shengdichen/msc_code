@@ -1,6 +1,7 @@
 import abc
 import itertools
 import math
+import random
 import typing
 from collections.abc import Callable, Iterable
 
@@ -107,16 +108,29 @@ class Masker:
     def intensity(self, value: float) -> None:
         self._intensity = value
 
+    def _sample_intensity(self, spread: float) -> float:
+        if math.isclose(spread, 0.0):
+            return self._intensity
+
+        intensity = random.uniform(self._intensity - spread, self._intensity + spread)
+        if intensity < 0.0:
+            return 0.0
+        if intensity > 1.0:
+            return 1.0
+        return intensity
+
 
 class MaskerRandom(Masker):
     def __init__(
         self,
         intensity: float = 0.5,
+        intensity_spread: float = 0.1,
         value_mask: float = 0.5,
         seed: typing.Optional[int] = None,
     ):
         super().__init__(intensity, value_mask)
 
+        self._intensity_spread = intensity_spread
         self._rng = np.random.default_rng(seed=seed)
 
         self._name = f"random_{self._intensity:.2}"
@@ -136,7 +150,9 @@ class MaskerRandom(Masker):
         return res.type_as(full)
 
     def _indexes_to_mask(self, full: torch.Tensor) -> np.ndarray:
-        n_gridpts_to_mask = int(self._intensity * np.prod(full.shape))
+        n_gridpts_to_mask = int(
+            self._sample_intensity(self._intensity_spread) * np.prod(full.shape)
+        )
 
         indexes_full = np.array(
             [
@@ -150,9 +166,12 @@ class MaskerRandom(Masker):
 
 
 class MaskerIsland(Masker):
-    def __init__(self, intensity: float, value_mask: float = 0.5):
+    def __init__(
+        self, intensity: float, intensity_spread: float = 0.1, value_mask: float = 0.5
+    ):
         super().__init__(intensity, value_mask)
 
+        self._intensity_spread = intensity_spread
         self._name = f"island_{self._intensity:.2}"
 
     def as_name(self) -> str:
@@ -174,7 +193,7 @@ class MaskerIsland(Masker):
         return res
 
     def _range_idx_dim(self, full: torch.Tensor) -> tuple[np.ndarray, np.ndarray]:
-        perc_mask_per_side = self._intensity / 2
+        perc_mask_per_side = self._sample_intensity(self._intensity_spread) / 2
 
         lows, highs = [], []
         for size_dim in full.shape:

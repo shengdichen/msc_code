@@ -1,4 +1,5 @@
 import math
+import random
 
 import torch
 
@@ -48,7 +49,7 @@ class TestMask:
                 [61, 62, 63, 64, 65],
             ]
         )
-        masker = dataset.MaskerRandom(0.3, value_mask=0, seed=42)
+        masker = dataset.MaskerRandom(0.3, intensity_spread=0.0, value_mask=0, seed=42)
 
         assert torch.allclose(
             masker.mask(full),
@@ -89,7 +90,9 @@ class TestMask:
                 [61, 62, 63, 64, 65],
             ]
         ).type(torch.float)
-        masker = dataset.MaskerRandom(0.3, value_mask=0.5, seed=42)
+        masker = dataset.MaskerRandom(
+            0.3, intensity_spread=0.0, value_mask=0.5, seed=42
+        )
         assert torch.allclose(
             masker.mask(full),
             torch.tensor(
@@ -103,6 +106,30 @@ class TestMask:
                 ]
             ),
         )
+
+    def test_mask_random_with_spread(self):
+        value_mask = 7.3
+        full = torch.rand((20, 20)).type(torch.float)
+        masker = dataset.MaskerRandom(
+            0.5, intensity_spread=0.1, value_mask=value_mask, seed=42
+        )
+        random.seed(42)
+
+        for n_values_masked in [211, 162, 182, 177, 218]:
+            assert (
+                torch.count_nonzero(masker.mask(full) == value_mask) == n_values_masked
+            )
+
+    def test_mask_island_with_spread(self):
+        value_mask = 7.3
+        full = torch.rand((40, 40)).type(torch.float)
+        masker = dataset.MaskerIsland(0.5, intensity_spread=0.1, value_mask=value_mask)
+        random.seed(42)
+
+        for n_values_masked in [1239, 1071, 1159, 1071, 1239]:
+            assert (
+                torch.count_nonzero(masker.mask(full) == value_mask) == n_values_masked
+            )
 
     def test_mask_island_extremes(self) -> None:
         full = torch.tensor(
@@ -145,7 +172,7 @@ class TestMask:
                 [90, 91, 92, 93, 94, 95, 94, 97, 98, 99],
             ]
         )
-        masker = dataset.MaskerIsland(0.5, value_mask=0)
+        masker = dataset.MaskerIsland(0.5, intensity_spread=0.0, value_mask=0)
         for __ in range(2):  # repeated drawing yields the same result
             assert torch.allclose(
                 masker.mask(full),
@@ -178,7 +205,7 @@ class TestMask:
                 [90, 91, 92, 93, 94, 95, 94, 97, 98, 99],
             ]
         )
-        masker = dataset.MaskerIsland(0.5, value_mask=3)
+        masker = dataset.MaskerIsland(0.5, intensity_spread=0.0, value_mask=3)
         for __ in range(2):  # repeated drawing yields the same result
             assert torch.allclose(
                 masker.mask(full),
@@ -411,7 +438,9 @@ class TestDatasetPoisson:
 
         ds = poisson_ds.DatasetPoissonMaskedSolution(grid_x1, grid_x2).make(
             poisson_ds.DatasetSin(grid_x1, grid_x2).as_dataset(n_instances=2),
-            dataset.MaskerRandom(0.5, value_mask=self._value_mask()),
+            dataset.MaskerRandom(
+                0.5, intensity_spread=0.0, value_mask=self._value_mask()
+            ),
         )
 
         for lhs, rhs in ds:
@@ -472,8 +501,12 @@ class TestDatasetPoisson:
             poisson_ds.DatasetSin(grid_x1, grid_x2, constant_factor=200).as_dataset(
                 n_instances=2
             ),
-            dataset.MaskerRandom(0.5, value_mask=self._value_mask()),
-            dataset.MaskerRandom(0.5, value_mask=self._value_mask()),
+            dataset.MaskerRandom(
+                0.5, intensity_spread=0.0, value_mask=self._value_mask()
+            ),
+            dataset.MaskerRandom(
+                0.5, intensity_spread=0.0, value_mask=self._value_mask()
+            ),
         )
 
         for lhs, __ in ds:
