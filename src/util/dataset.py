@@ -262,13 +262,18 @@ class Normalizer:
         self,
         min_lhss: torch.Tensor,
         max_lhss: torch.Tensor,
+        shape_lhss: torch.Size,
         min_rhss: torch.Tensor,
         max_rhss: torch.Tensor,
+        shape_rhss: torch.Size,
     ):
         # both: [1, n_channels_lhs, 1...]
         self._min_lhss, self._max_lhss = min_lhss, max_lhss
+        self._shape_lhss = shape_lhss
+
         # both: [1, n_channels_rhs, 1...]
         self._min_rhss, self._max_rhss = min_rhss, max_rhss
+        self._shape_rhss = shape_rhss
 
     @classmethod
     def from_dataset(
@@ -282,6 +287,8 @@ class Normalizer:
 
     @staticmethod
     def _minmax(target: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor, torch.Size]:
+        shape = target.shape
+
         target = Normalizer._swap_axes_sample_channel(target)  # channel to 1st axis
         target_flat = target.reshape(target.shape[0], -1)  # flatten each channel
         min_, max_ = target_flat.min(1).values, target_flat.max(1).values
@@ -292,10 +299,12 @@ class Normalizer:
             max_ = max_.unsqueeze(-1)
 
         # swap (min & max) back to 2nd axis
-        return (
+        min_, max_ = (
             Normalizer._swap_axes_sample_channel(min_),
             Normalizer._swap_axes_sample_channel(max_),
         )
+
+        return min_, max_, shape
 
     @staticmethod
     def _swap_axes_sample_channel(target: torch.Tensor) -> torch.Tensor:
@@ -314,9 +323,11 @@ class Normalizer:
         )
 
     def normalize_lhss(self, lhss: torch.Tensor) -> torch.Tensor:
+        self._check_shape(lhss, use_lhss=True)
         return self._normalize(lhss, self._min_lhss, self._max_lhss)
 
     def normalize_rhss(self, rhss: torch.Tensor) -> torch.Tensor:
+        self._check_shape(rhss, use_lhss=False)
         return self._normalize(rhss, self._min_rhss, self._max_rhss)
 
     @staticmethod
@@ -325,13 +336,29 @@ class Normalizer:
     ) -> torch.Tensor:
         return (target - min_) / (max_ - min_)
 
+    def denormalize_lhss(self, lhss: torch.Tensor) -> torch.Tensor:
+        self._check_shape(lhss, use_lhss=True)
+        return self._denormalize(lhss, self._min_rhss, self._max_rhss)
+
     def denormalize_rhss(self, rhss: torch.Tensor) -> torch.Tensor:
+        self._check_shape(rhss, use_lhss=False)
         return self._denormalize(rhss, self._min_rhss, self._max_rhss)
 
     def _denormalize(
         self, target: torch.Tensor, min_: torch.Tensor, max_: torch.Tensor
     ) -> torch.Tensor:
         return target * (max_ - min_) + min_
+
+    def _check_shape(self, target: torch.Tensor, use_lhss: bool) -> None:
+        if use_lhss:
+            shape = self._shape_lhss
+        else:
+            shape = self._shape_rhss
+        if target.shape[1:] != shape[1:]:
+            raise ValueError(
+                "norm> shape mismatch: "
+                f"expects {shape}; but got {target.shape} instead"
+            )
 
 
 class MultiEval:

@@ -346,6 +346,36 @@ class TestNormalization:
         coords_x1, coords_x2 = grid.Grids([grid_x1, grid_x2]).coords_as_mesh_torch()
         return coords_x1, coords_x2
 
+    def test_normalize_dataset_grid(self) -> None:
+        coords_x1, coords_x2 = grid.Grids(
+            [
+                grid.Grid(5, stepsize=0.25, start=10.0),
+                grid.Grid(5, stepsize=0.5, start=20.0),
+            ]
+        ).coords_as_mesh_torch()
+        ds = torch.utils.data.TensorDataset(
+            torch.stack([coords_x1, coords_x2]).unsqueeze(0),  # 1, 2, x1, x2
+            torch.stack([coords_x1, coords_x2]).unsqueeze(0),  # 1, 2, x1, x2
+        )
+        coords_x1_ref, coords_x2_ref = self._make_grid_normalized()
+
+        normalizer = dataset.Normalizer.from_dataset(ds)
+        ds_norm = normalizer.normalize_dataset(ds)
+        lhss_norm, rhss_norm = dataset.DatasetPde.from_dataset(ds_norm).lhss_rhss
+        assert equality.EqualityTorch(lhss_norm[0, 0], coords_x1_ref).is_equal()
+        assert equality.EqualityTorch(lhss_norm[0, 1], coords_x2_ref).is_equal()
+        assert equality.EqualityTorch(rhss_norm[0, 0], coords_x1_ref).is_equal()
+        assert equality.EqualityTorch(rhss_norm[0, 1], coords_x2_ref).is_equal()
+
+        lhss_denorm, rhss_denorm = (
+            normalizer.denormalize_rhss(lhss_norm),
+            normalizer.denormalize_rhss(rhss_norm),
+        )
+        assert equality.EqualityTorch(lhss_denorm[0, 0], coords_x1).is_equal()
+        assert equality.EqualityTorch(lhss_denorm[0, 1], coords_x2).is_equal()
+        assert equality.EqualityTorch(rhss_denorm[0, 0], coords_x1).is_equal()
+        assert equality.EqualityTorch(rhss_denorm[0, 1], coords_x2).is_equal()
+
     def test_normalize_dataset(self) -> None:
         ds = self._make_ds()
         ds = dataset.Normalizer.from_dataset(ds).normalize_dataset(ds)
