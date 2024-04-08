@@ -83,6 +83,14 @@ class DatasetPde:
 
 
 class Masker:
+    def __init__(
+        self,
+        intensity: float = 0.5,
+        value_mask: float = 0.5,
+    ):
+        self._intensity = intensity
+        self._value_mask = value_mask
+
     @abc.abstractmethod
     def mask(self, full: torch.Tensor) -> torch.Tensor:
         raise NotImplementedError
@@ -91,44 +99,44 @@ class Masker:
     def as_name(self) -> str:
         raise NotImplementedError
 
-    @abc.abstractmethod
-    def as_perc(self) -> float:
-        raise NotImplementedError
+    @property
+    def intensity(self) -> float:
+        return self._intensity
+
+    @intensity.setter
+    def intensity(self, value: float) -> None:
+        self._intensity = value
 
 
 class MaskerRandom(Masker):
     def __init__(
         self,
-        perc_to_mask: float = 0.5,
+        intensity: float = 0.5,
         value_mask: float = 0.5,
         seed: typing.Optional[int] = None,
     ):
-        super().__init__()
+        super().__init__(intensity, value_mask)
 
         self._rng = np.random.default_rng(seed=seed)
-        self._perc_to_mask, self._value_mask = perc_to_mask, value_mask
 
-        self._name = f"random_{self._perc_to_mask:.2}"
+        self._name = f"random_{self._intensity:.2}"
 
     def as_name(self) -> str:
         return self._name
 
-    def as_perc(self) -> float:
-        return self._perc_to_mask
-
     def mask(self, full: torch.Tensor) -> torch.Tensor:
-        if math.isclose(self._perc_to_mask, 1.0):
+        if math.isclose(self._intensity, 1.0):
             return (self._value_mask * torch.ones_like(full)).type_as(full)
 
         res = full.detach().clone()
-        if math.isclose(self._perc_to_mask, 0.0):
+        if math.isclose(self._intensity, 0.0):
             return res
         for idx in self._indexes_to_mask(full):
             res[tuple(idx)] = self._value_mask
         return res.type_as(full)
 
     def _indexes_to_mask(self, full: torch.Tensor) -> np.ndarray:
-        n_gridpts_to_mask = int(self._perc_to_mask * np.prod(full.shape))
+        n_gridpts_to_mask = int(self._intensity * np.prod(full.shape))
 
         indexes_full = np.array(
             [
@@ -142,24 +150,20 @@ class MaskerRandom(Masker):
 
 
 class MaskerIsland(Masker):
-    def __init__(self, perc_to_keep: float, value_mask: float = 0.5):
-        super().__init__()
+    def __init__(self, intensity: float, value_mask: float = 0.5):
+        super().__init__(intensity, value_mask)
 
-        self._perc_to_keep, self._value_mask = perc_to_keep, value_mask
-        self._name = f"island_{self._perc_to_keep:.2}"
+        self._name = f"island_{self._intensity:.2}"
 
     def as_name(self) -> str:
         return self._name
 
-    def as_perc(self) -> float:
-        return self._perc_to_keep
-
     def mask(self, full: torch.Tensor) -> torch.Tensor:
-        if math.isclose(self._perc_to_keep, 1.0):
+        if math.isclose(self._intensity, 0.0):
             return full.detach().clone()
 
         res = (self._value_mask * torch.ones_like(full)).type_as(full)
-        if math.isclose(self._perc_to_keep, 0.0):
+        if math.isclose(self._intensity, 1.0):
             return res
 
         lows, highs = self._range_idx_dim(full)
@@ -170,7 +174,7 @@ class MaskerIsland(Masker):
         return res
 
     def _range_idx_dim(self, full: torch.Tensor) -> tuple[np.ndarray, np.ndarray]:
-        perc_mask_per_side = (1 - self._perc_to_keep) / 2
+        perc_mask_per_side = self._intensity / 2
 
         lows, highs = [], []
         for size_dim in full.shape:

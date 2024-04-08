@@ -115,10 +115,10 @@ class TestMask:
                 [61, 62, 63, 64, 65],
             ]
         )
-        masker = dataset.MaskerIsland(1.0)
+        masker = dataset.MaskerIsland(0.0)
         assert torch.allclose(masker.mask(full), full)
 
-        masker = dataset.MaskerIsland(0.0)
+        masker = dataset.MaskerIsland(1.0)
         full = torch.tensor(
             [
                 [11, 12, 13, 14, 15],
