@@ -247,32 +247,52 @@ class Filter:
 
 class Reorderer:
     @staticmethod
+    def components_to_second_tensors(
+        *tensors: torch.Tensor,
+    ) -> typing.Sequence[torch.Tensor]:
+        """
+        tensor: [n_instances, x..., n_channels] -> [n_instances, n_channels, x...]
+        """
+        idxs = list(range(tensors[0].dim()))
+        idxs.insert(1, idxs.pop())  # e.g. (0, 3, 1, 2) if 4-dimensional
+        return [tensor.permute(idxs) for tensor in tensors]
+
+    @staticmethod
     def components_to_second(
         dataset: torch.utils.data.dataset.TensorDataset,
     ) -> torch.utils.data.dataset.TensorDataset:
         """
-        lhss: [n_instances, x..., n_channels] -> [n_instances, n_channels, x...]
-        rhss: [n_instances, x..., 1] -> [n_instances, 1, x...]
+        lhss: [n_instances, x..., n_channels_lhs] -> [n_instances, n_channels_lhs, x...]
+        rhss: [n_instances, x..., n_channels_rhs] -> [n_instances, n_channels_rhs, x...]
         """
         lhss, rhss = DatasetPde.from_dataset(dataset).lhss_rhss
+        return torch.utils.data.TensorDataset(
+            *Reorderer.components_to_second_tensors(lhss, rhss)
+        )
 
-        idxs = list(range(lhss.dim()))
-        idxs.insert(1, idxs.pop())  # e.g. (0, 3, 1, 2) if 4-dimensional
-        return torch.utils.data.TensorDataset(lhss.permute(idxs), rhss.permute(idxs))
+    @staticmethod
+    def components_to_last_tensors(
+        *tensors: torch.Tensor,
+    ) -> typing.Sequence[torch.Tensor]:
+        """
+        tensor: [n_instances, n_channels, x...] -> [n_instances, x..., n_channels]
+        """
+        idxs = list(range(tensors[0].dim()))
+        idxs.append(idxs.pop(1))  # e.g. (0, 2, 3, 1) if 4-dimensional
+        return [tensor.permute(idxs) for tensor in tensors]
 
     @staticmethod
     def components_to_last(
         dataset: torch.utils.data.dataset.TensorDataset,
     ) -> torch.utils.data.dataset.TensorDataset:
         """
-        lhss: [n_instances, n_channels, x...] -> [n_instances, x..., n_channels]
-        rhss: [n_instances, 1, x...] -> [n_instances, x..., 1]
+        lhss: [n_instances, n_channels_lhs, x...] -> [n_instances, x..., n_channels_lhs]
+        rhss: [n_instances, n_channels_rhs, x...] -> [n_instances, x..., n_channels_rhs]
         """
         lhss, rhss = DatasetPde.from_dataset(dataset).lhss_rhss
-
-        idxs = list(range(lhss.dim()))
-        idxs.append(idxs.pop(1))  # e.g. (0, 2, 3, 1) if 4-dimensional
-        return torch.utils.data.TensorDataset(lhss.permute(idxs), rhss.permute(idxs))
+        return torch.utils.data.TensorDataset(
+            *Reorderer.components_to_last_tensors(lhss, rhss)
+        )
 
 
 class Normalizer:
