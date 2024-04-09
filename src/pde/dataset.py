@@ -6,7 +6,7 @@ import numpy as np
 import torch
 
 from src.numerics import grid
-from src.util import dataset, plot
+from src.util import plot
 
 
 class DatasetSplits:
