@@ -273,10 +273,20 @@ class DatasetPoissonMaskedSolution:
         grid_x2: grid.Grid,
     ):
         self._grids = grid.Grids([grid_x1, grid_x2])
-        self._coords_x1, self._coords_x2 = self._grids.coords_as_mesh_torch()
+        self._coords = self._grids.coords_as_mesh_torch()
+        self._cos_coords = self._grids.cos_coords_as_mesh_torch()
+        self._sin_coords = self._grids.sin_coords_as_mesh_torch()
 
         self._normalizer: dataset_util.Normalizer
         self._putil = plot.PlotUtil(self._grids)
+
+    @staticmethod
+    def n_channels_lhs() -> int:
+        return 8
+
+    @staticmethod
+    def n_channels_rhs() -> int:
+        return 1
 
     def make(
         self,
@@ -287,7 +297,15 @@ class DatasetPoissonMaskedSolution:
         lhss, rhss = [], []
         for solution, source in dataset:
             lhss.append(
-                torch.stack([solution, source, self._coords_x1, self._coords_x2])
+                torch.stack(
+                    [
+                        *self._coords,
+                        *self._cos_coords,
+                        *self._sin_coords,
+                        solution,
+                        source,
+                    ]
+                )
             )
             rhss.append(solution.unsqueeze(0))
         dataset = torch.utils.data.TensorDataset(torch.stack(lhss), torch.stack(rhss))
@@ -307,7 +325,7 @@ class DatasetPoissonMaskedSolution:
     ) -> torch.utils.data.dataset.TensorDataset:
         lhss, rhss = dataset_util.DatasetPde.from_dataset(dataset).lhss_rhss
         for lhs in lhss:
-            lhs[0] = mask.mask(lhs[0])
+            lhs[-2] = mask.mask(lhs[-2])
         return torch.utils.data.TensorDataset(lhss, rhss)
 
     def plot_instance(
@@ -338,11 +356,20 @@ class DatasetPoissonMaskedSolutionSource:
         grid_x1: grid.Grid,
         grid_x2: grid.Grid,
     ):
-        self._grid_x1, self._grid_x2 = grid_x1, grid_x2
-        self._grids = grid.Grids([self._grid_x1, self._grid_x2])
-        self._coords_x1, self._coords_x2 = self._grids.coords_as_mesh_torch()
+        self._grids = grid.Grids([grid_x1, grid_x2])
+        self._coords = self._grids.coords_as_mesh_torch()
+        self._cos_coords = self._grids.cos_coords_as_mesh_torch()
+        self._sin_coords = self._grids.sin_coords_as_mesh_torch()
 
         self._normalizer: dataset_util.Normalizer
+
+    @staticmethod
+    def n_channels_lhs() -> int:
+        return 8
+
+    @staticmethod
+    def n_channels_rhs() -> int:
+        return 2
 
     def make(
         self,
@@ -354,7 +381,15 @@ class DatasetPoissonMaskedSolutionSource:
         lhss, rhss = [], []
         for solution, source in dataset:
             lhss.append(
-                torch.stack([solution, source, self._coords_x1, self._coords_x2])
+                torch.stack(
+                    [
+                        *self._coords,
+                        *self._cos_coords,
+                        *self._sin_coords,
+                        solution,
+                        source,
+                    ]
+                )
             )
             rhss.append(torch.stack([solution, source]))
         dataset = torch.utils.data.TensorDataset(torch.stack(lhss), torch.stack(rhss))
@@ -377,8 +412,8 @@ class DatasetPoissonMaskedSolutionSource:
     ) -> torch.utils.data.dataset.TensorDataset:
         lhss, rhss = dataset_util.DatasetPde.from_dataset(dataset).lhss_rhss
         for lhs in lhss:
-            lhs[0] = mask_solution.mask(lhs[0])
-            lhs[1] = mask_source.mask(lhs[1])
+            lhs[-2] = mask_solution.mask(lhs[-2])
+            lhs[-1] = mask_source.mask(lhs[-1])
         return torch.utils.data.TensorDataset(lhss, rhss)
 
 

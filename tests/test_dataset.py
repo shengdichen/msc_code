@@ -338,17 +338,17 @@ class TestReordering:
         ds = self._make_ds(size_x1, size_x2, n_instances)
 
         for lhs, rhs in ds:
-            assert lhs.shape == (4, size_x1, size_x2)
+            assert lhs.shape == (8, size_x1, size_x2)
             assert rhs.shape == (1, size_x1, size_x2)
 
         ds = dataset.Reorderer.components_to_last(ds)
         for lhs, rhs in ds:
-            assert lhs.shape == (size_x1, size_x2, 4)
+            assert lhs.shape == (size_x1, size_x2, 8)
             assert rhs.shape == (size_x1, size_x2, 1)
 
         ds = dataset.Reorderer.components_to_second(ds)
         for lhs, rhs in ds:
-            assert lhs.shape == (4, size_x1, size_x2)
+            assert lhs.shape == (8, size_x1, size_x2)
             assert rhs.shape == (1, size_x1, size_x2)
 
 
@@ -444,20 +444,25 @@ class TestDatasetPoisson:
         )
 
         for lhs, rhs in ds:
-            assert torch.count_nonzero(lhs[0] == self._value_mask()) >= math.floor(
+            assert torch.count_nonzero(lhs[6] == self._value_mask()) >= math.floor(
                 self._size_grid() ** 2 / 2
             )  # solution, masked
             assert equality.EqualityTorch(
-                lhs[1:],
+                lhs[7:],  # source
                 torch.tensor(
                     [
-                        [
-                            [0.3889, 0.3889, 0.3889, 0.3889, 0.3889],
-                            [0.3889, 0.2878, 0.4116, 0.6881, 0.8310],
-                            [0.3889, 0.1782, 0.2821, 0.6305, 0.8581],
-                            [0.3889, 0.1326, 0.1119, 0.3177, 0.5258],
-                            [0.3889, 0.2235, 0.1381, 0.1610, 0.2540],
-                        ],  # source
+                        [0.3889, 0.3889, 0.3889, 0.3889, 0.3889],
+                        [0.3889, 0.2878, 0.4116, 0.6881, 0.8310],
+                        [0.3889, 0.1782, 0.2821, 0.6305, 0.8581],
+                        [0.3889, 0.1326, 0.1119, 0.3177, 0.5258],
+                        [0.3889, 0.2235, 0.1381, 0.1610, 0.2540],
+                    ]
+                ),
+            )
+            assert equality.EqualityTorch(
+                lhs[0:2],
+                torch.tensor(
+                    [
                         [
                             [0.0000, 0.0000, 0.0000, 0.0000, 0.0000],
                             [0.2500, 0.2500, 0.2500, 0.2500, 0.2500],
@@ -510,10 +515,10 @@ class TestDatasetPoisson:
         )
 
         for lhs, __ in ds:
-            assert torch.count_nonzero(lhs[0] == self._value_mask()) >= math.floor(
+            assert torch.count_nonzero(lhs[6] == self._value_mask()) >= math.floor(
                 self._size_grid() ** 2 / 2
             )  # solution, masked
-            assert torch.count_nonzero(lhs[1] == self._value_mask()) >= math.floor(
+            assert torch.count_nonzero(lhs[7] == self._value_mask()) >= math.floor(
                 self._size_grid() ** 2 / 2
             )  # source, masked
             break

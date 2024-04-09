@@ -235,6 +235,22 @@ class Grids:
             torch.from_numpy(mat) for mat in self.coords_as_mesh(indexing_machine_like)
         ]
 
+    def sin_coords_as_mesh_torch(
+        self, indexing_machine_like: bool = True
+    ) -> list[torch.Tensor]:
+        return [
+            torch.sin(coord)
+            for coord in self.coords_as_mesh_torch(indexing_machine_like)
+        ]
+
+    def cos_coords_as_mesh_torch(
+        self, indexing_machine_like: bool = True
+    ) -> list[torch.Tensor]:
+        return [
+            torch.cos(coord)
+            for coord in self.coords_as_mesh_torch(indexing_machine_like)
+        ]
+
     def flattten(self, target: torch.Tensor) -> torch.Tensor:
         res = []
         for indexes in self.indexes():
