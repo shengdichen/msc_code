@@ -89,21 +89,16 @@ class DatasetPoisson2d(DatasetPDE2d):
 class DatasetSin(DatasetPoisson2d):
     def __init__(
         self,
-        grid_x1: grid.Grid,
-        grid_x2: grid.Grid,
+        grids: grid.Grids,
         n_samples_per_instance=4,
         sample_weight_min: float = -1.0,
         sample_weight_max: float = 1.0,
         constant_r: float = 0.85,
         constant_factor: float = 1.0,
     ):
-        super().__init__(grid_x1, grid_x2)
+        super().__init__(grids)
 
-        coords_x1, coords_x2 = self._grids.coords_as_mesh()
-        self._coords_x1, self._coords_x2 = (
-            torch.from_numpy(coords_x1),
-            torch.from_numpy(coords_x2),
-        )
+        self._coords_x1, self._coords_x2 = self._grids.coords_as_mesh_torch()
 
         self._n_samples_per_instance = n_samples_per_instance
         self._weight_min, self._weight_max = sample_weight_min, sample_weight_max
@@ -155,8 +150,7 @@ class DatasetSin(DatasetPoisson2d):
 class DatasetGauss(DatasetPoisson2d):
     def __init__(
         self,
-        grid_x1: grid.Grid,
-        grid_x2: grid.Grid,
+        grids: grid.Grids,
         n_samples_per_instance=4,
         constant_factor: float = 1.0,
         rng_np: np.random.Generator = np.random.default_rng(42),
@@ -167,7 +161,7 @@ class DatasetGauss(DatasetPoisson2d):
         sample_sigma_min: float = 0.04,
         sample_sigma_max: float = 0.13,
     ):
-        super().__init__(grid_x1, grid_x2)
+        super().__init__(grids)
 
         self._constant_factor = constant_factor
         self._rng_np = rng_np
@@ -267,18 +261,13 @@ class DatasetGauss(DatasetPoisson2d):
 
 
 class DatasetPoissonMaskedSolution:
-    def __init__(
-        self,
-        grid_x1: grid.Grid,
-        grid_x2: grid.Grid,
-    ):
-        self._grids = grid.Grids([grid_x1, grid_x2])
-        self._coords = self._grids.coords_as_mesh_torch()
-        self._cos_coords = self._grids.cos_coords_as_mesh_torch()
-        self._sin_coords = self._grids.sin_coords_as_mesh_torch()
+    def __init__(self, grids: grid.Grids):
+        self._coords = grids.coords_as_mesh_torch()
+        self._cos_coords = grids.cos_coords_as_mesh_torch()
+        self._sin_coords = grids.sin_coords_as_mesh_torch()
 
         self._normalizer: dataset_util.Normalizer
-        self._putil = plot.PlotUtil(self._grids)
+        self._putil = plot.PlotUtil(grids)
 
     @staticmethod
     def n_channels_lhs() -> int:
@@ -351,15 +340,10 @@ class DatasetPoissonMaskedSolution:
 
 
 class DatasetPoissonMaskedSolutionSource:
-    def __init__(
-        self,
-        grid_x1: grid.Grid,
-        grid_x2: grid.Grid,
-    ):
-        self._grids = grid.Grids([grid_x1, grid_x2])
-        self._coords = self._grids.coords_as_mesh_torch()
-        self._cos_coords = self._grids.cos_coords_as_mesh_torch()
-        self._sin_coords = self._grids.sin_coords_as_mesh_torch()
+    def __init__(self, grids: grid.Grids):
+        self._coords = grids.coords_as_mesh_torch()
+        self._cos_coords = grids.cos_coords_as_mesh_torch()
+        self._sin_coords = grids.sin_coords_as_mesh_torch()
 
         self._normalizer: dataset_util.Normalizer
 
@@ -519,11 +503,7 @@ class DatasetConstructed(DatasetPoissonLegacy):
             name_dataset=name_dataset,
         )
 
-        coords_x1, coords_x2 = self._grids.coords_as_mesh()
-        self._coords_x1, self._coords_x2 = (
-            torch.from_numpy(coords_x1),
-            torch.from_numpy(coords_x2),
-        )
+        self._coords_x1, self._coords_x2 = self._grids.coords_as_mesh_torch()
         self._n_samples_per_instance = n_samples_per_instance  # aka, |K|
 
     def _make_dataset_raw(self) -> torch.utils.data.dataset.TensorDataset:

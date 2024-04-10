@@ -323,13 +323,14 @@ class TestReordering:
     def _make_ds(
         self, size_x1: int = 10, size_x2: int = 15, n_instances: int = 5
     ) -> torch.utils.data.dataset.TensorDataset:
-        grid_x1 = grid.Grid(size_x1, stepsize=0.1, start=3.0)
-        grid_x2 = grid.Grid(size_x2, stepsize=0.1, start=4.0)
-        return poisson_ds.DatasetPoissonMaskedSolution(
-            grid_x1,
-            grid_x2,
-        ).make(
-            poisson_ds.DatasetSin(grid_x1, grid_x2).as_dataset(n_instances),
+        gr = grid.Grids(
+            [
+                grid.Grid(size_x1, stepsize=0.1, start=3.0),
+                grid.Grid(size_x2, stepsize=0.1, start=4.0),
+            ]
+        )
+        return poisson_ds.DatasetPoissonMaskedSolution(gr).make(
+            poisson_ds.DatasetSin(gr).as_dataset(n_instances),
             dataset.MaskerIsland(0.5),
         )
 
@@ -356,13 +357,14 @@ class TestNormalization:
     def _make_ds(
         self, size_x1: int = 5, size_x2: int = 5, n_instances: int = 5
     ) -> torch.utils.data.dataset.TensorDataset:
-        grid_x1 = grid.Grid(size_x1, stepsize=0.1, start=3.0)
-        grid_x2 = grid.Grid(size_x2, stepsize=0.1, start=4.0)
-        ds = poisson_ds.DatasetPoissonMaskedSolution(
-            grid_x1,
-            grid_x2,
-        ).make(
-            poisson_ds.DatasetSin(grid_x1, grid_x2).as_dataset(n_instances),
+        gr = grid.Grids(
+            [
+                grid.Grid(size_x1, stepsize=0.1, start=3.0),
+                grid.Grid(size_x2, stepsize=0.1, start=4.0),
+            ]
+        )
+        ds = poisson_ds.DatasetPoissonMaskedSolution(gr).make(
+            poisson_ds.DatasetSin(gr).as_dataset(n_instances),
             dataset.MaskerIsland(0.5),
         )
         return dataset.Reorderer().components_to_second(ds)
@@ -426,18 +428,20 @@ class TestDatasetPoisson:
     def _value_mask(self) -> float:
         return 7.3  # deliberately NOT within [0, 1] range
 
-    def _grid(self) -> tuple[grid.Grid, grid.Grid]:
-        return (
-            grid.Grid(self._size_grid(), stepsize=0.1, start=3.0),
-            grid.Grid(self._size_grid(), stepsize=0.1, start=4.0),
+    def _grid(self) -> grid.Grids:
+        return grid.Grids(
+            [
+                grid.Grid(self._size_grid(), stepsize=0.1, start=3.0),
+                grid.Grid(self._size_grid(), stepsize=0.1, start=4.0),
+            ],
         )
 
     def test_mask_single(self) -> None:
         torch.manual_seed(42)
-        grid_x1, grid_x2 = self._grid()
+        gr = self._grid()
 
-        ds = poisson_ds.DatasetPoissonMaskedSolution(grid_x1, grid_x2).make(
-            poisson_ds.DatasetSin(grid_x1, grid_x2).as_dataset(n_instances=2),
+        ds = poisson_ds.DatasetPoissonMaskedSolution(gr).make(
+            poisson_ds.DatasetSin(gr).as_dataset(n_instances=2),
             dataset.MaskerRandom(
                 0.5, intensity_spread=0.0, value_mask=self._value_mask()
             ),
@@ -500,12 +504,10 @@ class TestDatasetPoisson:
 
     def test_mask_double(self) -> None:
         torch.manual_seed(42)
-        grid_x1, grid_x2 = self._grid()
+        gr = self._grid()
 
-        ds = poisson_ds.DatasetPoissonMaskedSolutionSource(grid_x1, grid_x2).make(
-            poisson_ds.DatasetSin(grid_x1, grid_x2, constant_factor=200).as_dataset(
-                n_instances=2
-            ),
+        ds = poisson_ds.DatasetPoissonMaskedSolutionSource(gr).make(
+            poisson_ds.DatasetSin(gr, constant_factor=200).as_dataset(n_instances=2),
             dataset.MaskerRandom(
                 0.5, intensity_spread=0.0, value_mask=self._value_mask()
             ),

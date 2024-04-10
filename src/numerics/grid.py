@@ -1,7 +1,7 @@
 import itertools
 import math
 from collections.abc import Iterable
-from typing import Generator, Literal, Optional, Union
+from typing import Generator, Literal, Optional, Sequence, Union
 
 import numpy as np
 import torch
@@ -145,6 +145,10 @@ class Grids:
             torch.tensor(list(self.starts()), dtype=torch.float),
             torch.tensor(list(self.ends()), dtype=torch.float),
         )
+
+    @property
+    def grids(self) -> Sequence[Grid]:
+        return self._grids
 
     @property
     def n_dims(self) -> int:

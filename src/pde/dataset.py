@@ -92,10 +92,14 @@ class DatasetPDE:
 
 
 class DatasetPDE2d(DatasetPDE):
-    def __init__(self, grid_x1: grid.Grid, grid_x2: grid.Grid):
-        self._grid_x1, self._grid_x2 = grid_x1, grid_x2
+    def __init__(self, grids: grid.Grids):
+        if grids.n_dims != 2:
+            raise ValueError(
+                "expected grid of 2 dimensions, "
+                f"got one with {self._grids.n_dims} instead"
+            )
 
-        super().__init__(grid.Grids([self._grid_x1, self._grid_x2]))
+        super().__init__(grids)
         self._putil = plot.PlotUtil(self._grids)
 
     @abc.abstractmethod
