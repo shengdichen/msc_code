@@ -1,6 +1,7 @@
 import abc
 import itertools
 import math
+import random
 import typing
 from collections.abc import Callable, Iterable
 
@@ -24,14 +25,8 @@ class DatasetPde:
 
     @staticmethod
     def _check_lhss_rhss(lhss: torch.Tensor, rhss: torch.Tensor) -> None:
-        if len(lhss) != len(rhss):
-            raise ValueError("umatched number of lhs and rhs")
-        if len(lhss.shape) != 2:
-            raise ValueError("every lhs must be a tensor")
-        if len(rhss.shape) != 2:
-            raise ValueError(
-                "every rhs must be a tensor [consider calling view(-1 ,1) on it]"
-            )
+        if len(lhss.shape) != len(rhss.shape):
+            raise ValueError("different number of dimensions of lhss and rhss")
 
     @property
     def lhss(self) -> torch.Tensor:
@@ -40,6 +35,10 @@ class DatasetPde:
     @property
     def rhss(self) -> torch.Tensor:
         return self._rhss
+
+    @property
+    def lhss_rhss(self) -> tuple[torch.Tensor, torch.Tensor]:
+        return self._lhss, self._rhss
 
     @property
     def dataset(self) -> torch.utils.data.dataset.TensorDataset:
@@ -57,26 +56,18 @@ class DatasetPde:
         return self._n_datapts == 0
 
     @classmethod
-    def from_lhss_rhss_raw(
-        cls, lhss: list[list[float]], rhss: list[float]
-    ) -> "DatasetPde":
-        lhss = torch.tensor(lhss, dtype=torch.float)
-        rhss = torch.tensor(rhss, dtype=torch.float).view(-1, 1)
-        return cls(lhss, rhss)
-
-    @classmethod
-    def from_lhss_rhss_torch(
+    def from_torch(
         cls, lhss: list[torch.Tensor], rhss: list[torch.Tensor]
     ) -> "DatasetPde":
         if not lhss:
             lhss_torch, rhss_torch = torch.tensor([]), torch.tensor([])
         else:
-            lhss_torch, rhss_torch = torch.stack(lhss), torch.stack(rhss).view(-1, 1)
-
+            lhss_torch = torch.stack(lhss)
+            rhss_torch = torch.stack(rhss)
         return cls(lhss_torch, rhss_torch)
 
     @classmethod
-    def from_datasets(
+    def from_dataset(
         cls, *datasets: torch.utils.data.dataset.TensorDataset
     ) -> "DatasetPde":
         lhss: list[torch.Tensor] = []
@@ -85,8 +76,7 @@ class DatasetPde:
             for lhs, rhs in dataset:
                 lhss.append(lhs)
                 rhss.append(rhs)
-
-        return cls.from_lhss_rhss_torch(lhss, rhss)
+        return cls.from_torch(lhss, rhss)
 
     @staticmethod
     def one_big_batch(dataset: torch.utils.data.dataset.TensorDataset) -> list:
@@ -94,6 +84,14 @@ class DatasetPde:
 
 
 class Masker:
+    def __init__(
+        self,
+        intensity: float = 0.5,
+        value_mask: float = 0.5,
+    ):
+        self._intensity = intensity
+        self._value_mask = value_mask
+
     @abc.abstractmethod
     def mask(self, full: torch.Tensor) -> torch.Tensor:
         raise NotImplementedError
@@ -102,36 +100,59 @@ class Masker:
     def as_name(self) -> str:
         raise NotImplementedError
 
-    @abc.abstractmethod
-    def as_perc(self) -> float:
-        raise NotImplementedError
+    @property
+    def intensity(self) -> float:
+        return self._intensity
+
+    @intensity.setter
+    def intensity(self, value: float) -> None:
+        self._intensity = value
+
+    def _sample_intensity(self, spread: float) -> float:
+        if math.isclose(spread, 0.0):
+            return self._intensity
+
+        intensity = random.uniform(self._intensity - spread, self._intensity + spread)
+        if intensity < 0.0:
+            return 0.0
+        if intensity > 1.0:
+            return 1.0
+        return intensity
 
 
 class MaskerRandom(Masker):
     def __init__(
         self,
-        perc_to_mask: float = 0.5,
+        intensity: float = 0.5,
+        intensity_spread: float = 0.1,
+        value_mask: float = 0.5,
         seed: typing.Optional[int] = None,
     ):
-        super().__init__()
+        super().__init__(intensity, value_mask)
 
+        self._intensity_spread = intensity_spread
         self._rng = np.random.default_rng(seed=seed)
-        self._perc_to_mask = perc_to_mask
+
+        self._name = f"random_{self._intensity:.2}"
 
     def as_name(self) -> str:
-        return f"random_{self._perc_to_mask:.2}"
-
-    def as_perc(self) -> float:
-        return self._perc_to_mask
+        return self._name
 
     def mask(self, full: torch.Tensor) -> torch.Tensor:
+        if math.isclose(self._intensity, 1.0):
+            return (self._value_mask * torch.ones_like(full)).type_as(full)
+
         res = full.detach().clone()
+        if math.isclose(self._intensity, 0.0):
+            return res
         for idx in self._indexes_to_mask(full):
-            res[tuple(idx)] = 0
-        return res
+            res[tuple(idx)] = self._value_mask
+        return res.type_as(full)
 
     def _indexes_to_mask(self, full: torch.Tensor) -> np.ndarray:
-        n_gridpts_to_mask = int(self._perc_to_mask * np.prod(full.shape))
+        n_gridpts_to_mask = int(
+            self._sample_intensity(self._intensity_spread) * np.prod(full.shape)
+        )
 
         indexes_full = np.array(
             [
@@ -145,20 +166,26 @@ class MaskerRandom(Masker):
 
 
 class MaskerIsland(Masker):
-    def __init__(self, perc_to_keep: float):
-        super().__init__()
+    def __init__(
+        self, intensity: float, intensity_spread: float = 0.1, value_mask: float = 0.5
+    ):
+        super().__init__(intensity, value_mask)
 
-        self._perc_to_keep = perc_to_keep
+        self._intensity_spread = intensity_spread
+        self._name = f"island_{self._intensity:.2}"
 
     def as_name(self) -> str:
-        return f"island_{self._perc_to_keep:.2}"
-
-    def as_perc(self) -> float:
-        return self._perc_to_keep
+        return self._name
 
     def mask(self, full: torch.Tensor) -> torch.Tensor:
+        if math.isclose(self._intensity, 0.0):
+            return full.detach().clone()
+
+        res = (self._value_mask * torch.ones_like(full)).type_as(full)
+        if math.isclose(self._intensity, 1.0):
+            return res
+
         lows, highs = self._range_idx_dim(full)
-        res = torch.zeros_like(full)
         for idxs in itertools.product(*(range(len_dim) for len_dim in full.shape)):
             idxs_np = np.array(idxs)
             if np.all(idxs_np >= lows) and np.all(idxs_np < highs):
@@ -166,7 +193,7 @@ class MaskerIsland(Masker):
         return res
 
     def _range_idx_dim(self, full: torch.Tensor) -> tuple[np.ndarray, np.ndarray]:
-        perc_mask_per_side = (1 - self._perc_to_keep) / 2
+        perc_mask_per_side = self._sample_intensity(self._intensity_spread) / 2
 
         lows, highs = [], []
         for size_dim in full.shape:
@@ -194,8 +221,8 @@ class Filter:
                     rhss_internal.append(rhs)
 
         return (
-            DatasetPde.from_lhss_rhss_torch(lhss_boundary, rhss_boundary),
-            DatasetPde.from_lhss_rhss_torch(lhss_internal, rhss_internal),
+            DatasetPde.from_torch(lhss_boundary, rhss_boundary),
+            DatasetPde.from_torch(lhss_internal, rhss_internal),
         )
 
     def _check_ranges(self, *ranges: tuple[float, float]) -> None:
@@ -216,6 +243,165 @@ class Filter:
             ):
                 return True
         return False
+
+
+class Reorderer:
+    @staticmethod
+    def components_to_second_tensors(
+        *tensors: torch.Tensor,
+    ) -> typing.Sequence[torch.Tensor]:
+        """
+        tensor: [n_instances, x..., n_channels] -> [n_instances, n_channels, x...]
+        """
+        idxs = list(range(tensors[0].dim()))
+        idxs.insert(1, idxs.pop())  # e.g. (0, 3, 1, 2) if 4-dimensional
+        return [tensor.permute(idxs) for tensor in tensors]
+
+    @staticmethod
+    def components_to_second(
+        dataset: torch.utils.data.dataset.TensorDataset,
+    ) -> torch.utils.data.dataset.TensorDataset:
+        """
+        lhss: [n_instances, x..., n_channels_lhs] -> [n_instances, n_channels_lhs, x...]
+        rhss: [n_instances, x..., n_channels_rhs] -> [n_instances, n_channels_rhs, x...]
+        """
+        lhss, rhss = DatasetPde.from_dataset(dataset).lhss_rhss
+        return torch.utils.data.TensorDataset(
+            *Reorderer.components_to_second_tensors(lhss, rhss)
+        )
+
+    @staticmethod
+    def components_to_last_tensors(
+        *tensors: torch.Tensor,
+    ) -> typing.Sequence[torch.Tensor]:
+        """
+        tensor: [n_instances, n_channels, x...] -> [n_instances, x..., n_channels]
+        """
+        idxs = list(range(tensors[0].dim()))
+        idxs.append(idxs.pop(1))  # e.g. (0, 2, 3, 1) if 4-dimensional
+        return [tensor.permute(idxs) for tensor in tensors]
+
+    @staticmethod
+    def components_to_last(
+        dataset: torch.utils.data.dataset.TensorDataset,
+    ) -> torch.utils.data.dataset.TensorDataset:
+        """
+        lhss: [n_instances, n_channels_lhs, x...] -> [n_instances, x..., n_channels_lhs]
+        rhss: [n_instances, n_channels_rhs, x...] -> [n_instances, x..., n_channels_rhs]
+        """
+        lhss, rhss = DatasetPde.from_dataset(dataset).lhss_rhss
+        return torch.utils.data.TensorDataset(
+            *Reorderer.components_to_last_tensors(lhss, rhss)
+        )
+
+
+class Normalizer:
+    """
+    lhss: [n_samples, n_channels_lhs, x...]
+    rhss: [n_samples, n_channels_rhs, x...]
+    """
+
+    def __init__(
+        self,
+        min_lhss: torch.Tensor,
+        max_lhss: torch.Tensor,
+        shape_lhss: torch.Size,
+        min_rhss: torch.Tensor,
+        max_rhss: torch.Tensor,
+        shape_rhss: torch.Size,
+    ):
+        # both: [1, n_channels_lhs, 1...]
+        self._min_lhss, self._max_lhss = min_lhss, max_lhss
+        self._shape_lhss = shape_lhss
+
+        # both: [1, n_channels_rhs, 1...]
+        self._min_rhss, self._max_rhss = min_rhss, max_rhss
+        self._shape_rhss = shape_rhss
+
+    @classmethod
+    def from_dataset(
+        cls, dataset: torch.utils.data.dataset.TensorDataset
+    ) -> "Normalizer":
+        return cls.from_lhss_rhss(*DatasetPde.from_dataset(dataset).lhss_rhss)
+
+    @classmethod
+    def from_lhss_rhss(cls, lhss: torch.Tensor, rhss: torch.Tensor) -> "Normalizer":
+        return cls(*cls._minmax(lhss), *cls._minmax(rhss))
+
+    @staticmethod
+    def _minmax(target: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor, torch.Size]:
+        shape = target.shape
+
+        target = Normalizer._swap_axes_sample_channel(target)  # channel to 1st axis
+        target_flat = target.reshape(target.shape[0], -1)  # flatten each channel
+        min_, max_ = target_flat.min(1).values, target_flat.max(1).values
+
+        # expand to original dimension
+        for __ in range(target.dim() - 1):
+            min_ = min_.unsqueeze(-1)
+            max_ = max_.unsqueeze(-1)
+
+        # swap (min & max) back to 2nd axis
+        min_, max_ = (
+            Normalizer._swap_axes_sample_channel(min_),
+            Normalizer._swap_axes_sample_channel(max_),
+        )
+
+        return min_, max_, shape
+
+    @staticmethod
+    def _swap_axes_sample_channel(target: torch.Tensor) -> torch.Tensor:
+        # NOTE:
+        #   (samples, channels) := (axis_1, axis_2) or (axis_2, axis_1)
+        idxs = list(range(target.dim()))
+        idxs[0], idxs[1] = idxs[1], idxs[0]
+        return target.permute(idxs)
+
+    def normalize_dataset(
+        self, dataset: torch.utils.data.dataset.TensorDataset
+    ) -> torch.utils.data.dataset.TensorDataset:
+        lhss, rhss = DatasetPde.from_dataset(dataset).lhss_rhss
+        return torch.utils.data.TensorDataset(
+            self.normalize_lhss(lhss), self.normalize_rhss(rhss)
+        )
+
+    def normalize_lhss(self, lhss: torch.Tensor) -> torch.Tensor:
+        self._check_shape(lhss, use_lhss=True)
+        return self._normalize(lhss, self._min_lhss, self._max_lhss)
+
+    def normalize_rhss(self, rhss: torch.Tensor) -> torch.Tensor:
+        self._check_shape(rhss, use_lhss=False)
+        return self._normalize(rhss, self._min_rhss, self._max_rhss)
+
+    @staticmethod
+    def _normalize(
+        target: torch.Tensor, min_: torch.Tensor, max_: torch.Tensor
+    ) -> torch.Tensor:
+        return (target - min_) / (max_ - min_)
+
+    def denormalize_lhss(self, lhss: torch.Tensor) -> torch.Tensor:
+        self._check_shape(lhss, use_lhss=True)
+        return self._denormalize(lhss, self._min_rhss, self._max_rhss)
+
+    def denormalize_rhss(self, rhss: torch.Tensor) -> torch.Tensor:
+        self._check_shape(rhss, use_lhss=False)
+        return self._denormalize(rhss, self._min_rhss, self._max_rhss)
+
+    def _denormalize(
+        self, target: torch.Tensor, min_: torch.Tensor, max_: torch.Tensor
+    ) -> torch.Tensor:
+        return target * (max_ - min_) + min_
+
+    def _check_shape(self, target: torch.Tensor, use_lhss: bool) -> None:
+        if use_lhss:
+            shape = self._shape_lhss
+        else:
+            shape = self._shape_rhss
+        if target.shape[1:] != shape[1:]:
+            raise ValueError(
+                "norm> shape mismatch: "
+                f"expects {shape}; but got {target.shape} instead"
+            )
 
 
 class MultiEval:

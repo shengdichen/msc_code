@@ -1,7 +1,7 @@
 import itertools
 import math
 from collections.abc import Iterable
-from typing import Generator, Literal, Optional, Union
+from typing import Generator, Literal, Optional, Sequence, Union
 
 import numpy as np
 import torch
@@ -147,6 +147,10 @@ class Grids:
         )
 
     @property
+    def grids(self) -> Sequence[Grid]:
+        return self._grids
+
+    @property
     def n_dims(self) -> int:
         return self._n_dims
 
@@ -227,6 +231,29 @@ class Grids:
         indexing: Literal["ij", "xy"]
         indexing = "ij" if indexing_machine_like else "xy"
         return np.meshgrid(*(gr.step() for gr in self._grids), indexing=indexing)
+
+    def coords_as_mesh_torch(
+        self, indexing_machine_like: bool = True
+    ) -> list[torch.Tensor]:
+        return [
+            torch.from_numpy(mat) for mat in self.coords_as_mesh(indexing_machine_like)
+        ]
+
+    def sin_coords_as_mesh_torch(
+        self, indexing_machine_like: bool = True
+    ) -> list[torch.Tensor]:
+        return [
+            torch.sin(coord)
+            for coord in self.coords_as_mesh_torch(indexing_machine_like)
+        ]
+
+    def cos_coords_as_mesh_torch(
+        self, indexing_machine_like: bool = True
+    ) -> list[torch.Tensor]:
+        return [
+            torch.cos(coord)
+            for coord in self.coords_as_mesh_torch(indexing_machine_like)
+        ]
 
     def flattten(self, target: torch.Tensor) -> torch.Tensor:
         res = []
