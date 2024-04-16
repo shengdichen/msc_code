@@ -174,6 +174,7 @@ class LearnerPoissonFNOMaskedSolution(LearnerPoissonFourier):
                 mse_abs = dst.mse()
                 mse_abs.backward()
                 optimizer.step()
+                optimizer.zero_grad()
 
                 mse_abs_all.append(mse_abs.item())
                 mse_rel_all.append(dst.mse_relative().item())
