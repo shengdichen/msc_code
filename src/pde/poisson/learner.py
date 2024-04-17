@@ -7,9 +7,10 @@ import matplotlib as mpl
 import numpy as np
 import torch
 from matplotlib import pyplot as plt
+from tqdm import tqdm
 
 from src.deepl import cno, fno_2d, network
-from src.definition import DEFINITION
+from src.definition import DEFINITION, T_DATASET
 from src.numerics import distance, grid, multidiff
 from src.pde.poisson.dataset import SolverPoisson
 from src.util import plot
@@ -156,18 +157,21 @@ class LearnerPoissonFNOMaskedSolution(LearnerPoissonFourier):
 
     def train(
         self,
-        dataset: torch.utils.data.dataset.TensorDataset,
+        dataset: T_DATASET,
         batch_size: int = 2,
         n_epochs: int = 2001,
         freq_eval: int = 100,
-        datasets_eval: typing.Optional[
-            typing.Sequence[torch.utils.data.dataset.TensorDataset]
-        ] = None,
+        datasets_eval: typing.Optional[typing.Sequence[T_DATASET]] = None,
     ) -> None:
-        optimizer = torch.optim.Adam(self._network.parameters(), weight_decay=1e-5)
-        scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=50, gamma=0.5)
+        optimizer = torch.optim.Adam(self._network.parameters())
+        scheduler = torch.optim.lr_scheduler.StepLR(
+            optimizer,
+            step_size=50,
+            gamma=0.5,  # more conservative decay than default
+        )
 
-        for epoch in range(n_epochs):
+        for epoch in tqdm(range(n_epochs)):
+            self._network.train()
             mse_abs_all, mse_rel_all = [], []
             for __, rhss_theirs, rhss_ours in self.iterate_dataset(dataset, batch_size):
                 dst = distance.Distance(rhss_theirs, rhss_ours)
@@ -183,7 +187,7 @@ class LearnerPoissonFNOMaskedSolution(LearnerPoissonFourier):
             if epoch % freq_eval == 0:
                 print(
                     "train> (mse, mse%): "
-                    f"{np.average(mse_abs_all)}, {np.average(mse_rel_all)}"
+                    f"{np.average(mse_abs_all):.4}, {np.average(mse_rel_all):.4%}"
                 )
                 if datasets_eval:
                     for dataset_eval in datasets_eval:
@@ -192,12 +196,12 @@ class LearnerPoissonFNOMaskedSolution(LearnerPoissonFourier):
 
     def eval(
         self,
-        dataset: torch.utils.data.dataset.TensorDataset,
+        dataset: T_DATASET,
         print_result: bool = False,
     ) -> float:
         mse_abs_all, mse_rel_all = [], []
+        self._network.eval()
         with torch.no_grad():
-            self._network.eval()
             for __, rhss_theirs, rhss_ours in self.iterate_dataset(
                 dataset, batch_size=30
             ):
@@ -205,10 +209,9 @@ class LearnerPoissonFNOMaskedSolution(LearnerPoissonFourier):
                 mse_abs_all.append(dst.mse().item())
                 mse_rel_all.append(dst.mse_relative().item())
 
-        self._network.train()
         mse_abs_avg, mse_rel_avg = np.average(mse_abs_all), np.average(mse_rel_all)
         if print_result:
-            print(f"eval> (mse, mse%): {mse_abs_avg}, {mse_rel_avg}")
+            print(f"eval> (mse, mse%): {mse_abs_avg:.4}, {mse_rel_avg:.4%}")
 
         return mse_rel_avg.item()
 

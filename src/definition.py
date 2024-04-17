@@ -3,6 +3,8 @@ from pathlib import Path
 import matplotlib as mpl
 import torch
 
+T_DATASET = torch.utils.data.dataset.TensorDataset
+
 
 class Definition:
     SRC_DIR = Path(__file__).parent
