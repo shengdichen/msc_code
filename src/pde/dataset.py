@@ -49,7 +49,7 @@ class DatasetPDE:
     def load_full(
         self, n_instances: int, base_dir: pathlib.Path = pathlib.Path(".")
     ) -> torch.utils.data.dataset.TensorDataset:
-        path = base_dir / f"{self.as_name()}-full-{n_instances}.pth"
+        path = base_dir / f"{self.as_name()}-full_{n_instances}.pth"
         if not path.exists():
             torch.save(self.as_dataset(n_instances), path)
         return torch.load(path)
@@ -61,8 +61,8 @@ class DatasetPDE:
         base_dir: pathlib.Path = pathlib.Path("."),
     ) -> torch.utils.data.dataset.TensorDataset:
         path_eval, path_train = (
-            base_dir / f"{self.as_name()}-eval-{n_instances_eval}.pth",
-            base_dir / f"{self.as_name()}-train-{n_instances_train}.pth",
+            base_dir / f"{self.as_name()}-eval_{n_instances_eval}.pth",
+            base_dir / f"{self.as_name()}-train_{n_instances_train}.pth",
         )
         if not (path_eval.exists() and path_train.exists()):
             ds_eval, ds_train = DatasetSplits(
