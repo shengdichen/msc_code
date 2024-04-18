@@ -13,6 +13,7 @@ import torch
 from scipy.interpolate import RectBivariateSpline
 from scipy.stats import multivariate_normal
 
+from src.definition import T_DATASET
 from src.numerics import grid
 from src.pde.dataset import DatasetPDE2d
 from src.util import dataset as dataset_util
@@ -267,6 +268,7 @@ class DatasetPoissonMaskedSolution:
         self._sin_coords = grids.sin_coords_as_mesh_torch()
 
         self._normalizer: dataset_util.Normalizer
+        self._dataset: T_DATASET
         self._putil = plot.PlotUtil(grids)
 
     @staticmethod
@@ -277,12 +279,51 @@ class DatasetPoissonMaskedSolution:
     def n_channels_rhs() -> int:
         return 1
 
+    @staticmethod
+    def _name(dataset: DatasetPoisson2d, mask: dataset_util.Masker) -> str:
+        return f"{dataset.as_name()}--sol_{mask.as_name()}"
+
+    def load_split(
+        self,
+        dataset: DatasetPoisson2d,
+        masks_eval: typing.Iterable[dataset_util.Masker],
+        masks_train: typing.Iterable[dataset_util.Masker],
+        n_instances_eval: int,
+        n_instances_train: int,
+        base_dir: pathlib.Path = pathlib.Path("."),
+    ):
+        eval_raw, train_raw = dataset.load_split(
+            n_instances_eval=n_instances_eval,
+            n_instances_train=n_instances_train,
+            base_dir=base_dir,
+        )
+
+        evals = []
+        for mask in masks_eval:
+            path = (
+                base_dir / f"{self._name(dataset, mask)}--eval_{n_instances_eval}.pth"
+            )
+            evals.append(self.make(eval_raw, mask, save_as=path))
+
+        trains = []
+        for mask in masks_train:
+            path = (
+                base_dir / f"{self._name(dataset, mask)}--train_{n_instances_train}.pth"
+            )
+            trains.append(self.make(train_raw, mask, save_as=path))
+
+        return evals, trains
+
     def make(
         self,
         dataset: torch.utils.data.dataset.TensorDataset,
         mask: dataset_util.Masker,
         components_to_last: bool = False,
+        save_as: typing.Optional[pathlib.Path] = None,
     ) -> torch.utils.data.dataset.TensorDataset:
+        if save_as and save_as.exists():
+            return torch.load(save_as)
+
         lhss, rhss = [], []
         for solution, source in dataset:
             lhss.append(
@@ -298,10 +339,14 @@ class DatasetPoissonMaskedSolution:
             )
             rhss.append(solution.unsqueeze(0))
         dataset = torch.utils.data.TensorDataset(torch.stack(lhss), torch.stack(rhss))
-        dataset = self._apply_mask(self._normalize(dataset), mask)
-        if not components_to_last:
-            return dataset
-        return dataset_util.Reorderer().components_to_last(dataset)
+        self._dataset = self._apply_mask(self._normalize(dataset), mask)
+        if components_to_last:
+            self._dataset = dataset_util.Reorderer().components_to_last(self._dataset)
+
+        if save_as:
+            torch.save(self._dataset, save_as)
+
+        return self._dataset
 
     def _normalize(
         self, dataset: torch.utils.data.dataset.TensorDataset
@@ -345,6 +390,7 @@ class DatasetPoissonMaskedSolutionSource:
         self._cos_coords = grids.cos_coords_as_mesh_torch()
         self._sin_coords = grids.sin_coords_as_mesh_torch()
 
+        self._dataset = T_DATASET
         self._normalizer: dataset_util.Normalizer
 
     @staticmethod
@@ -355,13 +401,29 @@ class DatasetPoissonMaskedSolutionSource:
     def n_channels_rhs() -> int:
         return 2
 
+    @staticmethod
+    def _name(
+        dataset: DatasetPoisson2d,
+        mask_solution: dataset_util.Masker,
+        mask_source: dataset_util.Masker,
+    ) -> str:
+        return (
+            f"{dataset.as_name()}--"
+            f"sol_{mask_solution.as_name()}--"
+            f"source_{mask_source.as_name()}"
+        )
+
     def make(
         self,
         dataset: torch.utils.data.dataset.TensorDataset,
         mask_solution: dataset_util.Masker,
         mask_source: dataset_util.Masker,
         components_to_last: bool = False,
+        save_as: typing.Optional[pathlib.Path] = None,
     ) -> torch.utils.data.dataset.TensorDataset:
+        if save_as and save_as.exists():
+            return torch.load(save_as)
+
         lhss, rhss = [], []
         for solution, source in dataset:
             lhss.append(
@@ -377,10 +439,16 @@ class DatasetPoissonMaskedSolutionSource:
             )
             rhss.append(torch.stack([solution, source]))
         dataset = torch.utils.data.TensorDataset(torch.stack(lhss), torch.stack(rhss))
-        dataset = self._apply_mask(self._normalize(dataset), mask_solution, mask_source)
-        if not components_to_last:
-            return dataset
-        return dataset_util.Reorderer().components_to_last(dataset)
+        self._dataset = self._apply_mask(
+            self._normalize(dataset), mask_solution, mask_source
+        )
+        if components_to_last:
+            self._dataset = dataset_util.Reorderer().components_to_last(self._dataset)
+
+        if save_as:
+            torch.save(self._dataset, save_as)
+
+        return self._dataset
 
     def _normalize(
         self, dataset: torch.utils.data.dataset.TensorDataset
