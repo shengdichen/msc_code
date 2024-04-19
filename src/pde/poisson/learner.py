@@ -220,7 +220,7 @@ class LearnerPoissonFNOMaskedSolution(LearnerPoissonFourier):
         with torch.no_grad():
             self._network.eval()
             for __, rhss_theirs, rhss_ours in self.iterate_dataset(
-                dataset, batch_size=1
+                dataset, batch_size=30
             ):
                 mse_rel_all.append(
                     distance.Distance(rhss_ours, rhss_theirs).mse_relative().item()
@@ -230,7 +230,7 @@ class LearnerPoissonFNOMaskedSolution(LearnerPoissonFourier):
         return (np.average(mse_rel_all),)
 
     def _extract_u(self, rhss: torch.Tensor) -> torch.Tensor:
-        return rhss[0, :, :, 0]
+        return rhss[0, 0, :, :]
 
 
 class LearnerPoissonFNOMaskedSolutionSource(LearnerPoissonFourier):
