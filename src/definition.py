@@ -4,6 +4,7 @@ import matplotlib as mpl
 import torch
 
 T_DATASET = torch.utils.data.dataset.TensorDataset
+T_NETWORK = torch.nn.Module
 
 
 class Definition:
