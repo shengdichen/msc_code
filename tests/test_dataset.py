@@ -329,9 +329,11 @@ class TestReordering:
                 grid.Grid(size_x2, stepsize=0.1, start=4.0),
             ]
         )
-        return poisson_ds.DatasetPoissonMaskedSolution(gr).make(
-            poisson_ds.DatasetSin(gr).as_dataset(n_instances),
-            dataset.MaskerIsland(0.5),
+        ds_raw = poisson_ds.DatasetSin(gr)
+        return poisson_ds.DatasetPoissonMaskedSolution(
+            gr, ds_raw, dataset.MaskerIsland(0.5)
+        ).make(
+            ds_raw.as_dataset(n_instances),
         )
 
     def test_reordering(self) -> None:
@@ -363,9 +365,11 @@ class TestNormalization:
                 grid.Grid(size_x2, stepsize=0.1, start=4.0),
             ]
         )
-        ds = poisson_ds.DatasetPoissonMaskedSolution(gr).make(
-            poisson_ds.DatasetSin(gr).as_dataset(n_instances),
-            dataset.MaskerIsland(0.5),
+        ds_raw = poisson_ds.DatasetSin(gr)
+        ds = poisson_ds.DatasetPoissonMaskedSolution(
+            gr, ds_raw, dataset.MaskerIsland(0.5)
+        ).make(
+            ds_raw.as_dataset(n_instances),
         )
         return dataset.Reorderer().components_to_second(ds)
 
@@ -440,12 +444,14 @@ class TestDatasetPoisson:
         torch.manual_seed(42)
         gr = self._grid()
 
-        ds = poisson_ds.DatasetPoissonMaskedSolution(gr).make(
-            poisson_ds.DatasetSin(gr).as_dataset(n_instances=2),
+        ds_raw = poisson_ds.DatasetSin(gr)
+        ds = poisson_ds.DatasetPoissonMaskedSolution(
+            gr,
+            ds_raw,
             dataset.MaskerRandom(
                 0.5, intensity_spread=0.0, value_mask=self._value_mask()
             ),
-        )
+        ).make(ds_raw.as_dataset(n_instances=2))
 
         for lhs, rhs in ds:
             assert torch.count_nonzero(lhs[6] == self._value_mask()) >= math.floor(

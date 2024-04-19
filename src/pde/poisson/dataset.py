@@ -265,29 +265,47 @@ class DatasetPoissonMaskedSolution:
     N_CHANNELS_LHS = 8
     N_CHANNELS_RHS = 1
 
-    def __init__(self, grids: grid.Grids):
+    def __init__(
+        self,
+        grids: grid.Grids,
+        dataset_raw: DatasetPoisson2d,
+        mask: dataset_util.Masker,
+    ):
         self._coords = grids.coords_as_mesh_torch()
         self._cos_coords = grids.cos_coords_as_mesh_torch()
         self._sin_coords = grids.sin_coords_as_mesh_torch()
+
+        self._dataset_raw = dataset_raw
+        self._mask = mask
+        self._name = f"{self._dataset_raw.as_name()}--sol_{self._mask.as_name()}"
 
         self._normalizer: dataset_util.Normalizer
         self._dataset: T_DATASET
         self._putil = plot.PlotUtil(grids)
 
-    @staticmethod
-    def _name(dataset: DatasetPoisson2d, mask: dataset_util.Masker) -> str:
-        return f"{dataset.as_name()}--sol_{mask.as_name()}"
+    @property
+    def name(self) -> str:
+        return self._name
 
+    @property
+    def dataset(self) -> T_DATASET:
+        return self._dataset
+
+    @classmethod
     def load_split(
-        self,
-        dataset: DatasetPoisson2d,
+        cls,
+        grids: grid.Grids,
+        dataset_raw: DatasetPoisson2d,
         masks_eval: typing.Iterable[dataset_util.Masker],
         masks_train: typing.Iterable[dataset_util.Masker],
         n_instances_eval: int,
         n_instances_train: int,
         base_dir: pathlib.Path = pathlib.Path("."),
-    ):
-        eval_raw, train_raw = dataset.load_split(
+    ) -> tuple[
+        typing.Sequence["DatasetPoissonMaskedSolution"],
+        typing.Sequence["DatasetPoissonMaskedSolution"],
+    ]:
+        eval_raw, train_raw = dataset_raw.load_split(
             n_instances_eval=n_instances_eval,
             n_instances_train=n_instances_train,
             base_dir=base_dir,
@@ -295,29 +313,33 @@ class DatasetPoissonMaskedSolution:
 
         evals = []
         for mask in masks_eval:
-            path = (
-                base_dir / f"{self._name(dataset, mask)}--eval_{n_instances_eval}.pth"
+            ds = cls(grids, dataset_raw, mask)
+            ds.make(
+                eval_raw,
+                save_as=base_dir / f"{ds.name}--eval_{n_instances_eval}.pth",
             )
-            evals.append(self.make(eval_raw, mask, save_as=path))
+            evals.append(ds)
 
         trains = []
         for mask in masks_train:
-            path = (
-                base_dir / f"{self._name(dataset, mask)}--train_{n_instances_train}.pth"
+            ds = cls(grids, dataset_raw, mask)
+            ds.make(
+                train_raw,
+                save_as=base_dir / f"{ds.name}--train_{n_instances_train}.pth",
             )
-            trains.append(self.make(train_raw, mask, save_as=path))
+            trains.append(ds)
 
         return evals, trains
 
     def make(
         self,
         dataset: torch.utils.data.dataset.TensorDataset,
-        mask: dataset_util.Masker,
         components_to_last: bool = False,
         save_as: typing.Optional[pathlib.Path] = None,
     ) -> torch.utils.data.dataset.TensorDataset:
         if save_as and save_as.exists():
-            return torch.load(save_as)
+            self._dataset = torch.load(save_as)
+            return self._dataset
 
         lhss, rhss = [], []
         for solution, source in dataset:
@@ -334,7 +356,7 @@ class DatasetPoissonMaskedSolution:
             )
             rhss.append(solution.unsqueeze(0))
         dataset = torch.utils.data.TensorDataset(torch.stack(lhss), torch.stack(rhss))
-        self._dataset = self._apply_mask(self._normalize(dataset), mask)
+        self._dataset = self._apply_mask(self._normalize(dataset), self._mask)
         if components_to_last:
             self._dataset = dataset_util.Reorderer().components_to_last(self._dataset)
 
@@ -392,7 +414,7 @@ class DatasetPoissonMaskedSolutionSource:
         self._normalizer: dataset_util.Normalizer
 
     @staticmethod
-    def _name(
+    def as_name(
         dataset: DatasetPoisson2d,
         mask_solution: dataset_util.Masker,
         mask_source: dataset_util.Masker,
