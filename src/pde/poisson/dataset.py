@@ -262,6 +262,9 @@ class DatasetGauss(DatasetPoisson2d):
 
 
 class DatasetPoissonMaskedSolution:
+    N_CHANNELS_LHS = 8
+    N_CHANNELS_RHS = 1
+
     def __init__(self, grids: grid.Grids):
         self._coords = grids.coords_as_mesh_torch()
         self._cos_coords = grids.cos_coords_as_mesh_torch()
@@ -270,14 +273,6 @@ class DatasetPoissonMaskedSolution:
         self._normalizer: dataset_util.Normalizer
         self._dataset: T_DATASET
         self._putil = plot.PlotUtil(grids)
-
-    @staticmethod
-    def n_channels_lhs() -> int:
-        return 8
-
-    @staticmethod
-    def n_channels_rhs() -> int:
-        return 1
 
     @staticmethod
     def _name(dataset: DatasetPoisson2d, mask: dataset_util.Masker) -> str:
@@ -385,6 +380,9 @@ class DatasetPoissonMaskedSolution:
 
 
 class DatasetPoissonMaskedSolutionSource:
+    N_CHANNELS_LHS = 8
+    N_CHANNELS_RHS = 2
+
     def __init__(self, grids: grid.Grids):
         self._coords = grids.coords_as_mesh_torch()
         self._cos_coords = grids.cos_coords_as_mesh_torch()
@@ -392,14 +390,6 @@ class DatasetPoissonMaskedSolutionSource:
 
         self._dataset = T_DATASET
         self._normalizer: dataset_util.Normalizer
-
-    @staticmethod
-    def n_channels_lhs() -> int:
-        return 8
-
-    @staticmethod
-    def n_channels_rhs() -> int:
-        return 2
 
     @staticmethod
     def _name(
