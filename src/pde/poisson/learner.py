@@ -1,6 +1,7 @@
 import abc
 import collections
 import logging
+import pathlib
 import typing
 
 import matplotlib as mpl
@@ -10,7 +11,7 @@ from matplotlib import pyplot as plt
 from tqdm import tqdm
 
 from src.deepl import cno, fno_2d, network
-from src.definition import DEFINITION, T_DATASET
+from src.definition import DEFINITION, T_DATASET, T_NETWORK
 from src.numerics import distance, grid, multidiff
 from src.pde.poisson.dataset import SolverPoisson
 from src.util import plot
@@ -20,15 +21,10 @@ logger = logging.getLogger(__name__)
 
 
 class LearnerPoissonFourier:
-    def __init__(
-        self,
-        grid_x1: grid.Grid,
-        grid_x2: grid.Grid,
-        network_fno: torch.nn.Module,
-    ):
+    def __init__(self, grids: grid.Grids, network_fno: T_NETWORK):
         self._device = DEFINITION.device_preferred
 
-        self._grids = grid.Grids([grid_x1, grid_x2])
+        self._grids = grids
         self._network = network_fno.to(self._device)
 
     @abc.abstractmethod
@@ -147,10 +143,8 @@ class LearnerPoissonFourier:
 
 
 class LearnerPoissonFNOMaskedSolution(LearnerPoissonFourier):
-    def __init__(
-        self, grid_x1: grid.Grid, grid_x2: grid.Grid, network_fno: fno_2d.FNO2d
-    ):
-        super().__init__(grid_x1, grid_x2, network_fno)
+    def __init__(self, grids: grid.Grids, network_fno: fno_2d.FNO2d):
+        super().__init__(grids, network_fno)
 
     def as_name(self) -> str:
         return "fno-2d"
@@ -158,8 +152,8 @@ class LearnerPoissonFNOMaskedSolution(LearnerPoissonFourier):
     def train(
         self,
         dataset: T_DATASET,
-        batch_size: int = 2,
-        n_epochs: int = 2001,
+        batch_size: int = 30,
+        n_epochs: int = 1001,
         freq_eval: int = 100,
         datasets_eval: typing.Optional[typing.Sequence[T_DATASET]] = None,
     ) -> None:
@@ -169,6 +163,9 @@ class LearnerPoissonFNOMaskedSolution(LearnerPoissonFourier):
             step_size=50,
             gamma=0.5,  # more conservative decay than default
         )
+
+        if (n_epochs % freq_eval) == 0:
+            n_epochs += 1  # one extra final eval report
 
         for epoch in tqdm(range(n_epochs)):
             self._network.train()
@@ -237,10 +234,8 @@ class LearnerPoissonFNOMaskedSolution(LearnerPoissonFourier):
 
 
 class LearnerPoissonFNOMaskedSolutionSource(LearnerPoissonFourier):
-    def __init__(
-        self, grid_x1: grid.Grid, grid_x2: grid.Grid, network_fno: fno_2d.FNO2d
-    ):
-        super().__init__(grid_x1, grid_x2, network_fno)
+    def __init__(self, grids: grid.Grids, network_fno: fno_2d.FNO2d):
+        super().__init__(grids, network_fno)
 
     def as_name(self) -> str:
         return "fno-2d"
