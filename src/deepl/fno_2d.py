@@ -6,6 +6,8 @@ with modifications for readability
 
 import torch
 
+from src.util import dataset as dataset_util
+
 
 class SpectralConv2d(torch.nn.Module):
     def __init__(
@@ -116,13 +118,11 @@ class FNO2d(torch.nn.Module):
 
     def forward(self, lhss: torch.Tensor) -> torch.Tensor:
         """
-        lhss: (batch_size, n_gridpts_x1, n_gridpts_x2, n_channels_lhs)
+        lhss: (batch_size, n_channels_lhs, n_gridpts_x1, n_gridpts_x2)
+        return: (batch_size, n_channels_rhs, n_gridpts_x1, n_gridpts_x2)
         """
 
-        # (batch_size, n_gridpts_x1, n_gridpts_x2, n_channels_fourier)
-        rhss = self._layer_in(lhss)
-        # (batch_size, n_channels_fourier, n_gridpts_x1, n_gridpts_x2)
-        rhss = rhss.permute(0, 3, 1, 2)
+        rhss = self._forward_pre(lhss)
 
         padding_x1 = int(round(rhss.shape[-1] * self._padding_frac))
         padding_x2 = int(round(rhss.shape[-2] * self._padding_frac))
@@ -134,5 +134,25 @@ class FNO2d(torch.nn.Module):
                 rhss = self._activation(rhss)
         rhss = rhss[..., :-padding_x1, :-padding_x2]
 
-        rhss = rhss.permute(0, 2, 3, 1)
-        return self._layer_out(self._activation(self._layer_out_pre(rhss)))
+        return self._forward_post(rhss)
+
+    def _forward_pre(self, tensor: torch.Tensor) -> torch.Tensor:
+        # (batch_size, x1, x2, n_channels_lhs)
+        tensor = dataset_util.Reorderer.components_to_last_tensors(tensor)[0]
+        # (batch_size, x1, x2, n_channels_fourier)
+        tensor = self._layer_in(tensor)
+        # (batch_size, n_channels_fourier, x1, x2)
+        tensor = dataset_util.Reorderer.components_to_second_tensors(tensor)[0]
+        return tensor
+
+    def _forward_post(self, tensor: torch.Tensor) -> torch.Tensor:
+        # (batch_size, x1, x2, n_channels_fourier)
+        tensor = dataset_util.Reorderer.components_to_last_tensors(tensor)[0]
+        # (batch_size, x1, x2, size_pre_out)
+        tensor = self._layer_out_pre(tensor)
+        # (batch_size, x1, x2, n_channels_rhs)
+        tensor = self._layer_out(self._activation(tensor))
+
+        # (batch_size, n_channels_rhs, x1, x2)
+        tensor = dataset_util.Reorderer.components_to_second_tensors(tensor)[0]
+        return tensor
