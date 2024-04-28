@@ -30,8 +30,26 @@ class Pipeline:
         self._poisson_gauss = dataset_poisson.DatasetGauss(self._grids)
         self._poisson_sine = dataset_poisson.DatasetSin(self._grids)
 
-        self._masks_eval = [dataset_util.MaskerRandom(i / 10) for i in range(10)]
-        self._masks_train = [dataset_util.MaskerRandom(i) for i in [0.3, 0.5, 0.9]]
+        self._masks_eval = [
+            dataset_util.MaskerRandom.from_min_max(
+                intensity_min=i / 10, intensity_max=i / 10 + 0.1
+            )
+            for i in range(10)
+        ]
+        self._masks_train = [
+            dataset_util.MaskerRandom.from_min_max(
+                intensity_min=0.0, intensity_max=1.0
+            ),
+            dataset_util.MaskerRandom.from_min_max(
+                intensity_min=0.0, intensity_max=0.5
+            ),
+            dataset_util.MaskerRandom.from_min_max(
+                intensity_min=0.5, intensity_max=1.0
+            ),
+            dataset_util.MaskerRandom.from_min_max(
+                intensity_min=0.25, intensity_max=0.75
+            ),
+        ]
 
     def build(self) -> None:
         for dataset_raw in [self._poisson_gauss, self._poisson_sine]:
@@ -48,8 +66,13 @@ class Pipeline:
     def train(self) -> dict[str, T_NETWORK]:
         evals, trains = self._splits_mask_single(
             self._poisson_sine,
-            masks_eval=[dataset_util.MaskerRandom(i) for i in [0.0, 0.3, 0.6, 0.9]],
-            masks_train=[dataset_util.MaskerRandom(i) for i in [0.5]],
+            masks_eval=[
+                self._masks_eval[0],
+                self._masks_eval[3],
+                self._masks_eval[6],
+                self._masks_eval[9],
+            ],
+            masks_train=self._masks_train,
         )
         datasets_eval = [ds.dataset for ds in evals]
 
