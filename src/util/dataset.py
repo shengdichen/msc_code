@@ -133,7 +133,28 @@ class MaskerRandom(Masker):
         self._intensity_spread = intensity_spread
         self._rng = np.random.default_rng(seed=seed)
 
-        self._name = f"random_{self._intensity:.2}"
+        self._name = (
+            f"random"
+            "_"
+            f"{self._intensity-self._intensity_spread:.2}"
+            "_"
+            f"{self._intensity+self._intensity_spread:.2}"
+        )
+
+    @classmethod
+    def from_min_max(
+        cls,
+        intensity_min: float = 0.4,
+        intensity_max: float = 0.6,
+        value_mask: float = 0.5,
+        seed: typing.Optional[int] = None,
+    ) -> "MaskerRandom":
+        return cls(
+            intensity=(intensity_max + intensity_min) / 2,
+            intensity_spread=(intensity_max - intensity_min) / 2,
+            value_mask=value_mask,
+            seed=seed,
+        )
 
     def as_name(self) -> str:
         return self._name
