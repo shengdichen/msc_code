@@ -365,6 +365,15 @@ class DatasetPoissonMaskedSolution:
 
         return self._dataset
 
+    def remake(
+        self,
+        n_instances: int,
+    ) -> typing.Callable[[], T_DATASET]:
+        def f() -> T_DATASET:
+            return self.make(self._dataset_raw.as_dataset(n_instances))
+
+        return f
+
     def _normalize(
         self, dataset: torch.utils.data.dataset.TensorDataset
     ) -> torch.utils.data.dataset.TensorDataset:

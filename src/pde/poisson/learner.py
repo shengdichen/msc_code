@@ -151,10 +151,11 @@ class LearnerPoissonFNOMaskedSolution(LearnerPoissonFourier):
 
     def train(
         self,
-        dataset: T_DATASET,
+        dataset: typing.Union[T_DATASET, typing.Callable[[], T_DATASET]],
         batch_size: int = 30,
         n_epochs: int = 1001,
         freq_eval: int = 100,
+        freq_remake_dataset: int = 200,
         datasets_eval: typing.Optional[typing.Sequence[T_DATASET]] = None,
     ) -> None:
         optimizer = torch.optim.Adam(self._network.parameters())
@@ -167,10 +168,16 @@ class LearnerPoissonFNOMaskedSolution(LearnerPoissonFourier):
         if (n_epochs % freq_eval) == 0:
             n_epochs += 1  # one extra final eval report
 
+        ds = dataset
         for epoch in tqdm(range(n_epochs)):
             self._network.train()
             mse_abs_all, mse_rel_all = [], []
-            for __, rhss_theirs, rhss_ours in self.iterate_dataset(dataset, batch_size):
+
+            if callable(dataset) and epoch % freq_remake_dataset == 0:
+                logger.info("remaking training dataset")
+                ds = dataset()
+
+            for __, rhss_theirs, rhss_ours in self.iterate_dataset(ds, batch_size):
                 dst = distance.Distance(rhss_theirs, rhss_ours)
                 mse_abs = dst.mse()
                 mse_abs.backward()

@@ -36,6 +36,12 @@ class Pipeline:
             )
             for i in range(10)
         ]
+        self._masks_eval_train = [
+            self._masks_eval[0],
+            self._masks_eval[3],
+            self._masks_eval[6],
+            self._masks_eval[9],
+        ]
         self._masks_train = [
             dataset_util.MaskerRandom.from_min_max(
                 intensity_min=0.0, intensity_max=1.0
@@ -63,22 +69,33 @@ class Pipeline:
                 base_dir=DEFINITION.BIN_DIR / "poisson",
             )
 
+    def train_adhoc(self) -> dict[str, T_NETWORK]:
+        evals, trains = self._splits_mask_single(
+            self._poisson_sine,
+            masks_eval=self._masks_eval_train,
+            masks_train=self._masks_train,
+        )
+        return self._train(trains, evals, use_adhoc_train=True)
+
     def train(self) -> dict[str, T_NETWORK]:
         evals, trains = self._splits_mask_single(
             self._poisson_sine,
-            masks_eval=[
-                self._masks_eval[0],
-                self._masks_eval[3],
-                self._masks_eval[6],
-                self._masks_eval[9],
-            ],
+            masks_eval=self._masks_eval_train,
             masks_train=self._masks_train,
         )
+        return self._train(trains, evals, use_adhoc_train=False)
+
+    def _train(
+        self,
+        trains: typing.Sequence[dataset_poisson.DatasetPoissonMaskedSolution],
+        evals: typing.Sequence[dataset_poisson.DatasetPoissonMaskedSolution],
+        use_adhoc_train: bool = False,
+    ) -> dict[str, T_NETWORK]:
         datasets_eval = [ds.dataset for ds in evals]
 
-        networks, network_factory = {}, factory.Networks()
+        networks = {}
         for train in trains:
-            for network, name_network in network_factory.networks(
+            for network, name_network in factory.Networks().networks(
                 dataset_poisson.DatasetPoissonMaskedSolution.N_CHANNELS_LHS,
                 dataset_poisson.DatasetPoissonMaskedSolution.N_CHANNELS_RHS,
             ):
@@ -86,15 +103,21 @@ class Pipeline:
                     DEFINITION.BIN_DIR / "poisson" / f"{train.name}"
                     "--"
                     f"{name_network}"
-                    ".pth"
                 )
+                if use_adhoc_train:
+                    path = pathlib.Path(f"{str(path)}--adhoc")
+                path = pathlib.Path(f"{str(path)}.pth")
                 if not path.exists():
                     logger.info(f"training> {name_network} [{path}]")
                     learner = learner_poisson.LearnerPoissonFNOMaskedSolution(
                         self._grids, network
                     )
                     learner.train(
-                        train.dataset,
+                        (
+                            train.remake(self._n_instances_train)
+                            if use_adhoc_train
+                            else train.dataset
+                        ),
                         n_epochs=1001,
                         batch_size=30,
                         datasets_eval=datasets_eval,
@@ -197,6 +220,7 @@ def main() -> None:
     pipeline = Pipeline()
     pipeline.build()
     pipeline.train()
+    pipeline.train_adhoc()
     pipeline.eval_poisson_single()
 
 
