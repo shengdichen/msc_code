@@ -201,13 +201,14 @@ class LearnerPoissonFNOMaskedSolution(LearnerPoissonFourier):
     def eval(
         self,
         dataset: T_DATASET,
+        batch_size: int = 30,
         print_result: bool = False,
     ) -> float:
         mse_abs_all, mse_rel_all = [], []
         self._network.eval()
         with torch.no_grad():
             for __, rhss_theirs, rhss_ours in self.iterate_dataset(
-                dataset, batch_size=30
+                dataset, batch_size=batch_size
             ):
                 dst = distance.Distance(rhss_ours, rhss_theirs)
                 mse_abs_all.append(dst.mse().item())

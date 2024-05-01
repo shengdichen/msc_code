@@ -271,9 +271,10 @@ class DatasetPoissonMaskedSolution:
         dataset_raw: DatasetPoisson2d,
         mask: dataset_util.Masker,
     ):
-        self._coords = grids.coords_as_mesh_torch()
-        self._cos_coords = grids.cos_coords_as_mesh_torch()
-        self._sin_coords = grids.sin_coords_as_mesh_torch()
+        self._grids = grids
+        self._coords = self._grids.coords_as_mesh_torch()
+        self._cos_coords = self._grids.cos_coords_as_mesh_torch()
+        self._sin_coords = self._grids.sin_coords_as_mesh_torch()
 
         self._dataset_raw = dataset_raw
         self._mask = mask
@@ -281,7 +282,6 @@ class DatasetPoissonMaskedSolution:
 
         self._normalizer: dataset_util.Normalizer
         self._dataset: T_DATASET
-        self._putil = plot.PlotUtil(grids)
 
     @property
     def name(self) -> str:
@@ -397,14 +397,15 @@ class DatasetPoissonMaskedSolution:
             2, n_instances, figsize=(10, 7.3), dpi=200, subplot_kw={"aspect": 1.0}
         )
         colormap = mpl.colormaps["viridis"]
+        putil = plot.PlotUtil(self._grids)
 
         for i, (lhss, rhss) in enumerate(dataset):
             solution_unmasked, solution_masked = rhss[:, :, 0], lhss[:, :, 0]
             ax_unmasked, ax_masked = axs_unmasked[i], axs_masked[i]
             ax_unmasked.set_title(f"$u_{i+1}$")
             ax_masked.set_title(f"$u_{i+1}$ masked")
-            self._putil.plot_2d(ax_unmasked, solution_unmasked, colormap=colormap)
-            self._putil.plot_2d(ax_masked, solution_masked, colormap=colormap)
+            putil.plot_2d(ax_unmasked, solution_unmasked, colormap=colormap)
+            putil.plot_2d(ax_masked, solution_masked, colormap=colormap)
             if i == n_instances - 1:
                 break
         return fig

@@ -3,7 +3,6 @@ import pathlib
 import random
 import typing
 
-import matplotlib as mpl
 import matplotlib.pyplot as plt
 import torch
 
@@ -219,9 +218,9 @@ def main() -> None:
 
     pipeline = Pipeline()
     pipeline.build()
-    pipeline.train()
+    # pipeline.train()
     pipeline.train_adhoc()
-    pipeline.eval_poisson_single()
+    # pipeline.eval_poisson_single()
 
 
 if __name__ == "__main__":
