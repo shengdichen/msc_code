@@ -5,6 +5,7 @@ import torch
 
 from src.numerics import equality, grid
 from src.pde.heat import dataset as heat_ds
+from src.pde.wave import dataset as wave_ds
 from src.pde.poisson import dataset as poisson_ds
 from src.util import dataset
 
@@ -594,6 +595,72 @@ class TestDatasetHeat:
                     [0.0000e00, 0.0000e00, 0.0000e00, 0.0000e00, 0.0000e00],
                     [1.0743e-08, -1.4643e-01, 0.0000e00, 1.4643e-01, -1.0743e-08],
                     [-1.0564e-14, 1.0743e-08, 0.0000e00, -1.0743e-08, 1.0564e-14],
+                ],
+            ),
+        ).is_close()
+
+
+class TestDatasetWave:
+    def _size_grid(self) -> int:
+        return 5
+
+    def _grid(self) -> grid.Grids:
+        return grid.Grids(
+            [
+                grid.Grid.from_start_end(self._size_grid(), start=-1.0, end=1.0),
+                grid.Grid.from_start_end(self._size_grid(), start=-1.0, end=1.0),
+            ],
+        )
+
+    def test_raw(self):
+        u_start, u_end = wave_ds.DatasetWave(self._grid()).solve_instance()
+        assert equality.EqualityTorch(
+            u_start,
+            torch.tensor(
+                [
+                    [5.0613e-15, -2.7904e-08, 0.0000e00, 2.7904e-08, -5.0613e-15],
+                    [2.6620e-08, -6.6962e-02, 0.0000e00, 6.6962e-02, -2.6620e-08],
+                    [0.0000e00, 0.0000e00, 0.0000e00, 0.0000e00, 0.0000e00],
+                    [-2.6620e-08, 6.6962e-02, 0.0000e00, -6.6962e-02, 2.6620e-08],
+                    [-5.0613e-15, 2.7904e-08, 0.0000e00, -2.7904e-08, 5.0613e-15],
+                ],
+            ),
+        ).is_close()
+        assert equality.EqualityTorch(
+            u_end,
+            torch.tensor(
+                [
+                    [5.0605e-15, -2.7901e-08, 0.0000e00, 2.7901e-08, -5.0605e-15],
+                    [2.6616e-08, -6.6950e-02, 0.0000e00, 6.6950e-02, -2.6616e-08],
+                    [0.0000e00, 0.0000e00, 0.0000e00, 0.0000e00, 0.0000e00],
+                    [-2.6616e-08, 6.6950e-02, 0.0000e00, -6.6950e-02, 2.6616e-08],
+                    [-5.0605e-15, 2.7901e-08, 0.0000e00, -2.7901e-08, 5.0605e-15],
+                ],
+            ),
+        ).is_close()
+
+        u_start, u_end = heat_ds.DatasetHeat(self._grid()).solve_instance()
+        assert equality.EqualityTorch(
+            u_start,
+            torch.tensor(
+                [
+                    [-8.4554e-14, -8.9835e-09, 0.0000e00, 8.9835e-09, 8.4554e-14],
+                    [-8.9835e-09, 1.0989e00, 0.0000e00, -1.0989e00, 8.9835e-09],
+                    [0.0000e00, 0.0000e00, 0.0000e00, 0.0000e00, 0.0000e00],
+                    [8.9835e-09, -1.0989e00, 0.0000e00, 1.0989e00, -8.9835e-09],
+                    [8.4554e-14, 8.9835e-09, 0.0000e00, -8.9835e-09, -8.4554e-14],
+                ],
+            ),
+        ).is_close()
+        assert equality.EqualityTorch(
+            u_end,
+            torch.tensor(
+                [
+                    [-1.8745e-15, -1.9537e-08, 0.0000e00, 1.9537e-08, 1.8745e-15],
+                    [-1.9537e-08, 3.9205e-01, 0.0000e00, -3.9205e-01, 1.9537e-08],
+                    [0.0000e00, 0.0000e00, 0.0000e00, 0.0000e00, 0.0000e00],
+                    [1.9537e-08, -3.9205e-01, 0.0000e00, 3.9205e-01, -1.9537e-08],
+                    [1.8745e-15, 1.9537e-08, 0.0000e00, -1.9537e-08, -1.8745e-15],
                 ],
             ),
         ).is_close()
