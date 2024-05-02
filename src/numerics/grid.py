@@ -27,6 +27,10 @@ class Grid:
             f"({self._start}, {self._end}, {self._stepsize}, {self._n_pts})"
         )
 
+    @classmethod
+    def from_start_end(cls, n_pts: int, start: float, end: float) -> "Grid":
+        return cls(n_pts, (end - start) / (n_pts - 1), start)
+
     @property
     def n_pts(self) -> int:
         return self._n_pts
