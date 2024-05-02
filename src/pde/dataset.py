@@ -100,6 +100,8 @@ class DatasetPDE2d(DatasetPDE):
             )
 
         super().__init__(grids)
+
+        self._coords_x1, self._coords_x2 = self._grids.coords_as_mesh_torch()
         self._putil = plot.PlotUtil(self._grids)
 
     @abc.abstractmethod
