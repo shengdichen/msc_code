@@ -1,9 +1,13 @@
-import torch
-import numpy as np
+import pathlib
 
-from src.definition import T_DATASET
+import matplotlib.pyplot as plt
+import numpy as np
+import torch
+
+from src.definition import DEFINITION, T_DATASET
 from src.numerics import grid
 from src.pde.dataset import DatasetPDE2d
+from src.util import plot
 
 
 class DatasetWave(DatasetPDE2d):
@@ -47,8 +51,10 @@ class DatasetWave(DatasetPDE2d):
             torch.sin(k_2 * torch.pi * self._coords_x2.unsqueeze(-1).unsqueeze(-1)),
         )
 
-    def subdir_bin(self) -> str:
-        return "wave"
+    def subdir_bin(self) -> pathlib.Path:
+        p = DEFINITION.BIN_DIR / "wave"
+        p.mkdir(exist_ok=True)
+        return p
 
     def as_name(self) -> str:
         return self._name
@@ -74,3 +80,40 @@ class DatasetWave(DatasetPDE2d):
             starts.append(u_start)
             ends.append(u_end)
         return torch.utils.data.TensorDataset(torch.stack(starts), torch.stack(ends))
+
+    def plot_animation(self, grid_time: grid.GridTime) -> None:
+        fig, ax = plt.subplots(figsize=(6, 6), dpi=200)
+
+        p = plot.PlotAnimation2D(grid_time)
+        p.plot(
+            [
+                self.solve_at_time(time).detach().numpy()
+                for time in grid_time.step(with_start=True)
+            ],
+            fig,
+            ax,
+            save_as=self.subdir_bin() / f"samples_{self._n_samples}.mp4",
+        )
+
+        plt.close(fig)
+
+    @staticmethod
+    def plot_animation_samples() -> None:
+        torch.manual_seed(42)
+
+        grids = grid.Grids(
+            [
+                grid.Grid.from_start_end(64, start=0.0, end=1.0),
+                grid.Grid.from_start_end(64, start=0.0, end=1.0),
+            ],
+        )
+        grid_time = grid.GridTime(n_pts=100, stepsize=0.1)
+
+        for n_instances in [1, 2, 4, 8, 16]:
+            DatasetWave(grids, n_samples_per_instance=n_instances).plot_animation(
+                grid_time
+            )
+
+
+if __name__ == "__main__":
+    DatasetWave.plot_animation_samples()
