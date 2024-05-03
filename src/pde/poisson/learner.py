@@ -1,15 +1,17 @@
 import abc
 import collections
 import logging
+import pathlib
 import typing
 
 import matplotlib as mpl
 import numpy as np
 import torch
 from matplotlib import pyplot as plt
+from tqdm import tqdm
 
 from src.deepl import cno, fno_2d, network
-from src.definition import DEFINITION
+from src.definition import DEFINITION, T_DATASET, T_NETWORK
 from src.numerics import distance, grid, multidiff
 from src.pde.poisson.dataset import SolverPoisson
 from src.util import plot
@@ -19,15 +21,10 @@ logger = logging.getLogger(__name__)
 
 
 class LearnerPoissonFourier:
-    def __init__(
-        self,
-        grid_x1: grid.Grid,
-        grid_x2: grid.Grid,
-        network_fno: torch.nn.Module,
-    ):
+    def __init__(self, grids: grid.Grids, network_fno: T_NETWORK):
         self._device = DEFINITION.device_preferred
 
-        self._grids = grid.Grids([grid_x1, grid_x2])
+        self._grids = grids
         self._network = network_fno.to(self._device)
 
     @abc.abstractmethod
@@ -146,34 +143,46 @@ class LearnerPoissonFourier:
 
 
 class LearnerPoissonFNOMaskedSolution(LearnerPoissonFourier):
-    def __init__(
-        self, grid_x1: grid.Grid, grid_x2: grid.Grid, network_fno: fno_2d.FNO2d
-    ):
-        super().__init__(grid_x1, grid_x2, network_fno)
+    def __init__(self, grids: grid.Grids, network_fno: fno_2d.FNO2d):
+        super().__init__(grids, network_fno)
 
     def as_name(self) -> str:
         return "fno-2d"
 
     def train(
         self,
-        dataset: torch.utils.data.dataset.TensorDataset,
-        batch_size: int = 2,
-        n_epochs: int = 2001,
+        dataset: typing.Union[T_DATASET, typing.Callable[[], T_DATASET]],
+        batch_size: int = 30,
+        n_epochs: int = 1001,
         freq_eval: int = 100,
-        datasets_eval: typing.Optional[
-            typing.Sequence[torch.utils.data.dataset.TensorDataset]
-        ] = None,
+        freq_remake_dataset: int = 200,
+        datasets_eval: typing.Optional[typing.Sequence[T_DATASET]] = None,
     ) -> None:
-        optimizer = torch.optim.Adam(self._network.parameters(), weight_decay=1e-5)
-        scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=50, gamma=0.5)
+        optimizer = torch.optim.Adam(self._network.parameters())
+        scheduler = torch.optim.lr_scheduler.StepLR(
+            optimizer,
+            step_size=50,
+            gamma=0.5,  # more conservative decay than default
+        )
 
-        for epoch in range(n_epochs):
+        if (n_epochs % freq_eval) == 0:
+            n_epochs += 1  # one extra final eval report
+
+        ds = dataset
+        for epoch in tqdm(range(n_epochs)):
+            self._network.train()
             mse_abs_all, mse_rel_all = [], []
-            for __, rhss_theirs, rhss_ours in self.iterate_dataset(dataset, batch_size):
+
+            if callable(dataset) and epoch % freq_remake_dataset == 0:
+                logger.info("remaking training dataset")
+                ds = dataset()
+
+            for __, rhss_theirs, rhss_ours in self.iterate_dataset(ds, batch_size):
                 dst = distance.Distance(rhss_theirs, rhss_ours)
                 mse_abs = dst.mse()
                 mse_abs.backward()
                 optimizer.step()
+                optimizer.zero_grad()
 
                 mse_abs_all.append(mse_abs.item())
                 mse_rel_all.append(dst.mse_relative().item())
@@ -182,7 +191,7 @@ class LearnerPoissonFNOMaskedSolution(LearnerPoissonFourier):
             if epoch % freq_eval == 0:
                 print(
                     "train> (mse, mse%): "
-                    f"{np.average(mse_abs_all)}, {np.average(mse_rel_all)}"
+                    f"{np.average(mse_abs_all):.4}, {np.average(mse_rel_all):.4%}"
                 )
                 if datasets_eval:
                     for dataset_eval in datasets_eval:
@@ -191,23 +200,23 @@ class LearnerPoissonFNOMaskedSolution(LearnerPoissonFourier):
 
     def eval(
         self,
-        dataset: torch.utils.data.dataset.TensorDataset,
+        dataset: T_DATASET,
+        batch_size: int = 30,
         print_result: bool = False,
     ) -> float:
         mse_abs_all, mse_rel_all = [], []
+        self._network.eval()
         with torch.no_grad():
-            self._network.eval()
             for __, rhss_theirs, rhss_ours in self.iterate_dataset(
-                dataset, batch_size=30
+                dataset, batch_size=batch_size
             ):
                 dst = distance.Distance(rhss_ours, rhss_theirs)
                 mse_abs_all.append(dst.mse().item())
                 mse_rel_all.append(dst.mse_relative().item())
 
-        self._network.train()
         mse_abs_avg, mse_rel_avg = np.average(mse_abs_all), np.average(mse_rel_all)
         if print_result:
-            print(f"eval> (mse, mse%): {mse_abs_avg}, {mse_rel_avg}")
+            print(f"eval> (mse, mse%): {mse_abs_avg:.4}, {mse_rel_avg:.4%}")
 
         return mse_rel_avg.item()
 
@@ -219,7 +228,7 @@ class LearnerPoissonFNOMaskedSolution(LearnerPoissonFourier):
         with torch.no_grad():
             self._network.eval()
             for __, rhss_theirs, rhss_ours in self.iterate_dataset(
-                dataset, batch_size=1
+                dataset, batch_size=30
             ):
                 mse_rel_all.append(
                     distance.Distance(rhss_ours, rhss_theirs).mse_relative().item()
@@ -229,14 +238,12 @@ class LearnerPoissonFNOMaskedSolution(LearnerPoissonFourier):
         return (np.average(mse_rel_all),)
 
     def _extract_u(self, rhss: torch.Tensor) -> torch.Tensor:
-        return rhss[0, :, :, 0]
+        return rhss[0, 0, :, :]
 
 
 class LearnerPoissonFNOMaskedSolutionSource(LearnerPoissonFourier):
-    def __init__(
-        self, grid_x1: grid.Grid, grid_x2: grid.Grid, network_fno: fno_2d.FNO2d
-    ):
-        super().__init__(grid_x1, grid_x2, network_fno)
+    def __init__(self, grids: grid.Grids, network_fno: fno_2d.FNO2d):
+        super().__init__(grids, network_fno)
 
     def as_name(self) -> str:
         return "fno-2d"
