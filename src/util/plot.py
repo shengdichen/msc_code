@@ -1,8 +1,13 @@
+import pathlib
 import typing
 
 import matplotlib as mpl
+from matplotlib import animation
+import numpy as np
 import torch
 from matplotlib import pyplot as plt
+from mpl_toolkits.axes_grid1 import make_axes_locatable
+from tqdm import tqdm
 
 from src.numerics import grid
 from src.util.saveload import SaveloadImage
@@ -109,5 +114,40 @@ class PlotFrame:
         )
 
 
-class PlotMovie:
-    pass
+class PlotAnimation2D:
+    def __init__(self, grid_time: grid.GridTime):
+        self._grid_time = grid_time
+        self._times = self._grid_time.step(with_start=True)
+
+    def plot(
+        self,
+        matrices: typing.Sequence[np.ndarray],
+        fig: mpl.figure.Figure,
+        ax: mpl.axes.Axes,
+        save_as: typing.Optional[pathlib.Path] = None,
+    ) -> animation.FuncAnimation:
+        image = ax.matshow(matrices[0], cmap="jet")
+
+        cax = make_axes_locatable(ax).append_axes("right", size="5%", pad=0.05)
+        fig.colorbar(image, cax=cax, orientation="vertical")
+
+        def animate(frame: int):
+            ax.set_title(
+                f"time-step {self._grid_time.timestep_formatted(frame)}"
+                "/"
+                f"{self._grid_time.n_pts}"
+                f" [$ t = {self._times[frame]:.4f} $] "
+            )
+            image.set_data(matrices[frame])
+            return (image,)
+
+        anm = animation.FuncAnimation(
+            fig,
+            animate,
+            frames=tqdm(range(self._grid_time.n_pts)),
+            interval=100,
+            blit=True,
+        )
+        if save_as:
+            anm.save(save_as)
+        return anm
