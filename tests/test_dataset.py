@@ -613,7 +613,9 @@ class TestDatasetWave:
         )
 
     def test_raw(self):
-        u_start, u_end = wave_ds.DatasetWave(self._grid()).solve_instance()
+        u_start, u_end = wave_ds.DatasetWave(
+            self._grid(), grid.GridTime(1, stepsize=0.01, start=0.0)
+        ).solve_instance()
         assert equality.EqualityTorch(
             u_start,
             torch.tensor(

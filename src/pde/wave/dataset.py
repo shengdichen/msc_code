@@ -1,5 +1,3 @@
-import pathlib
-
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
@@ -14,17 +12,16 @@ class DatasetWave(DatasetPDE2d):
     def __init__(
         self,
         grids: grid.Grids,
+        grid_time: grid.GridTime,
         constant_r: float = 0.85,
         constant_c: float = 0.1,
-        t_start: float = 0.0,
-        t_end: float = 0.01,
         sample_weight_min: float = -1.0,
         sample_weight_max: float = 1.0,
         n_samples_per_instance=4,
     ):
-        super().__init__(grids)
+        super().__init__(grids, base_dir=DEFINITION.BIN_DIR / "wave")
+        self._grid_time = grid_time
 
-        self._t_start, self._t_end = t_start, t_end
         self._name = "wave-sum_of_sine"
 
         self._n_samples = n_samples_per_instance
@@ -51,16 +48,14 @@ class DatasetWave(DatasetPDE2d):
             torch.sin(k_2 * torch.pi * self._coords_x2.unsqueeze(-1).unsqueeze(-1)),
         )
 
-    def subdir_bin(self) -> pathlib.Path:
-        p = DEFINITION.BIN_DIR / "wave"
-        p.mkdir(exist_ok=True)
-        return p
-
     def as_name(self) -> str:
         return self._name
 
     def solve_instance(self) -> tuple[torch.Tensor, torch.Tensor]:
-        return self.solve_at_time(self._t_start), self.solve_at_time(self._t_end)
+        return (
+            self.solve_at_time(self._grid_time.start),
+            self.solve_at_time(self._grid_time.end),
+        )
 
     def solve_at_time(self, time: float) -> torch.Tensor:
         result = torch.sum(
@@ -81,18 +76,18 @@ class DatasetWave(DatasetPDE2d):
             ends.append(u_end)
         return torch.utils.data.TensorDataset(torch.stack(starts), torch.stack(ends))
 
-    def plot_animation(self, grid_time: grid.GridTime) -> None:
+    def plot_animation(self) -> None:
         fig, ax = plt.subplots(figsize=(6, 6), dpi=200)
 
-        p = plot.PlotAnimation2D(grid_time)
+        p = plot.PlotAnimation2D(self._grid_time)
         p.plot(
             [
                 self.solve_at_time(time).detach().numpy()
-                for time in grid_time.step(with_start=True)
+                for time in self._grid_time.step(with_start=True)
             ],
             fig,
             ax,
-            save_as=self.subdir_bin() / f"samples_{self._n_samples}.mp4",
+            save_as=self._base_dir / f"samples_{self._n_samples}.mp4",
         )
 
         plt.close(fig)
@@ -110,9 +105,9 @@ class DatasetWave(DatasetPDE2d):
         grid_time = grid.GridTime(n_pts=100, stepsize=0.1)
 
         for n_instances in [1, 2, 4, 8, 16]:
-            DatasetWave(grids, n_samples_per_instance=n_instances).plot_animation(
-                grid_time
-            )
+            DatasetWave(
+                grids, grid_time, n_samples_per_instance=n_instances
+            ).plot_animation()
 
 
 if __name__ == "__main__":
