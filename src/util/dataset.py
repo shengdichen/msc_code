@@ -136,9 +136,9 @@ class MaskerRandom(Masker):
         self._name = (
             f"random"
             "_"
-            f"{self._intensity-self._intensity_spread:.2}"
+            f"{(self._intensity - self._intensity_spread):.2}"
             "_"
-            f"{self._intensity+self._intensity_spread:.2}"
+            f"{(self._intensity + self._intensity_spread):.2}"
         )
 
     @classmethod
@@ -176,12 +176,7 @@ class MaskerRandom(Masker):
         )
 
         indexes_full = np.array(
-            [
-                idxs
-                for idxs in itertools.product(
-                    *(range(len_dim) for len_dim in full.shape)
-                )
-            ]
+            list(itertools.product(*(range(len_dim) for len_dim in full.shape)))
         )
         return self._rng.choice(indexes_full, n_gridpts_to_mask, replace=False)
 
