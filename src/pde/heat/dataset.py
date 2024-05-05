@@ -3,11 +3,12 @@ import torch
 
 from src.definition import DEFINITION, T_DATASET
 from src.numerics import grid
-from src.pde.dataset import DatasetPDE2d
+from src.pde import dataset
+from src.util import dataset as dataset_util
 from src.util import plot
 
 
-class DatasetHeat(DatasetPDE2d):
+class DatasetHeat(dataset.DatasetPDE2d):
     def __init__(
         self,
         grids: grid.Grids,
@@ -86,6 +87,14 @@ class DatasetHeat(DatasetPDE2d):
             DatasetHeat(
                 grids, grid_time, n_samples_per_instance=n_instances
             ).plot_animation()
+
+
+class DatasetMaskedSingleHeat(dataset.DatasetMaskedSingle):
+    N_CHANNELS_LHS = 8
+    N_CHANNELS_RHS = 1
+
+    def __init__(self, dataset_raw: dataset.DatasetPDE2d, mask: dataset_util.Masker):
+        super().__init__(dataset_raw, mask, mask_idx=1)
 
 
 if __name__ == "__main__":
