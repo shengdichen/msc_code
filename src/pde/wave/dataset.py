@@ -50,9 +50,6 @@ class DatasetWave(DatasetPDE2d):
             torch.sin(k_2 * torch.pi * self._coords_x2.unsqueeze(-1).unsqueeze(-1)),
         )
 
-    def as_name(self) -> str:
-        return self._name
-
     def solve_instance(self) -> tuple[torch.Tensor, torch.Tensor]:
         return (
             self.solve_at_time(self._grid_time.start),
@@ -115,9 +112,10 @@ class DatasetWave(DatasetPDE2d):
 class DatasetMaskedSingleWave(dataset.DatasetMaskedSingle):
     N_CHANNELS_LHS = 8
     N_CHANNELS_RHS = 1
+    MASK_IDX = 1
 
     def __init__(self, dataset_raw: dataset.DatasetPDE2d, mask: dataset_util.Masker):
-        super().__init__(dataset_raw, mask, mask_idx=1)
+        super().__init__(dataset_raw, mask)
 
 
 if __name__ == "__main__":

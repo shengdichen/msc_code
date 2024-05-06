@@ -1,4 +1,5 @@
 import abc
+import collections
 import logging
 import pathlib
 import typing
@@ -53,20 +54,41 @@ class DatasetPDE:
 
         self._dataset: T_DATASET
 
+        self._name: str
         self._base_dir = base_dir
         self._base_dir.mkdir(exist_ok=True)
         self._path: pathlib.Path
 
+    @property
+    def grids(self) -> grid.Grids:
+        return self._grids
+
+    @property
+    def dataset(self) -> T_DATASET:
+        return self._dataset
+
+    @property
+    def name(self) -> str:
+        return self._name
+
+    @property
+    def base_dir(self) -> pathlib.Path:
+        return self._base_dir
+
+    @property
+    def path(self) -> pathlib.Path:
+        return self._path
+
     def load_full(self, n_instances: int) -> T_DATASET:
-        self._path = self._base_dir / f"{self.as_name()}-full_{n_instances}"
+        self._path = self._base_dir / f"{self._name}-full_{n_instances}"
         return self._load(n_instances)
 
     def load_eval(self, n_instances: int) -> T_DATASET:
-        self._path = self._base_dir / f"{self.as_name()}-eval_{n_instances}"
+        self._path = self._base_dir / f"{self._name}-eval_{n_instances}"
         return self._load(n_instances)
 
     def load_train(self, n_instances: int) -> T_DATASET:
-        self._path = self._base_dir / f"{self.as_name()}-train_{n_instances}"
+        self._path = self._base_dir / f"{self._name}-train_{n_instances}"
         return self._load(n_instances)
 
     def _load(self, n_instances: int) -> T_DATASET:
@@ -86,8 +108,8 @@ class DatasetPDE:
         n_instances_train: int,
     ) -> tuple[T_DATASET, T_DATASET]:
         path_eval, path_train = (
-            self._base_dir / f"{self.as_name()}-eval_{n_instances_eval}.pth",
-            self._base_dir / f"{self.as_name()}-train_{n_instances_train}.pth",
+            self._base_dir / f"{self._name}-eval_{n_instances_eval}.pth",
+            self._base_dir / f"{self._name}-train_{n_instances_train}.pth",
         )
         if not (path_eval.exists() and path_train.exists()):
             ds_eval, ds_train = DatasetSplits(
@@ -99,36 +121,18 @@ class DatasetPDE:
             torch.save(ds_train, path_train)
         return torch.load(path_eval), torch.load(path_train)
 
-    @property
-    def base_dir(self) -> pathlib.Path:
-        return self._base_dir
-
-    @property
-    def path(self) -> pathlib.Path:
-        return self._path
-
-    @property
-    def dataset(self) -> T_DATASET:
-        return self._dataset
-
-    @property
-    def grids(self) -> grid.Grids:
-        return self._grids
-
     @abc.abstractmethod
     def as_dataset(self, n_instances: int) -> T_DATASET:
         raise NotImplementedError
 
-    def solve(self, n_instances: int) -> typing.Iterable[typing.Iterable[torch.Tensor]]:
+    def solve(
+        self, n_instances: int
+    ) -> collections.abc.Generator[typing.Iterable[torch.Tensor]]:
         for __ in range(n_instances):
             yield self.solve_instance()
 
     @abc.abstractmethod
     def solve_instance(self) -> typing.Iterable[torch.Tensor]:
-        raise NotImplementedError
-
-    @abc.abstractmethod
-    def as_name(self) -> str:
         raise NotImplementedError
 
 
@@ -150,10 +154,6 @@ class DatasetPDE2d(DatasetPDE):
 
     @abc.abstractmethod
     def solve_instance(self) -> typing.Iterable[torch.Tensor]:
-        raise NotImplementedError
-
-    @abc.abstractmethod
-    def as_name(self) -> str:
         raise NotImplementedError
 
 
@@ -180,16 +180,28 @@ class DatasetMasked:
 
         self._name: str
         self._base_dir = self._dataset_raw.base_dir
-        self._path_unmasked: pathlib.Path
+        self._path: pathlib.Path
+
+    @property
+    def dataset_masked(self) -> T_DATASET:
+        return self._dataset_masked
+
+    @property
+    def name(self) -> str:
+        return self._name
+
+    @property
+    def path(self) -> pathlib.Path:
+        return self._path
 
     def load_unmasked(self) -> None:
-        path = pathlib.Path(str(self._path_unmasked) + ".pth")
+        path = pathlib.Path(str(self._path) + "--unmasked.pth")
         if not path.exists():
-            logger.info(f"dataset/masked> making... [{path}]")
+            logger.info(f"dataset/masked> making unmasked... [{path}]")
             self.make_unmasked()
             torch.save(self._dataset_unmasked, path)
         else:
-            logger.info(f"dataset/masked> already done! [{path}]")
+            logger.info(f"dataset/masked> already done making unmasked! [{path}]")
             self._dataset_unmasked = torch.load(path)
 
     def make_unmasked(self) -> None:
@@ -206,6 +218,16 @@ class DatasetMasked:
             self._dataset_unmasked
         )
 
+    def load_masked(self) -> None:
+        path = pathlib.Path(str(self._path) + "--masked.pth")
+        if not path.exists():
+            logger.info(f"dataset/masked> masking... [{path}]")
+            self.mask()
+            torch.save(self._dataset_masked, path)
+        else:
+            logger.info(f"dataset/masked> already done masking! [{path}]")
+            self._dataset_masked = torch.load(path)
+
     @abc.abstractmethod
     def mask(self) -> None:
         raise NotImplementedError
@@ -214,40 +236,48 @@ class DatasetMasked:
     def remask(self) -> None:
         raise NotImplementedError
 
-    @property
-    def name(self) -> str:
-        return self._name
-
 
 class DatasetMaskedSingle(DatasetMasked):
-    def __init__(
-        self,
-        dataset_raw: DatasetPDE2d,
-        mask: dataset_util.Masker,
-        mask_idx: int,
-    ):
+    MASK_IDX: int
+
+    def __init__(self, dataset_raw: DatasetPDE2d, mask: dataset_util.Masker):
         super().__init__(dataset_raw, [mask])
 
         self._mask = mask
-        self._mask_idx = mask_idx
 
     def as_train(self, n_instances: int) -> None:
         self._dataset_raw.load_train(n_instances)
 
-        self._path_unmasked = (
+        self._name = f"{self._dataset_raw.path} train-{self._mask.as_name()}"
+        self._path = (
             self._base_dir / f"{self._dataset_raw.path}--train_{self._mask.as_name()}"
         )
         self.load_unmasked()
-        self.mask()
+        self.load_masked()
 
     def as_eval(self, n_instances: int) -> None:
         self._dataset_raw.load_eval(n_instances)
 
-        self._path_unmasked = (
+        self._name = f"{self._dataset_raw.name} eval-{self._mask.as_name()}"
+        self._path = (
             self._base_dir / f"{self._dataset_raw.path}--eval_{self._mask.as_name()}"
         )
         self.load_unmasked()
-        self.mask()
+        self.load_masked()
+
+    @classmethod
+    def evals_from_masks(
+        cls,
+        dataset_raw: DatasetPDE2d,
+        masks: dataset_util.Masker,
+        n_instances: int,
+    ) -> typing.Sequence["DatasetMaskedSingle"]:
+        evals = []
+        for mask in masks:
+            ds = cls(dataset_raw, mask)
+            ds.as_eval(n_instances)
+            evals.append(ds)
+        return evals
 
     def _assemble_unmasked(self) -> None:
         lhss, rhss = [], []
@@ -262,7 +292,7 @@ class DatasetMaskedSingle(DatasetMasked):
                     ]
                 )
             )
-            rhss.append(instance[self._mask_idx].unsqueeze(0))
+            rhss.append(instance[self.MASK_IDX].unsqueeze(0))
         self._dataset_unmasked = torch.utils.data.TensorDataset(
             torch.stack(lhss), torch.stack(rhss)
         )
@@ -272,9 +302,12 @@ class DatasetMaskedSingle(DatasetMasked):
             self._dataset_unmasked
         ).lhss_rhss
         for lhs in lhss:
-            lhs[self._mask_idx] = self._mask.mask(lhs[self._mask_idx])
+            lhs[self.MASK_IDX] = self._mask.mask(lhs[self.MASK_IDX])
         self._dataset_masked = torch.utils.data.TensorDataset(lhss, rhss)
 
     def remask(self) -> None:
+        # NOTE:
+        #   we intentionally do NOT auto-save remasked dataset
+
         logger.info(f"dataset/masked> remasking... [with {self._mask.as_name()}]")
         self.mask()
