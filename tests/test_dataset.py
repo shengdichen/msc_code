@@ -515,7 +515,9 @@ class TestDatasetPoisson:
         gr = self._grid()
 
         ds = poisson_ds.DatasetPoissonMaskedSolutionSource(gr).make(
-            poisson_ds.DatasetSin(gr, constant_factor=200).as_dataset(n_instances=2),
+            poisson_ds.DatasetSin(gr, constant_multiplier=200).as_dataset(
+                n_instances=2
+            ),
             dataset.MaskerRandom(
                 0.5, intensity_spread=0.0, value_mask=self._value_mask()
             ),
