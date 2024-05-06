@@ -2,7 +2,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import torch
 
-from src.definition import DEFINITION, T_DATASET
+from src.definition import DEFINITION
 from src.numerics import grid
 from src.pde import dataset
 from src.pde.dataset import DatasetPDE2d
@@ -66,14 +66,6 @@ class DatasetWave(DatasetPDE2d):
             dim=(-2, -1),
         )
         return result
-
-    def as_dataset(self, n_instances: int) -> T_DATASET:
-        starts, ends = [], []
-
-        for u_start, u_end in self.solve(n_instances):
-            starts.append(u_start)
-            ends.append(u_end)
-        return torch.utils.data.TensorDataset(torch.stack(starts), torch.stack(ends))
 
     def plot_animation(self) -> None:
         fig, ax = plt.subplots(figsize=(6, 6), dpi=200)

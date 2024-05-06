@@ -121,9 +121,15 @@ class DatasetPDE:
             torch.save(ds_train, path_train)
         return torch.load(path_eval), torch.load(path_train)
 
-    @abc.abstractmethod
     def as_dataset(self, n_instances: int) -> T_DATASET:
-        raise NotImplementedError
+        instances = list(self.solve(n_instances))
+        channels = [[] for __ in range(len(instances[0]))]
+        for instance in instances:
+            for channel, item in zip(channels, instance):
+                channel.append(item)
+        return torch.utils.data.TensorDataset(
+            *[torch.stack(channel) for channel in channels]
+        )
 
     def solve(
         self, n_instances: int
@@ -147,10 +153,6 @@ class DatasetPDE2d(DatasetPDE):
 
         self._coords_x1, self._coords_x2 = self._grids.coords_as_mesh_torch()
         self._putil = plot.PlotUtil(self._grids)
-
-    @abc.abstractmethod
-    def as_dataset(self, n_instances: int) -> T_DATASET:
-        raise NotImplementedError
 
     @abc.abstractmethod
     def solve_instance(self) -> typing.Iterable[torch.Tensor]:

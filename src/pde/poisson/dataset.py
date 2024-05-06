@@ -28,15 +28,6 @@ class DatasetPoisson2d(DatasetPDE2d):
     def __init__(self, grids):
         super().__init__(grids, base_dir=DEFINITION.BIN_DIR / "poisson")
 
-    def as_dataset(self, n_instances: int) -> T_DATASET:
-        solutions, sources = [], []
-        for solution, source in self.solve(n_instances):
-            solutions.append(solution)
-            sources.append(source)
-        return torch.utils.data.TensorDataset(
-            torch.stack(solutions), torch.stack(sources)
-        )
-
     @abc.abstractmethod
     def plot(self, set_title_upper: bool = True) -> mpl.figure.Figure:
         raise NotImplementedError
