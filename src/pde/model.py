@@ -43,6 +43,16 @@ class Model:
             logger.info(f"model> already done! [{path}]")
             self._network.load(path)
 
+    @property
+    def datasets_eval(self) -> typing.Sequence[dataset_pde.DatasetMaskedSingle]:
+        return self._datasets_eval
+
+    @datasets_eval.setter
+    def datasets_eval(
+        self, value: typing.Sequence[dataset_pde.DatasetMaskedSingle]
+    ) -> None:
+        self._datasets_eval = value
+
     def train(
         self,
         n_epochs: int = 1000,
