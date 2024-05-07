@@ -20,6 +20,7 @@ class DatasetWave(DatasetPDE2d):
         sample_weight_min: float = -1.0,
         sample_weight_max: float = 1.0,
         n_samples_per_instance=4,
+        reweight_samples: bool = True,
     ):
         super().__init__(grids, base_dir=DEFINITION.BIN_DIR / "wave")
         self._grid_time = grid_time
@@ -27,9 +28,12 @@ class DatasetWave(DatasetPDE2d):
         self._name = "wave-sum_of_sine"
 
         self._n_samples = n_samples_per_instance
-        self._weights_samples = torch.distributions.uniform.Uniform(
-            sample_weight_min, sample_weight_max
-        ).sample([n_samples_per_instance] * self._grids.n_dims)
+        self._sample_weight_min, self._sample_weight_max = (
+            sample_weight_min,
+            sample_weight_max,
+        )
+        self._weights_samples: torch.Tensor
+        self._reweight_samples = reweight_samples
 
         self._constant_r, self._constant_c = constant_r, constant_c
 
@@ -51,6 +55,10 @@ class DatasetWave(DatasetPDE2d):
         )
 
     def solve_instance(self) -> tuple[torch.Tensor, torch.Tensor]:
+        if self._reweight_samples:
+            self._weights_samples = torch.distributions.uniform.Uniform(
+                self._sample_weight_min, self._sample_weight_max
+            ).sample([self._n_samples] * self._grids.n_dims)
         return (
             self.solve_at_time(self._grid_time.start),
             self.solve_at_time(self._grid_time.end),
@@ -97,7 +105,10 @@ class DatasetWave(DatasetPDE2d):
 
         for n_instances in [1, 2, 4, 8, 16]:
             DatasetWave(
-                grids, grid_time, n_samples_per_instance=n_instances
+                grids,
+                grid_time,
+                n_samples_per_instance=n_instances,
+                reweight_samples=False,
             ).plot_animation()
 
 

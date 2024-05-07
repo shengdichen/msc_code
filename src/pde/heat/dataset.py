@@ -16,6 +16,7 @@ class DatasetHeat(dataset.DatasetPDE2d):
         sample_weight_min: float = -1.0,
         sample_weight_max: float = 1.0,
         n_samples_per_instance=4,
+        reweight_samples: bool = True,
     ):
         super().__init__(grids, base_dir=DEFINITION.BIN_DIR / "heat")
         self._grid_time = grid_time
@@ -23,9 +24,12 @@ class DatasetHeat(dataset.DatasetPDE2d):
         self._name = "heat-sum_of_sine"
 
         self._n_samples = n_samples_per_instance
-        self._weights_samples = torch.distributions.uniform.Uniform(
-            sample_weight_min, sample_weight_max
-        ).sample([self._n_samples])
+        self._sample_weight_min, self._sample_weight_max = (
+            sample_weight_min,
+            sample_weight_max,
+        )
+        self._weights_samples: torch.Tensor
+        self._reweight_samples = reweight_samples
 
         k_vector = torch.arange(1, self._n_samples + 1).float()
         self._k_pi = k_vector * torch.pi
@@ -34,6 +38,11 @@ class DatasetHeat(dataset.DatasetPDE2d):
         ) * torch.sin(self._k_pi * self._coords_x2.unsqueeze(-1))
 
     def solve_instance(self) -> tuple[torch.Tensor, torch.Tensor]:
+        if self._reweight_samples:
+            self._weights_samples = torch.distributions.uniform.Uniform(
+                self._sample_weight_min, self._sample_weight_max
+            ).sample([self._n_samples])
+
         return (
             self.solve_at_time(self._grid_time.start),
             self.solve_at_time(self._grid_time.end),
@@ -74,7 +83,10 @@ class DatasetHeat(dataset.DatasetPDE2d):
 
         for n_instances in [1, 2, 4, 8, 16]:
             DatasetHeat(
-                grids, grid_time, n_samples_per_instance=n_instances
+                grids,
+                grid_time,
+                n_samples_per_instance=n_instances,
+                reweight_samples=False,
             ).plot_animation()
 
 
