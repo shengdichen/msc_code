@@ -55,9 +55,10 @@ class Model:
 
     def train(
         self,
-        n_epochs: int = 1000,
+        n_epochs_max: int = 1000,
         batch_size: int = 30,
-        freq_remask: int = 200,
+        n_epochs_stale_max: int = 30,
+        n_remasks_stale_max: int = 3,
         freq_report: int = 100,
     ) -> None:
         path = pathlib.Path(str(self._path_network) + ".pth")
@@ -71,17 +72,31 @@ class Model:
         optimizer = torch.optim.Adam(self._network.network.parameters())
         scheduler = torch.optim.lr_scheduler.StepLR(
             optimizer,
-            step_size=max(n_epochs // 20, 20),
+            step_size=max(n_epochs_max // 20, 20),
             gamma=0.5,  # more conservative decay than default
         )
 
         error_curr = math.inf
         error_best = error_curr
         epoch_best = -1
+        n_epochs_stale = 0
+        n_remasks_stale = 0
 
-        for epoch in tqdm(range(n_epochs)):
-            if epoch > 0 and epoch % freq_remask == 0:
+        for epoch in tqdm(range(n_epochs_max)):
+            if n_epochs_stale == n_epochs_stale_max:
+                n_remasks_stale += 1
+                logger.info(
+                    f"train/stale> "
+                    f"n_epochs, n_remasks: ({n_epochs_stale}, {n_remasks_stale})"
+                )
+                if n_remasks_stale == n_remasks_stale_max:
+                    logger.info(
+                        "train/stale> "
+                        f"giving up [best epoch: {epoch_best}; current: {epoch}"
+                    )
+                    break
                 self._dataset_train.remask()
+                n_epochs_stale = 0
 
             self._network.network.train()
             for dst in self._distances_dataset(
@@ -98,6 +113,14 @@ class Model:
                 self._network.save(path)
                 error_best = error_curr
                 epoch_best = epoch
+                n_epochs_stale = 0
+                n_remasks_stale = 0
+            else:
+                n_epochs_stale += 1
+                logger.debug(
+                    f"train/stale> "
+                    f"n_epochs, n_remasks: ({n_epochs_stale}, {n_remasks_stale})"
+                )
 
             if epoch % freq_report == 0:
                 logger.info(
