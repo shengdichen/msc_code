@@ -167,6 +167,7 @@ class DatasetMasked:
         self,
         dataset_raw: DatasetPDE2d,
         masks: typing.Sequence[dataset_util.Masker],
+        save_unmasked: bool = True,
     ):
         self._dataset_raw = dataset_raw
         self._masks = masks
@@ -183,6 +184,7 @@ class DatasetMasked:
         self._name: str
         self._base_dir = self._dataset_raw.base_dir
         self._path: pathlib.Path
+        self._save_unmasked = save_unmasked
 
     @property
     def dataset_masked(self) -> T_DATASET:
@@ -196,12 +198,43 @@ class DatasetMasked:
     def path(self) -> pathlib.Path:
         return self._path
 
+    def as_train(self, n_instances: int) -> None:
+        self._dataset_raw.load_train(n_instances)
+
+        self._save_unmasked = True
+        self._update_name_path()
+        self.load_unmasked()
+        self.load_masked()
+
+    def as_eval(self, n_instances: int) -> None:
+        self._dataset_raw.load_eval(n_instances)
+
+        self._save_unmasked = False
+        self._update_name_path()
+        self.load_masked()
+
+    def _update_name_path(self) -> None:
+        self._name = (
+            f"{self._dataset_raw.name}"
+            " "
+            f"{' '.join([mask.as_name() for mask in self._masks])}"
+        )
+        self._path = (
+            self._base_dir / f"{self._dataset_raw.path}"
+            "--"
+            f"{'-'.join([mask.as_name() for mask in self._masks])}"
+        )
+
     def load_unmasked(self) -> None:
         path = pathlib.Path(str(self._path) + "--unmasked.pth")
         if not path.exists():
-            logger.info(f"dataset/masked> making unmasked... [{path}]")
+            if self._save_unmasked:
+                logger.info(f"dataset/masked> making unmasked... [{path}]")
+            else:
+                logger.info("dataset/masked> making unmasked... [not saving]")
             self.make_unmasked()
-            torch.save(self._dataset_unmasked, path)
+            if self._save_unmasked:
+                torch.save(self._dataset_unmasked, path)
         else:
             logger.info(f"dataset/masked> already done making unmasked! [{path}]")
             self._dataset_unmasked = torch.load(path)
@@ -221,9 +254,10 @@ class DatasetMasked:
         )
 
     def load_masked(self) -> None:
-        path = pathlib.Path(str(self._path) + "--masked.pth")
+        path = pathlib.Path(str(self._path) + ".pth")
         if not path.exists():
             logger.info(f"dataset/masked> masking... [{path}]")
+            self.load_unmasked()
             self.mask()
             torch.save(self._dataset_masked, path)
         else:
@@ -246,26 +280,6 @@ class DatasetMaskedSingle(DatasetMasked):
         super().__init__(dataset_raw, [mask])
 
         self._mask = mask
-
-    def as_train(self, n_instances: int) -> None:
-        self._dataset_raw.load_train(n_instances)
-
-        self._name = f"{self._dataset_raw.path} train-{self._mask.as_name()}"
-        self._path = (
-            self._base_dir / f"{self._dataset_raw.path}--train_{self._mask.as_name()}"
-        )
-        self.load_unmasked()
-        self.load_masked()
-
-    def as_eval(self, n_instances: int) -> None:
-        self._dataset_raw.load_eval(n_instances)
-
-        self._name = f"{self._dataset_raw.name} eval-{self._mask.as_name()}"
-        self._path = (
-            self._base_dir / f"{self._dataset_raw.path}--eval_{self._mask.as_name()}"
-        )
-        self.load_unmasked()
-        self.load_masked()
 
     @classmethod
     def evals_from_masks(
