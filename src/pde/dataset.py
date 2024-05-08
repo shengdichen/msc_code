@@ -92,7 +92,7 @@ class DatasetPDE:
         return self._load(n_instances)
 
     def _load(self, n_instances: int) -> T_DATASET:
-        path = pathlib.Path(str(self._path) + ".pth")
+        path = pathlib.Path(f"{self._path}.pth")
         if not path.exists():
             logger.info(f"dataset/raw> making... [{path}]")
             torch.save(self.as_dataset(n_instances), path)
@@ -254,7 +254,7 @@ class DatasetMasked:
         )
 
     def load_masked(self) -> None:
-        path = pathlib.Path(str(self._path) + ".pth")
+        path = pathlib.Path(f"{self._path}.pth")
         if not path.exists():
             logger.info(f"dataset/masked> masking... [{path}]")
             self.load_unmasked()

@@ -35,7 +35,7 @@ class Model:
         )
 
     def load_network(self) -> None:
-        path = pathlib.Path(str(self._path_network) + ".pth")
+        path = pathlib.Path(f"{self._path_network}.pth")
         if not path.exists():
             logger.info(f"model> learning... [{path}]")
             self.train()
@@ -61,7 +61,7 @@ class Model:
         n_remasks_stale_max: int = 3,
         freq_report: int = 100,
     ) -> None:
-        path = pathlib.Path(str(self._path_network) + ".pth")
+        path = pathlib.Path(f"{self._path_network}.pth")
         if path.exists():
             logger.info(f"model> already done! [{path}]")
             self._network.load(path)
