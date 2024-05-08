@@ -13,7 +13,7 @@ import torch
 from scipy.interpolate import RectBivariateSpline
 from scipy.stats import multivariate_normal
 
-from src.definition import DEFINITION, T_DATASET
+from src.definition import T_DATASET
 from src.numerics import grid
 from src.pde.dataset import DatasetMaskedSingle, DatasetPDE2d
 from src.util import dataset as dataset_util
@@ -25,8 +25,8 @@ logger = logging.getLogger(__name__)
 
 
 class DatasetPoisson2d(DatasetPDE2d):
-    def __init__(self, grids):
-        super().__init__(grids, base_dir=DEFINITION.BIN_DIR / "poisson")
+    def __init__(self, grids: grid.Grids, name_dataset: str):
+        super().__init__(grids, name_problem="poisson", name_dataset=name_dataset)
 
     @abc.abstractmethod
     def plot(self, set_title_upper: bool = True) -> mpl.figure.Figure:
@@ -88,8 +88,7 @@ class DatasetSin(DatasetPoisson2d):
         sample_weight_max: float = 1.0,
         n_samples_per_instance=4,
     ):
-        super().__init__(grids)
-        self._name = "sum_of_sine"
+        super().__init__(grids, name_dataset="sum_of_sine")
 
         self._constant_r, self._constant_multiplier = constant_r, constant_multiplier
 
@@ -150,8 +149,7 @@ class DatasetGauss(DatasetPoisson2d):
         sample_weight_max: float = 0.7,
         n_samples_per_instance=4,
     ):
-        super().__init__(grids)
-        self._name = "sum_of_gauss"
+        super().__init__(grids, name_dataset="sum_of_gauss")
         self._coords_x1, self._coords_x2 = self._grids.coords_as_mesh()
 
         self._constant_multiplier = constant_multiplier
@@ -265,7 +263,7 @@ class DatasetPoissonMaskedSolution:
 
         self._dataset_raw = dataset_raw
         self._mask = mask
-        self._name = f"{self._dataset_raw.name}--sol_{self._mask.as_name()}"
+        self._name = f"{self._dataset_raw.name_dataset}--sol_{self._mask.as_name()}"
 
         self._normalizer: dataset_util.Normalizer
         self._dataset: T_DATASET
@@ -417,7 +415,7 @@ class DatasetPoissonMaskedSolutionSource:
         mask_source: dataset_util.Masker,
     ) -> str:
         return (
-            f"{dataset.name}--"
+            f"{dataset.name_dataset}--"
             f"sol_{mask_solution.as_name()}--"
             f"source_{mask_source.as_name()}"
         )

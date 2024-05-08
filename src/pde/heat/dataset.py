@@ -1,7 +1,6 @@
 import matplotlib.pyplot as plt
 import torch
 
-from src.definition import DEFINITION
 from src.numerics import grid
 from src.pde import dataset
 from src.util import dataset as dataset_util
@@ -18,10 +17,8 @@ class DatasetHeat(dataset.DatasetPDE2d):
         n_samples_per_instance=4,
         reweight_samples: bool = True,
     ):
-        super().__init__(grids, base_dir=DEFINITION.BIN_DIR / "heat")
+        super().__init__(grids, name_problem="heat", name_dataset="sum_of_sine")
         self._grid_time = grid_time
-
-        self._name = "heat-sum_of_sine"
 
         self._n_samples = n_samples_per_instance
         self._sample_weight_min, self._sample_weight_max = (

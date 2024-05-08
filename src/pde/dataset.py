@@ -49,13 +49,18 @@ class DatasetSplits:
 
 
 class DatasetPDE:
-    def __init__(self, grids: grid.Grids, base_dir: pathlib.Path = DEFINITION.BIN_DIR):
+    def __init__(
+        self,
+        grids: grid.Grids,
+        name_problem: str,
+        name_dataset: str,
+    ):
         self._grids = grids
 
         self._dataset: T_DATASET
 
-        self._name: str
-        self._base_dir = base_dir
+        self._name_problem, self._name_dataset = name_problem, name_dataset
+        self._base_dir = DEFINITION.BIN_DIR / name_problem
         self._base_dir.mkdir(exist_ok=True)
         self._path: pathlib.Path
 
@@ -68,8 +73,8 @@ class DatasetPDE:
         return self._dataset
 
     @property
-    def name(self) -> str:
-        return self._name
+    def name_dataset(self) -> str:
+        return self._name_dataset
 
     @property
     def base_dir(self) -> pathlib.Path:
@@ -80,15 +85,15 @@ class DatasetPDE:
         return self._path
 
     def load_full(self, n_instances: int) -> T_DATASET:
-        self._path = self._base_dir / f"{self._name}-full_{n_instances}"
+        self._path = self._base_dir / f"{self._name_dataset}-full_{n_instances}"
         return self._load(n_instances)
 
     def load_eval(self, n_instances: int) -> T_DATASET:
-        self._path = self._base_dir / f"{self._name}-eval_{n_instances}"
+        self._path = self._base_dir / f"{self._name_dataset}-eval_{n_instances}"
         return self._load(n_instances)
 
     def load_train(self, n_instances: int) -> T_DATASET:
-        self._path = self._base_dir / f"{self._name}-train_{n_instances}"
+        self._path = self._base_dir / f"{self._name_dataset}-train_{n_instances}"
         return self._load(n_instances)
 
     def _load(self, n_instances: int) -> T_DATASET:
@@ -108,8 +113,8 @@ class DatasetPDE:
         n_instances_train: int,
     ) -> tuple[T_DATASET, T_DATASET]:
         path_eval, path_train = (
-            self._base_dir / f"{self._name}-eval_{n_instances_eval}.pth",
-            self._base_dir / f"{self._name}-train_{n_instances_train}.pth",
+            self._base_dir / f"{self._name_dataset}-eval_{n_instances_eval}.pth",
+            self._base_dir / f"{self._name_dataset}-train_{n_instances_train}.pth",
         )
         if not (path_eval.exists() and path_train.exists()):
             ds_eval, ds_train = DatasetSplits(
@@ -143,13 +148,18 @@ class DatasetPDE:
 
 
 class DatasetPDE2d(DatasetPDE):
-    def __init__(self, grids: grid.Grids, base_dir: pathlib.Path = DEFINITION.BIN_DIR):
+    def __init__(
+        self,
+        grids: grid.Grids,
+        name_problem: str,
+        name_dataset: str,
+    ):
         if grids.n_dims != 2:
             raise ValueError(
                 f"expected grid of 2 dimensions, got one with {grids.n_dims} instead"
             )
 
-        super().__init__(grids, base_dir=base_dir)
+        super().__init__(grids, name_problem, name_dataset)
 
         self._coords_x1, self._coords_x2 = self._grids.coords_as_mesh_torch()
         self._putil = plot.PlotUtil(self._grids)
@@ -215,7 +225,7 @@ class DatasetMasked:
 
     def _update_name_path(self) -> None:
         self._name = (
-            f"{self._dataset_raw.name}"
+            f"{self._dataset_raw.name_dataset}"
             " "
             f"{' '.join([mask.as_name() for mask in self._masks])}"
         )
