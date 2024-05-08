@@ -60,6 +60,11 @@ class DatasetPDE:
         self._dataset: T_DATASET
 
         self._name_problem, self._name_dataset = name_problem, name_dataset
+        self._name_human = (
+            f"{self._name_problem.title()}"
+            " "
+            f"\"{' '.join(self._name_dataset.split('_'))}\""
+        )
         self._base_dir = DEFINITION.BIN_DIR / name_problem
         self._base_dir.mkdir(exist_ok=True)
         self._path: pathlib.Path
@@ -73,8 +78,16 @@ class DatasetPDE:
         return self._dataset
 
     @property
+    def name_problem(self) -> str:
+        return self._name_problem
+
+    @property
     def name_dataset(self) -> str:
         return self._name_dataset
+
+    @property
+    def name_human(self) -> str:
+        return self._name_human
 
     @property
     def base_dir(self) -> pathlib.Path:
@@ -191,7 +204,6 @@ class DatasetMasked:
         self._dataset_unmasked: T_DATASET
         self._dataset_masked: T_DATASET
 
-        self._name: str
         self._base_dir = self._dataset_raw.base_dir
         self._path: pathlib.Path
         self._save_unmasked = save_unmasked
@@ -201,18 +213,20 @@ class DatasetMasked:
         return self._dataset_masked
 
     @property
-    def name(self) -> str:
-        return self._name
-
-    @property
     def path(self) -> pathlib.Path:
         return self._path
+
+    def name_human(self, multiline: bool = False) -> str:
+        name_dataset = f"Dataset: {self._dataset_raw.name_human}"
+        connector = "\n" if multiline else " "
+        name_masks = f"Masking: {' + '.join([mask.name_human for mask in self._masks])}"
+        return f"{name_dataset}{connector}{name_masks}"
 
     def as_train(self, n_instances: int) -> None:
         self._dataset_raw.load_train(n_instances)
 
         self._save_unmasked = True
-        self._update_name_path()
+        self._update_path()
         self.load_unmasked()
         self.load_masked()
 
@@ -220,23 +234,18 @@ class DatasetMasked:
         self._dataset_raw.load_eval(n_instances)
 
         self._save_unmasked = False
-        self._update_name_path()
+        self._update_path()
         self.load_masked()
 
-    def _update_name_path(self) -> None:
-        self._name = (
-            f"{self._dataset_raw.name_dataset}"
-            " "
-            f"{' '.join([mask.as_name() for mask in self._masks])}"
-        )
+    def _update_path(self) -> None:
         self._path = (
             self._base_dir / f"{self._dataset_raw.path}"
             "--"
-            f"{'-'.join([mask.as_name() for mask in self._masks])}"
+            f"{'-'.join([mask.name for mask in self._masks])}"
         )
 
     def load_unmasked(self) -> None:
-        path = pathlib.Path(str(self._path) + "--unmasked.pth")
+        path = pathlib.Path(f"{self._path}--unmasked.pth")
         if not path.exists():
             if self._save_unmasked:
                 logger.info(f"dataset/masked> making unmasked... [{path}]")
@@ -335,5 +344,5 @@ class DatasetMaskedSingle(DatasetMasked):
         # NOTE:
         #   we intentionally do NOT auto-save remasked dataset
 
-        logger.info(f"dataset/masked> remasking... [with {self._mask.as_name()}]")
+        logger.info(f"dataset/masked> remasking... [with {self._mask.name}]")
         self.mask()

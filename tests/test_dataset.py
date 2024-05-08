@@ -1,14 +1,12 @@
 import math
-import numpy as np
-
 import random
 
+import numpy as np
 import torch
-
 from src.numerics import equality, grid
 from src.pde.heat import dataset as heat_ds
-from src.pde.wave import dataset as wave_ds
 from src.pde.poisson import dataset as poisson_ds
+from src.pde.wave import dataset as wave_ds
 from src.util import dataset
 
 
@@ -333,12 +331,11 @@ class TestReordering:
                 grid.Grid(size_x2, stepsize=0.1, start=4.0),
             ]
         )
-        ds_raw = poisson_ds.DatasetSin(gr)
-        return poisson_ds.DatasetPoissonMaskedSolution(
-            gr, ds_raw, dataset.MaskerIsland(0.5)
-        ).make(
-            ds_raw.as_dataset(n_instances),
+        ds = wave_ds.DatasetMaskedSingleWave(
+            poisson_ds.DatasetSin(gr), dataset.MaskerIsland(0.5)
         )
+        ds.as_train(n_instances)
+        return ds.dataset_masked
 
     def test_reordering(self) -> None:
         size_x1, size_x2, n_instances = 10, 15, 5
@@ -369,13 +366,11 @@ class TestNormalization:
                 grid.Grid(size_x2, stepsize=0.1, start=4.0),
             ]
         )
-        ds_raw = poisson_ds.DatasetSin(gr)
-        ds = poisson_ds.DatasetPoissonMaskedSolution(
-            gr, ds_raw, dataset.MaskerIsland(0.5)
-        ).make(
-            ds_raw.as_dataset(n_instances),
+        ds = wave_ds.DatasetMaskedSingleWave(
+            poisson_ds.DatasetSin(gr), dataset.MaskerIsland(0.5)
         )
-        return dataset.Reorderer().components_to_second(ds)
+        ds.as_train(n_instances)
+        return ds.dataset_masked
 
     def _make_grid_normalized(self) -> tuple[torch.Tensor, torch.Tensor]:
         grid_x1 = grid.Grid(5, stepsize=0.25, start=0.0)

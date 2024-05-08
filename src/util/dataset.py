@@ -92,13 +92,20 @@ class Masker:
         self._intensity = intensity
         self._value_mask = value_mask
 
+        self._name: str
+        self._name_human: str
+
     @abc.abstractmethod
     def mask(self, full: torch.Tensor) -> torch.Tensor:
         raise NotImplementedError
 
-    @abc.abstractmethod
-    def as_name(self) -> str:
-        raise NotImplementedError
+    @property
+    def name(self) -> str:
+        return self._name
+
+    @property
+    def name_human(self) -> str:
+        return self._name_human
 
     @property
     def intensity(self) -> float:
@@ -140,6 +147,13 @@ class MaskerRandom(Masker):
             "_"
             f"{(self._intensity + self._intensity_spread):.2}"
         )
+        self._name_human = (
+            f"Random"
+            " "
+            f"[{(self._intensity - self._intensity_spread):.2}"
+            "; "
+            f"{(self._intensity + self._intensity_spread):.2}]"
+        )
 
     @classmethod
     def from_min_max(
@@ -155,9 +169,6 @@ class MaskerRandom(Masker):
             value_mask=value_mask,
             seed=seed,
         )
-
-    def as_name(self) -> str:
-        return self._name
 
     def mask(self, full: torch.Tensor) -> torch.Tensor:
         if math.isclose(self._intensity, 1.0):
@@ -188,10 +199,21 @@ class MaskerIsland(Masker):
         super().__init__(intensity, value_mask)
 
         self._intensity_spread = intensity_spread
-        self._name = f"island_{self._intensity:.2}"
 
-    def as_name(self) -> str:
-        return self._name
+        self._name = (
+            f"island"
+            "_"
+            f"{(self._intensity - self._intensity_spread):.2}"
+            "_"
+            f"{(self._intensity + self._intensity_spread):.2}"
+        )
+        self._name_human = (
+            f"Island"
+            " "
+            f"[{(self._intensity - self._intensity_spread):.2}"
+            "; "
+            f"{(self._intensity + self._intensity_spread):.2}]"
+        )
 
     def mask(self, full: torch.Tensor) -> torch.Tensor:
         if math.isclose(self._intensity, 0.0):

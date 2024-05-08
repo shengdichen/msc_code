@@ -70,7 +70,7 @@ class Problem:
             m.eval(print_result=True)
 
     def plot_error(self) -> None:
-        for mask_train, ds_train in zip(self._masks_train, self._datasets_train):
+        for ds_train in self._datasets_train:
             models = list(self._models_current(ds_train))
             fig, ax = plt.subplots(figsize=(6, 6), dpi=200)
 
@@ -87,7 +87,7 @@ class Problem:
             ax.set_xlabel("masking intensity (eval)")
             ax.set_ylabel("error [$L^2$]")
             ax.legend()
-            ax.set_title(f"Dataset: {ds_train.name}\nMask: {mask_train.as_name()}")
+            ax.set_title(ds_train.name_human(multiline=True))
 
             path = pathlib.Path(f"{ds_train.path}.png")
             fig.savefig(path)

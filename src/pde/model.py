@@ -142,7 +142,8 @@ class Model:
     ) -> float:
         if not self._datasets_eval:
             raise ValueError(
-                f"no eval-dataset(s) provided [train: {self._dataset_train.name}]"
+                "no eval-dataset(s) provided "
+                f"[train: {self._dataset_train.name_human()}]"
             )
 
         self._network.network.eval()
@@ -156,8 +157,9 @@ class Model:
                 ):
                     abss.append(dst.mse().item())
                     rels.append(dst.mse_relative().item())
-                abss_all[dataset.name] = np.average(abss)
-                rels_all[dataset.name] = np.average(rels)
+                name = dataset.name_human()
+                abss_all[name] = np.average(abss)
+                rels_all[name] = np.average(rels)
 
         avg = np.average(list(rels_all.values()))
 

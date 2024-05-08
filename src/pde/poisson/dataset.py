@@ -263,7 +263,7 @@ class DatasetPoissonMaskedSolution:
 
         self._dataset_raw = dataset_raw
         self._mask = mask
-        self._name = f"{self._dataset_raw.name_dataset}--sol_{self._mask.as_name()}"
+        self._name = f"{self._dataset_raw.name_dataset}--sol_{self._mask.name}"
 
         self._normalizer: dataset_util.Normalizer
         self._dataset: T_DATASET
@@ -416,8 +416,8 @@ class DatasetPoissonMaskedSolutionSource:
     ) -> str:
         return (
             f"{dataset.name_dataset}--"
-            f"sol_{mask_solution.as_name()}--"
-            f"source_{mask_source.as_name()}"
+            f"sol_{mask_solution.name()}--"
+            f"source_{mask_source.name()}"
         )
 
     def make(

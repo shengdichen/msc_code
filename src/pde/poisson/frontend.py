@@ -388,28 +388,28 @@ class PipelineMaskedSolution(Pipeline):
             errors_t_random_e_random,
             **style_line,
             marker="+",
-            label=f"train: random(*); eval: {mask_random.as_name()}",
+            label=f"train: random(*); eval: {mask_random.name()}",
         )
         ax.plot(
             self._percs,
             errors_t_random_e_island,
             **style_line,
             marker="+",
-            label=f"train: random(*); eval: {mask_island.as_name()}",
+            label=f"train: random(*); eval: {mask_island.name()}",
         )
         ax.plot(
             self._percs,
             errors_t_island_e_random,
             **style_line,
             marker="x",
-            label=f"train: island(*); eval: {mask_random.as_name()}",
+            label=f"train: island(*); eval: {mask_random.name()}",
         )
         ax.plot(
             self._percs,
             errors_t_island_e_island,
             **style_line,
             marker="x",
-            label=f"train: island(*); eval: eval: {mask_island.as_name()}",
+            label=f"train: island(*); eval: eval: {mask_island.name()}",
         )
         ax.set_xlabel("masking intensity")
         ax.set_ylabel("error [$L^2$]")
