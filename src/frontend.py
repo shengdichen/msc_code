@@ -1,6 +1,9 @@
 import abc
 import collections
 import logging
+import pathlib
+
+import matplotlib.pyplot as plt
 
 from src.deepl import factory
 from src.numerics import grid
@@ -31,6 +34,7 @@ class Problem:
                 intensity_min=0.6, intensity_max=0.8
             ),
         ]
+        self._datasets_train: list[dataset.DatasetMaskedSingle] = []
 
         self._masks_eval = [
             util_dataset.MaskerRandom.from_min_max(
@@ -38,33 +42,69 @@ class Problem:
             )
             for i in range(10)
         ]
-        self._datasets_evals = []
+        self._datasets_evals: list[dataset.DatasetMaskedSingle] = []
+        self._load_datasets()
+
+    def _load_datasets(self) -> None:
+        for mask in self._masks_train:
+            ds = self._dataset_single(mask)
+            ds.as_train(self._n_instances_train)
+            self._datasets_train.append(ds)
+
         for mask in self._masks_eval:
             ds = self._dataset_single(mask)
             ds.as_eval(self._n_instances_eval)
             self._datasets_evals.append(ds)
 
     def train(self) -> None:
-        for m in self.models_single():
-            m.train()
+        for mask, ds_train in zip(self._masks_train, self._datasets_train):
+            for m in self._models_current(ds_train):
+                ds_eval = self._dataset_single(mask)
+                ds_eval.as_eval(self._n_instances_eval)
+                m.datasets_eval = [ds_eval]
+                m.train()
 
     def eval(self) -> None:
         for m in self.models_single():
             m.load_network()
-            m.datasets_eval = self._datasets_evals
             m.eval(print_result=True)
 
-    def models_single(self) -> collections.abc.Generator[model.Model, None, None]:
-        for mask in self._masks_train:
-            ds_train = self._dataset_single(mask)
-            ds_train.as_train(self._n_instances_train)
-            ds_eval = self._dataset_single(mask)
-            ds_eval.as_eval(self._n_instances_eval)
+    def plot_error(self) -> None:
+        for mask_train, ds_train in zip(self._masks_train, self._datasets_train):
+            models = list(self._models_current(ds_train))
+            fig, ax = plt.subplots(figsize=(6, 6), dpi=200)
 
-            for network in factory.Network.all(
-                ds_train.N_CHANNELS_LHS, ds_train.N_CHANNELS_RHS
-            ):
-                yield model.Model(network, ds_train, [ds_eval])
+            style = {"linestyle": "dashed", "linewidth": 1.5, "marker": "x"}
+            for m in models:
+                m.load_network()
+                ax.plot(
+                    [(i / 10) for i in range(10)],
+                    m.errors(),
+                    **style,
+                    label=m.name_network,
+                )
+
+            ax.set_xlabel("masking intensity (eval)")
+            ax.set_ylabel("error [$L^2$]")
+            ax.legend()
+            ax.set_title(f"Dataset: {ds_train.name}\nMask: {mask_train.as_name()}")
+
+            path = pathlib.Path(f"{ds_train.path}.png")
+            fig.savefig(path)
+            plt.close(fig)
+
+    def models_single(self) -> collections.abc.Generator[model.Model, None, None]:
+        for ds_train in self._datasets_train:
+            yield from self._models_current(ds_train)
+
+    def _models_current(
+        self, ds_train: dataset.DatasetMaskedSingle
+    ) -> collections.abc.Generator[model.Model, None, None]:
+        for network in factory.Network.all(
+            self._datasets_train[0].N_CHANNELS_LHS,
+            self._datasets_train[0].N_CHANNELS_RHS,
+        ):
+            yield model.Model(network, ds_train, self._datasets_evals)
 
     @abc.abstractmethod
     def _dataset_raw(self) -> dataset.DatasetPDE2d:

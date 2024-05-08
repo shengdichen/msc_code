@@ -21,7 +21,9 @@ class Model:
         self,
         network: factory.Network,
         dataset_train: dataset_pde.DatasetMaskedSingle,
-        datasets_eval: typing.Sequence[dataset_pde.DatasetMaskedSingle],
+        datasets_eval: typing.Optional[
+            typing.Sequence[dataset_pde.DatasetMaskedSingle]
+        ] = None,
     ):
         self._network = network
         self._device = DEFINITION.device_preferred
@@ -42,6 +44,10 @@ class Model:
         else:
             logger.info(f"model> already done! [{path}]")
             self._network.load(path)
+
+    @property
+    def name_network(self) -> str:
+        return self._network.name
 
     @property
     def datasets_eval(self) -> typing.Sequence[dataset_pde.DatasetMaskedSingle]:
@@ -134,6 +140,11 @@ class Model:
         batch_size: int = 30,
         print_result: bool = False,
     ) -> float:
+        if not self._datasets_eval:
+            raise ValueError(
+                f"no eval-dataset(s) provided [train: {self._dataset_train.name}]"
+            )
+
         self._network.network.eval()
 
         abss_all, rels_all = {}, {}
@@ -161,6 +172,23 @@ class Model:
             )
 
         return avg
+
+    def errors(self, batch_size: int = 30) -> np.ndarray:
+        errors = []
+
+        self._network.network.eval()
+        with torch.no_grad():
+            for dataset in self._datasets_eval:
+                errors_curr = np.average(
+                    [
+                        dst.mse_relative().item()
+                        for dst in self._distances_dataset(
+                            dataset.dataset_masked, batch_size=batch_size
+                        )
+                    ]
+                )
+                errors.append(errors_curr)
+        return np.array(errors)
 
     def _distances_dataset(
         self, dataset: T_DATASET, batch_size: int = 30

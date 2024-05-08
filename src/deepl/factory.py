@@ -1,5 +1,5 @@
-import pathlib
 import collections
+import pathlib
 
 import torch
 from neuralop import models as fno
