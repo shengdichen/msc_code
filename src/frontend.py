@@ -3,6 +3,7 @@ import collections
 import logging
 import pathlib
 
+import matplotlib as mpl
 import matplotlib.pyplot as plt
 
 from src.deepl import factory
@@ -36,6 +37,7 @@ class Problem:
         ]
         self._datasets_train: list[dataset.DatasetMaskedSingle] = []
 
+        self._intensities_eval = [(i * 10) for i in range(10)]  # in percentage
         self._datasets_evals_random: list[dataset.DatasetMaskedSingle] = []
         self._datasets_evals_island: list[dataset.DatasetMaskedSingle] = []
         self._load_datasets()
@@ -85,22 +87,21 @@ class Problem:
     def plot_error(self) -> None:
         for ds_train in self._datasets_train:
             models = list(self._models_current(ds_train))
-            fig, (ax_random, ax_island) = plt.subplots(1, 2, figsize=(10, 5), dpi=200)
-
-            style = {"linestyle": "dashed", "linewidth": 1.5, "marker": "x"}
+            fig, (ax_random, ax_island) = plt.subplots(1, 2, figsize=(12, 5), dpi=200)
+            style = {"linestyle": "dashed", "linewidth": 1.0, "marker": "x"}
             for m in models:
                 m.load_network()
                 m.datasets_eval = self._datasets_evals_random
                 ax_random.plot(
-                    [(i / 10) for i in range(10)],
-                    m.errors(),
+                    self._intensities_eval,
+                    m.errors(clip_at_max=0.18),
                     **style,
                     label=m.name_network,
                 )
                 m.datasets_eval = self._datasets_evals_island
                 ax_island.plot(
-                    [(i / 10) for i in range(10)],
-                    m.errors(),
+                    self._intensities_eval,
+                    m.errors(clip_at_max=0.18),
                     **style,
                     label=m.name_network,
                 )
@@ -109,6 +110,22 @@ class Problem:
                 ax.set_xlabel("masking intensity (eval)")
                 ax.set_ylabel("error [$L^2$]")
                 ax.legend()
+                ax.set_ylim(0.0, 20.0)
+                ax.axhline(
+                    5.0,
+                    linestyle="dashed",
+                    color="lightgrey",
+                    linewidth=1.5,
+                )
+                ax.axhline(
+                    15.0,
+                    linestyle="dashed",
+                    color="darkgrey",
+                    linewidth=1.5,
+                )
+                ax.xaxis.set_major_formatter(mpl.ticker.PercentFormatter(decimals=0))
+                ax.yaxis.set_major_formatter(mpl.ticker.PercentFormatter(decimals=1))
+
             ax_random.set_title("Eval: Random")
             ax_island.set_title("Eval: Island")
 

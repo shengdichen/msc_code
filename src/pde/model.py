@@ -175,7 +175,12 @@ class Model:
 
         return avg
 
-    def errors(self, batch_size: int = 30) -> np.ndarray:
+    def errors(
+        self,
+        in_percentage: bool = True,
+        batch_size: int = 30,
+        clip_at_max: typing.Optional[int] = None,
+    ) -> np.ndarray:
         errors = []
 
         self._network.network.eval()
@@ -190,7 +195,12 @@ class Model:
                     ]
                 )
                 errors.append(errors_curr)
-        return np.array(errors)
+        errors = np.array(errors)
+        if clip_at_max:
+            errors = np.clip(errors, a_min=0.0, a_max=clip_at_max)
+        if in_percentage:
+            return 100 * errors
+        return errors
 
     def _distances_dataset(
         self, dataset: T_DATASET, batch_size: int = 30
