@@ -37,7 +37,7 @@ class Problem:
         ]
         self._datasets_train: list[dataset.DatasetMaskedSingle] = []
 
-        self._intensities_eval = [(i * 10) for i in range(10)]  # in percentage
+        self._intensities_eval = [(i * 10 + 5) for i in range(10)]  # in percentage
         self._datasets_evals_random: list[dataset.DatasetMaskedSingle] = []
         self._datasets_evals_island: list[dataset.DatasetMaskedSingle] = []
         self._load_datasets()
@@ -69,9 +69,9 @@ class Problem:
             self._datasets_evals_island.append(ds)
 
     def train(self) -> None:
-        for mask, ds_train in zip(self._masks_train, self._datasets_train):
+        for ds_train in self._datasets_train:
             for m in self._models_current(ds_train):
-                ds_eval = self._dataset_single(mask)
+                ds_eval = self._dataset_single(ds_train.masks[0])
                 ds_eval.as_eval(self._n_instances_eval)
                 m.datasets_eval = [ds_eval]
                 m.train()
@@ -87,34 +87,50 @@ class Problem:
     def plot_error(self) -> None:
         for ds_train in self._datasets_train:
             models = list(self._models_current(ds_train))
-            fig, (ax_random, ax_island) = plt.subplots(1, 2, figsize=(12, 5), dpi=200)
+            fig, (ax_random, ax_island) = plt.subplots(1, 2, figsize=(11, 5.5), dpi=200)
             style = {"linestyle": "dashed", "linewidth": 1.0, "marker": "x"}
             for m in models:
                 m.load_network()
                 m.datasets_eval = self._datasets_evals_random
                 ax_random.plot(
                     self._intensities_eval,
-                    m.errors(clip_at_max=0.18),
+                    m.errors(clip_at_max=0.175),
                     **style,
                     label=m.name_network,
                 )
                 m.datasets_eval = self._datasets_evals_island
                 ax_island.plot(
                     self._intensities_eval,
-                    m.errors(clip_at_max=0.18),
+                    m.errors(clip_at_max=0.175),
                     **style,
                     label=m.name_network,
                 )
 
             for ax in [ax_random, ax_island]:
-                ax.set_xlabel("masking intensity (eval)")
-                ax.set_ylabel("error [$L^2$]")
                 ax.legend()
-                ax.set_ylim(0.0, 20.0)
+
+                y_max = 18
+
+                ax.set_xlabel("masking intensity")
+                ax.set_xlim(-3, 103)
+                ax.set_xticks([10 * (x + 1) for x in range(9)])
+                ax.tick_params(axis="x", labelrotation=30, labelsize="small")
+                mask_min_max = ds_train.masks[0].min_max(as_percentage=True)
+                if not mask_min_max == (0, 100):
+                    ax.fill_betweenx(
+                        range(y_max + 1),
+                        *mask_min_max,
+                        color="lightgrey",
+                    )
+                ax.xaxis.set_major_formatter(mpl.ticker.PercentFormatter(decimals=0))
+
+                ax.set_ylim(0.0, y_max)
+                ax.set_yticks([2.5, 5, 10, 15, 17.5])
+                ax.tick_params(axis="y", labelrotation=30, labelsize="small")
                 ax.axhline(
                     5.0,
                     linestyle="dashed",
-                    color="lightgrey",
+                    color="darkgrey",
                     linewidth=1.5,
                 )
                 ax.axhline(
@@ -123,13 +139,13 @@ class Problem:
                     color="darkgrey",
                     linewidth=1.5,
                 )
-                ax.xaxis.set_major_formatter(mpl.ticker.PercentFormatter(decimals=0))
                 ax.yaxis.set_major_formatter(mpl.ticker.PercentFormatter(decimals=1))
 
-            ax_random.set_title("Eval: Random")
-            ax_island.set_title("Eval: Island")
-
             fig.suptitle(ds_train.name_human(multiline=True))
+            ax_random.set_title("(Eval-)Masking: Random")
+            ax_island.set_title("(Eval-)Masking: Island")
+            ax_random.set_ylabel("error [$L^2$]")
+
             path = pathlib.Path(f"{ds_train.path}.png")
             fig.savefig(path)
             plt.close(fig)

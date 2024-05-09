@@ -87,9 +87,16 @@ class Masker:
     def __init__(
         self,
         intensity: float = 0.5,
+        intensity_spread: float = 0.1,
         value_mask: float = 0.5,
     ):
         self._intensity = intensity
+        self._intensity_spread = intensity_spread
+        self._intensity_min, self._intensity_max = (
+            self._intensity - self._intensity_spread,
+            self._intensity + self._intensity_spread,
+        )
+
         self._value_mask = value_mask
 
         self._name: str
@@ -115,6 +122,11 @@ class Masker:
     def intensity(self, value: float) -> None:
         self._intensity = value
 
+    def min_max(self, as_percentage: bool = False) -> tuple[float, float]:
+        if as_percentage:
+            return self._intensity_min * 100, self._intensity_max * 100
+        return self._intensity_min, self._intensity_max
+
     def _sample_intensity(self, spread: float) -> float:
         if math.isclose(spread, 0.0):
             return self._intensity
@@ -135,9 +147,8 @@ class MaskerRandom(Masker):
         value_mask: float = 0.5,
         seed: typing.Optional[int] = None,
     ):
-        super().__init__(intensity, value_mask)
+        super().__init__(intensity, intensity_spread, value_mask)
 
-        self._intensity_spread = intensity_spread
         self._rng = np.random.default_rng(seed=seed)
 
         self._name = (
@@ -150,9 +161,9 @@ class MaskerRandom(Masker):
         self._name_human = (
             f"Random"
             " "
-            f"[{(self._intensity - self._intensity_spread):.2}"
-            "; "
-            f"{(self._intensity + self._intensity_spread):.2}]"
+            f"[{self._intensity_min:.0%}"
+            "-"
+            f"{self._intensity_max:.0%}]"
         )
 
     @classmethod
@@ -196,9 +207,7 @@ class MaskerIsland(Masker):
     def __init__(
         self, intensity: float, intensity_spread: float = 0.1, value_mask: float = 0.5
     ):
-        super().__init__(intensity, value_mask)
-
-        self._intensity_spread = intensity_spread
+        super().__init__(intensity, intensity_spread, value_mask)
 
         self._name = (
             f"island"
@@ -210,9 +219,9 @@ class MaskerIsland(Masker):
         self._name_human = (
             f"Island"
             " "
-            f"[{(self._intensity - self._intensity_spread):.2}"
-            "; "
-            f"{(self._intensity + self._intensity_spread):.2}]"
+            f"[{self._intensity_min:.0%}"
+            "-"
+            f"{self._intensity_max:.0%}]"
         )
 
     @classmethod

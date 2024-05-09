@@ -216,6 +216,10 @@ class DatasetMasked:
     def path(self) -> pathlib.Path:
         return self._path
 
+    @property
+    def masks(self) -> typing.Sequence[dataset_util.Masker]:
+        return self._masks
+
     def name_human(self, multiline: bool = False) -> str:
         name_dataset = f"Dataset: {self._dataset_raw.name_human}"
         connector = "\n" if multiline else " "
