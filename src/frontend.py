@@ -36,13 +36,8 @@ class Problem:
         ]
         self._datasets_train: list[dataset.DatasetMaskedSingle] = []
 
-        self._masks_eval = [
-            util_dataset.MaskerRandom.from_min_max(
-                intensity_min=i / 10, intensity_max=i / 10 + 0.1
-            )
-            for i in range(10)
-        ]
-        self._datasets_evals: list[dataset.DatasetMaskedSingle] = []
+        self._datasets_evals_random: list[dataset.DatasetMaskedSingle] = []
+        self._datasets_evals_island: list[dataset.DatasetMaskedSingle] = []
         self._load_datasets()
 
     def _load_datasets(self) -> None:
@@ -51,10 +46,25 @@ class Problem:
             ds.as_train(self._n_instances_train)
             self._datasets_train.append(ds)
 
-        for mask in self._masks_eval:
+        for mask in [
+            util_dataset.MaskerRandom.from_min_max(
+                intensity_min=i / 10, intensity_max=i / 10 + 0.1
+            )
+            for i in range(10)
+        ]:
             ds = self._dataset_single(mask)
             ds.as_eval(self._n_instances_eval)
-            self._datasets_evals.append(ds)
+            self._datasets_evals_random.append(ds)
+
+        for mask in [
+            util_dataset.MaskerIsland.from_min_max(
+                intensity_min=i / 10, intensity_max=i / 10 + 0.1
+            )
+            for i in range(10)
+        ]:
+            ds = self._dataset_single(mask)
+            ds.as_eval(self._n_instances_eval)
+            self._datasets_evals_island.append(ds)
 
     def train(self) -> None:
         for mask, ds_train in zip(self._masks_train, self._datasets_train):
@@ -67,28 +77,42 @@ class Problem:
     def eval(self) -> None:
         for m in self.models_single():
             m.load_network()
+            m.datasets_eval = self._datasets_evals_random
+            m.eval(print_result=True)
+            m.datasets_eval = self._datasets_evals_island
             m.eval(print_result=True)
 
     def plot_error(self) -> None:
         for ds_train in self._datasets_train:
             models = list(self._models_current(ds_train))
-            fig, ax = plt.subplots(figsize=(6, 6), dpi=200)
+            fig, (ax_random, ax_island) = plt.subplots(1, 2, figsize=(10, 5), dpi=200)
 
             style = {"linestyle": "dashed", "linewidth": 1.5, "marker": "x"}
             for m in models:
                 m.load_network()
-                ax.plot(
+                m.datasets_eval = self._datasets_evals_random
+                ax_random.plot(
+                    [(i / 10) for i in range(10)],
+                    m.errors(),
+                    **style,
+                    label=m.name_network,
+                )
+                m.datasets_eval = self._datasets_evals_island
+                ax_island.plot(
                     [(i / 10) for i in range(10)],
                     m.errors(),
                     **style,
                     label=m.name_network,
                 )
 
-            ax.set_xlabel("masking intensity (eval)")
-            ax.set_ylabel("error [$L^2$]")
-            ax.legend()
-            ax.set_title(ds_train.name_human(multiline=True))
+            for ax in [ax_random, ax_island]:
+                ax.set_xlabel("masking intensity (eval)")
+                ax.set_ylabel("error [$L^2$]")
+                ax.legend()
+            ax_random.set_title("Eval: Random")
+            ax_island.set_title("Eval: Island")
 
+            fig.suptitle(ds_train.name_human(multiline=True))
             path = pathlib.Path(f"{ds_train.path}.png")
             fig.savefig(path)
             plt.close(fig)
@@ -104,7 +128,7 @@ class Problem:
             self._datasets_train[0].N_CHANNELS_LHS,
             self._datasets_train[0].N_CHANNELS_RHS,
         ):
-            yield model.Model(network, ds_train, self._datasets_evals)
+            yield model.Model(network, ds_train)
 
     @abc.abstractmethod
     def _dataset_raw(self) -> dataset.DatasetPDE2d:

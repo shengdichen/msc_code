@@ -215,6 +215,19 @@ class MaskerIsland(Masker):
             f"{(self._intensity + self._intensity_spread):.2}]"
         )
 
+    @classmethod
+    def from_min_max(
+        cls,
+        intensity_min: float = 0.4,
+        intensity_max: float = 0.6,
+        value_mask: float = 0.5,
+    ) -> "MaskerIsland":
+        return cls(
+            intensity=(intensity_max + intensity_min) / 2,
+            intensity_spread=(intensity_max - intensity_min) / 2,
+            value_mask=value_mask,
+        )
+
     def mask(self, full: torch.Tensor) -> torch.Tensor:
         if math.isclose(self._intensity, 0.0):
             return full.detach().clone()
