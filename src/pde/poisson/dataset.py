@@ -202,7 +202,7 @@ class DatasetGauss(DatasetPoisson2d):
         return weights, mu_vectors, sigma_vectors
 
     def _make_sample(
-        self, mu_vec: np.ndarray, sigmas: torch.utils.data.dataset.TensorDataset
+        self, mu_vec: np.ndarray, sigmas: np.ndarray
     ) -> tuple[np.ndarray, np.ndarray]:
         return (
             self._constant_multiplier
