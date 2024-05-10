@@ -1,22 +1,30 @@
 import logging
 
-import torch
+from src import problem
 
 logger = logging.getLogger(__name__)
 
 
-class Main:
+class Pipeline:
     def __init__(self):
-        self._report_lab_setup()
+        self._problem_poisson = problem.ProblemPoisson()
+        self._problem_heat = problem.ProblemHeat()
+        self._problem_wave = problem.ProblemWave()
 
-    @staticmethod
-    def _report_lab_setup() -> None:
-        if torch.cuda.is_available():
-            logger.debug(f"Cuda'g on: {torch.cuda.get_device_name()}")
+        self._problems = [self._problem_poisson, self._problem_heat, self._problem_wave]
+
+    def work(self) -> None:
+        for pr in self._problems:
+            pr.eval()
+
+
+def main():
+    p = Pipeline()
+    p.work()
 
 
 if __name__ == "__main__":
     logging.basicConfig(
         format="%(module)s: [%(levelname)s] %(message)s", level=logging.DEBUG
     )
-    Main()
+    main()

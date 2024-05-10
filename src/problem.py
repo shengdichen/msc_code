@@ -214,28 +214,3 @@ class ProblemWave(Problem):
 
     def _dataset_single(self, mask: util_dataset.Masker) -> dataset.DatasetMaskedSingle:
         return dataset_wave.DatasetMaskedSingleWave(self._dataset_raw(), mask)
-
-
-class Pipeline:
-    def __init__(self):
-        self._problem_poisson = ProblemPoisson()
-        self._problem_heat = ProblemHeat()
-        self._problem_wave = ProblemWave()
-
-        self._problems = [self._problem_poisson, self._problem_heat, self._problem_wave]
-
-    def work(self) -> None:
-        for pr in self._problems:
-            pr.eval()
-
-
-def main():
-    p = Pipeline()
-    p.work()
-
-
-if __name__ == "__main__":
-    logging.basicConfig(
-        format="%(module)s [%(levelname)s]> %(message)s", level=logging.INFO
-    )
-    main()
