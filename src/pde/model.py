@@ -30,7 +30,7 @@ class Model:
         self._network.network.to(self._device)
 
         self._dataset_train = dataset_train
-        self._datasets_eval = datasets_eval
+        self._datasets_eval = datasets_eval or []
 
         self._path_network = pathlib.Path(
             f"{str(self._dataset_train.path)}--{self._network.name}"
@@ -179,7 +179,7 @@ class Model:
         self,
         in_percentage: bool = True,
         batch_size: int = 30,
-        clip_at_max: typing.Optional[int] = None,
+        clip_at_max: typing.Optional[float] = None,
     ) -> np.ndarray:
         errors = []
 
@@ -195,12 +195,12 @@ class Model:
                     ]
                 )
                 errors.append(errors_curr)
-        errors = np.array(errors)
+        errors_np = np.array(errors)
         if clip_at_max:
-            errors = np.clip(errors, a_min=0.0, a_max=clip_at_max)
+            errors_np = np.clip(errors_np, a_min=0.0, a_max=clip_at_max)
         if in_percentage:
-            return 100 * errors
-        return errors
+            return 100 * errors_np
+        return errors_np
 
     def _distances_dataset(
         self, dataset: T_DATASET, batch_size: int = 30

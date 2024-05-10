@@ -32,7 +32,7 @@ class Network:
     @classmethod
     def all(
         cls, dim_lhs: int = 8, dim_rhs: int = 1
-    ) -> collections.abc.Generator[tuple[T_NETWORK, str], None, None]:
+    ) -> collections.abc.Generator["Network", None, None]:
         yield cls.fno(dim_lhs, dim_rhs)
         yield cls.cno(dim_lhs, dim_rhs)
         yield cls.kno(dim_lhs, dim_rhs)
