@@ -103,6 +103,10 @@ class TestGrid:
             grid.Grid(n_pts=10, stepsize=0, start=3)
             grid.Grid(n_pts=10, stepsize=-0.1, start=3)
 
+    def test_from_start_end(self):
+        gr = grid.Grid.from_start_end(5, start=-1.0, end=1.0)
+        assert gr.step() == [-1.0, -0.5, 0.0, 0.5, 1.0]
+
     def test_step(self):
         gr = grid.Grid(n_pts=1, stepsize=0.1, start=3)
         assert EqualityBuiltin(

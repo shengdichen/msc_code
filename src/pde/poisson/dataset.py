@@ -25,19 +25,13 @@ logger = logging.getLogger(__name__)
 
 
 class DatasetPoisson2d(DatasetPDE2d):
-    def solve(
-        self, n_instances: int
-    ) -> typing.Iterable[tuple[torch.Tensor, torch.Tensor]]:
-        for __ in range(n_instances):
-            yield self.solve_instance()
-
     def solve_instance(self) -> tuple[torch.Tensor, torch.Tensor]:
         """
         return (solution, source)
         """
         raise NotImplementedError
 
-    def as_dataset(self, n_instances: int) -> torch.utils.data.dataset.TensorDataset:
+    def as_dataset(self, n_instances: int) -> T_DATASET:
         solutions, sources = [], []
         for solution, source in self.solve(n_instances):
             solutions.append(solution)
@@ -98,8 +92,6 @@ class DatasetSin(DatasetPoisson2d):
         constant_factor: float = 1.0,
     ):
         super().__init__(grids)
-
-        self._coords_x1, self._coords_x2 = self._grids.coords_as_mesh_torch()
 
         self._n_samples_per_instance = n_samples_per_instance
         self._weight_min, self._weight_max = sample_weight_min, sample_weight_max
