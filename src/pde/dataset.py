@@ -106,8 +106,8 @@ class DatasetPDE:
         return torch.load(path_eval), torch.load(path_train)
 
     def as_dataset(self, n_instances: int) -> T_DATASET:
-        instances = list(self.solve(n_instances))
-        channels = [[] for __ in range(len(instances[0]))]
+        instances: list[typing.Sequence[torch.Tensor]] = list(self.solve(n_instances))
+        channels: list[list[torch.Tensor]] = [[] for __ in range(len(instances[0]))]
         for instance in instances:
             for channel, item in zip(channels, instance):
                 channel.append(item)
@@ -117,12 +117,12 @@ class DatasetPDE:
 
     def solve(
         self, n_instances: int
-    ) -> collections.abc.Generator[typing.Iterable[torch.Tensor]]:
+    ) -> collections.abc.Generator[typing.Sequence[torch.Tensor], None, None]:
         for __ in range(n_instances):
             yield self.solve_instance()
 
     @abc.abstractmethod
-    def solve_instance(self) -> typing.Iterable[torch.Tensor]:
+    def solve_instance(self) -> typing.Sequence[torch.Tensor]:
         raise NotImplementedError
 
 
@@ -144,7 +144,7 @@ class DatasetPDE2d(DatasetPDE):
         self._putil = plot.PlotUtil(self._grids)
 
     @abc.abstractmethod
-    def solve_instance(self) -> typing.Iterable[torch.Tensor]:
+    def solve_instance(self) -> typing.Sequence[torch.Tensor]:
         raise NotImplementedError
 
 
@@ -274,7 +274,7 @@ class DatasetMaskedSingle(DatasetMasked):
     def evals_from_masks(
         cls,
         dataset_raw: DatasetPDE2d,
-        masks: dataset_util.Masker,
+        masks: typing.Sequence[dataset_util.Masker],
         n_instances: int,
     ) -> typing.Sequence["DatasetMaskedSingle"]:
         evals = []
