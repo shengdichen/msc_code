@@ -11,7 +11,7 @@ from scipy.stats import multivariate_normal
 
 from src.definition import T_DATASET
 from src.numerics import grid
-from src.pde.dataset import DatasetMaskedSingle, DatasetPDE2d
+from src.pde.dataset import DatasetMaskedDouble, DatasetMaskedSingle, DatasetPDE2d
 from src.util import dataset as dataset_util
 from src.util import plot
 from src.util.dataset import Masker
@@ -66,11 +66,24 @@ class DatasetPoisson2d(DatasetPDE2d):
 
 class DatasetMaskedSinglePoisson(DatasetMaskedSingle):
     N_CHANNELS_LHS = 8
-    N_CHANNELS_RHS = 1
-    MASK_IDX = 0
 
     def __init__(self, dataset_raw: DatasetPDE2d, mask: Masker):
-        super().__init__(dataset_raw, mask)
+        super().__init__(dataset_raw, mask, mask_index=0)
+
+
+class DatasetMaskedDoublePoisson(DatasetMaskedDouble):
+    N_CHANNELS_LHS = 8
+
+    def __init__(
+        self,
+        dataset_raw: DatasetPDE2d,
+        mask_solution: dataset_util.Masker,
+        mask_source: typing.Optional[dataset_util.Masker] = None,
+    ):
+        mask_source = mask_source or mask_solution
+        super().__init__(
+            dataset_raw, (mask_solution, mask_source), masks_indexes=(0, 1)
+        )
 
 
 class DatasetSin(DatasetPoisson2d):
