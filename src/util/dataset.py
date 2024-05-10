@@ -42,7 +42,7 @@ class DatasetPde:
         return self._lhss, self._rhss
 
     @property
-    def dataset(self) -> torch.utils.data.dataset.TensorDataset:
+    def dataset(self) -> T_DATASET:
         return self._dataset
 
     @property
@@ -68,9 +68,7 @@ class DatasetPde:
         return cls(lhss_torch, rhss_torch)
 
     @classmethod
-    def from_dataset(
-        cls, *datasets: torch.utils.data.dataset.TensorDataset
-    ) -> "DatasetPde":
+    def from_dataset(cls, *datasets: T_DATASET) -> "DatasetPde":
         lhss: list[torch.Tensor] = []
         rhss: list[torch.Tensor] = []
         for dataset in datasets:
@@ -80,7 +78,7 @@ class DatasetPde:
         return cls.from_torch(lhss, rhss)
 
     @staticmethod
-    def one_big_batch(dataset: torch.utils.data.dataset.TensorDataset) -> list:
+    def one_big_batch(dataset: T_DATASET) -> list:
         return list(torch.utils.data.DataLoader(dataset, batch_size=len(dataset)))[0]
 
 
@@ -350,9 +348,7 @@ class Reorderer:
         return [tensor.permute(idxs) for tensor in tensors]
 
     @staticmethod
-    def components_to_second(
-        dataset: torch.utils.data.dataset.TensorDataset,
-    ) -> torch.utils.data.dataset.TensorDataset:
+    def components_to_second(dataset: T_DATASET) -> T_DATASET:
         """
         lhss: [n_instances, x..., n_channels_lhs] -> [n_instances, n_channels_lhs, x...]
         rhss: [n_instances, x..., n_channels_rhs] -> [n_instances, n_channels_rhs, x...]
@@ -374,9 +370,7 @@ class Reorderer:
         return [tensor.permute(idxs) for tensor in tensors]
 
     @staticmethod
-    def components_to_last(
-        dataset: torch.utils.data.dataset.TensorDataset,
-    ) -> torch.utils.data.dataset.TensorDataset:
+    def components_to_last(dataset: T_DATASET) -> T_DATASET:
         """
         lhss: [n_instances, n_channels_lhs, x...] -> [n_instances, x..., n_channels_lhs]
         rhss: [n_instances, n_channels_rhs, x...] -> [n_instances, x..., n_channels_rhs]
@@ -411,9 +405,7 @@ class Normalizer:
         self._shape_rhss = shape_rhss
 
     @classmethod
-    def from_dataset(
-        cls, dataset: torch.utils.data.dataset.TensorDataset
-    ) -> "Normalizer":
+    def from_dataset(cls, dataset: T_DATASET) -> "Normalizer":
         return cls.from_lhss_rhss(*DatasetPde.from_dataset(dataset).lhss_rhss)
 
     @classmethod
@@ -449,9 +441,7 @@ class Normalizer:
         idxs[0], idxs[1] = idxs[1], idxs[0]
         return target.permute(idxs)
 
-    def normalize_dataset(
-        self, dataset: torch.utils.data.dataset.TensorDataset
-    ) -> torch.utils.data.dataset.TensorDataset:
+    def normalize_dataset(self, dataset: T_DATASET) -> T_DATASET:
         lhss, rhss = DatasetPde.from_dataset(dataset).lhss_rhss
         return torch.utils.data.TensorDataset(
             self.normalize_lhss(lhss), self.normalize_rhss(rhss)

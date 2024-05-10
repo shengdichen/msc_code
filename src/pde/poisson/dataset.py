@@ -313,10 +313,10 @@ class DatasetPoissonMaskedSolution:
 
     def make(
         self,
-        dataset: torch.utils.data.dataset.TensorDataset,
+        dataset: T_DATASET,
         components_to_last: bool = False,
         save_as: typing.Optional[pathlib.Path] = None,
-    ) -> torch.utils.data.dataset.TensorDataset:
+    ) -> T_DATASET:
         if save_as and save_as.exists():
             self._dataset = torch.load(save_as)
             return self._dataset
@@ -354,24 +354,18 @@ class DatasetPoissonMaskedSolution:
 
         return f
 
-    def _normalize(
-        self, dataset: torch.utils.data.dataset.TensorDataset
-    ) -> torch.utils.data.dataset.TensorDataset:
+    def _normalize(self, dataset: T_DATASET) -> T_DATASET:
         self._normalizer = dataset_util.Normalizer.from_dataset(dataset)
         return self._normalizer.normalize_dataset(dataset)
 
-    def _apply_mask(
-        self, dataset: torch.utils.data.dataset.TensorDataset, mask: dataset_util.Masker
-    ) -> torch.utils.data.dataset.TensorDataset:
+    def _apply_mask(self, dataset: T_DATASET, mask: dataset_util.Masker) -> T_DATASET:
         lhss, rhss = dataset_util.DatasetPde.from_dataset(dataset).lhss_rhss
         for lhs in lhss:
             lhs[-2] = mask.mask(lhs[-2])
         return torch.utils.data.TensorDataset(lhss, rhss)
 
     def plot_instance(
-        self,
-        dataset: torch.utils.data.dataset.TensorDataset,
-        n_instances: int = 1,
+        self, dataset: T_DATASET, n_instances: int = 1
     ) -> mpl.figure.Figure:
         fig, (axs_unmasked, axs_masked) = plt.subplots(
             2, n_instances, figsize=(10, 7.3), dpi=200, subplot_kw={"aspect": 1.0}
@@ -417,12 +411,12 @@ class DatasetPoissonMaskedSolutionSource:
 
     def make(
         self,
-        dataset: torch.utils.data.dataset.TensorDataset,
+        dataset: T_DATASET,
         mask_solution: dataset_util.Masker,
         mask_source: dataset_util.Masker,
         components_to_last: bool = False,
         save_as: typing.Optional[pathlib.Path] = None,
-    ) -> torch.utils.data.dataset.TensorDataset:
+    ) -> T_DATASET:
         if save_as and save_as.exists():
             return torch.load(save_as)
 
@@ -452,18 +446,16 @@ class DatasetPoissonMaskedSolutionSource:
 
         return self._dataset
 
-    def _normalize(
-        self, dataset: torch.utils.data.dataset.TensorDataset
-    ) -> torch.utils.data.dataset.TensorDataset:
+    def _normalize(self, dataset: T_DATASET) -> T_DATASET:
         self._normalizer = dataset_util.Normalizer.from_dataset(dataset)
         return self._normalizer.normalize_dataset(dataset)
 
     def _apply_mask(
         self,
-        dataset: torch.utils.data.dataset.TensorDataset,
+        dataset: T_DATASET,
         mask_solution: dataset_util.Masker,
         mask_source: dataset_util.Masker,
-    ) -> torch.utils.data.dataset.TensorDataset:
+    ) -> T_DATASET:
         lhss, rhss = dataset_util.DatasetPde.from_dataset(dataset).lhss_rhss
         for lhs in lhss:
             lhs[-2] = mask_solution.mask(lhs[-2])
