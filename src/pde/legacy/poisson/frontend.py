@@ -8,10 +8,9 @@ import matplotlib as mpl
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
-
 from src.deepl import cno, fno_2d
 from src.numerics import grid
-from src.pde.dataset import DatasetMasked, DatasetSplits
+from src.pde.dataset import DatasetMasked
 from src.pde.legacy.poisson.learner import (
     LearnerPoissonCNOMaskedSolution,
     LearnerPoissonCNOMaskedSolutionSource,
@@ -26,7 +25,7 @@ from src.pde.poisson.dataset import (
     DatasetPoissonMaskedSolutionSource,
     DatasetSin,
 )
-from src.util.dataset import Masker, MaskerIsland, MaskerRandom
+from src.util.dataset import Masker, MaskerIsland, MaskerRandom, Splitter
 from src.util.saveload import SaveloadImage, SaveloadTorch
 
 logger = logging.getLogger(__name__)
@@ -96,7 +95,7 @@ class DatasetsMasked:
                     self._ds_raw.as_dataset(n_raw),
                     location_raw,
                 )
-            ds_eval, ds_train = DatasetSplits(self._saveload.load(location_raw)).split(
+            ds_eval, ds_train = Splitter(self._saveload.load(location_raw)).split(
                 n_eval, n_train
             )
             self._saveload.save(ds_eval, location_eval, overwrite=True)
@@ -211,7 +210,7 @@ class Pipeline:
                     self._dataset_raw.as_dataset(n_raw),
                     location_raw,
                 )
-            ds_eval, ds_train = DatasetSplits(self._saveload.load(location_raw)).split(
+            ds_eval, ds_train = Splitter(self._saveload.load(location_raw)).split(
                 n_eval, n_train
             )
             self._saveload.save(ds_eval, location_eval, overwrite=True)

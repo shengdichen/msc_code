@@ -8,6 +8,7 @@ from collections.abc import Callable, Iterable
 import numpy as np
 import torch
 
+from src.definition import T_DATASET
 from src.numerics import distance
 
 
@@ -81,6 +82,37 @@ class DatasetPde:
     @staticmethod
     def one_big_batch(dataset: torch.utils.data.dataset.TensorDataset) -> list:
         return list(torch.utils.data.DataLoader(dataset, batch_size=len(dataset)))[0]
+
+
+class Splitter:
+    def __init__(self, dataset_full: T_DATASET):
+        self._dataset_full = dataset_full
+        self._n_instances = len(self._dataset_full)
+
+    def split(
+        self, n_instances_eval: int, n_instances_train: int
+    ) -> tuple[T_DATASET, T_DATASET]:
+        indexes_eval, indexes_train = self._indexes_eval_train(
+            n_instances_eval, n_instances_train
+        )
+
+        return (
+            torch.utils.data.Subset(self._dataset_full, indexes_eval),
+            torch.utils.data.Subset(self._dataset_full, indexes_train),
+        )
+
+    def _indexes_eval_train(
+        self, n_instances_eval: int, n_instances_train: int
+    ) -> tuple[np.ndarray, np.ndarray]:
+        # NOTE:
+        # generate indexes in one call with |replace| set to |False| to guarantee strict
+        # separation of train and eval datasets
+        indexes = np.random.default_rng(seed=42).choice(
+            self._n_instances,
+            n_instances_eval + n_instances_train,
+            replace=False,
+        )
+        return indexes[:n_instances_eval], indexes[-n_instances_train:]
 
 
 class Masker:
