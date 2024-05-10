@@ -87,18 +87,32 @@ class Masker:
     def __init__(
         self,
         intensity: float = 0.5,
+        intensity_spread: float = 0.1,
         value_mask: float = 0.5,
     ):
         self._intensity = intensity
+        self._intensity_spread = intensity_spread
+        self._intensity_min, self._intensity_max = (
+            self._intensity - self._intensity_spread,
+            self._intensity + self._intensity_spread,
+        )
+
         self._value_mask = value_mask
+
+        self._name: str
+        self._name_human: str
 
     @abc.abstractmethod
     def mask(self, full: torch.Tensor) -> torch.Tensor:
         raise NotImplementedError
 
-    @abc.abstractmethod
-    def as_name(self) -> str:
-        raise NotImplementedError
+    @property
+    def name(self) -> str:
+        return self._name
+
+    @property
+    def name_human(self) -> str:
+        return self._name_human
 
     @property
     def intensity(self) -> float:
@@ -107,6 +121,11 @@ class Masker:
     @intensity.setter
     def intensity(self, value: float) -> None:
         self._intensity = value
+
+    def min_max(self, as_percentage: bool = False) -> tuple[float, float]:
+        if as_percentage:
+            return self._intensity_min * 100, self._intensity_max * 100
+        return self._intensity_min, self._intensity_max
 
     def _sample_intensity(self, spread: float) -> float:
         if math.isclose(spread, 0.0):
@@ -126,19 +145,25 @@ class MaskerRandom(Masker):
         intensity: float = 0.5,
         intensity_spread: float = 0.1,
         value_mask: float = 0.5,
-        seed: typing.Optional[int] = None,
+        seed: typing.Optional[int] = 42,
     ):
-        super().__init__(intensity, value_mask)
+        super().__init__(intensity, intensity_spread, value_mask)
 
-        self._intensity_spread = intensity_spread
         self._rng = np.random.default_rng(seed=seed)
 
         self._name = (
             f"random"
             "_"
-            f"{self._intensity-self._intensity_spread:.2}"
+            f"{(self._intensity - self._intensity_spread):.2}"
             "_"
-            f"{self._intensity+self._intensity_spread:.2}"
+            f"{(self._intensity + self._intensity_spread):.2}"
+        )
+        self._name_human = (
+            f"Random"
+            " "
+            f"[{self._intensity_min:.0%}"
+            "-"
+            f"{self._intensity_max:.0%}]"
         )
 
     @classmethod
@@ -155,9 +180,6 @@ class MaskerRandom(Masker):
             value_mask=value_mask,
             seed=seed,
         )
-
-    def as_name(self) -> str:
-        return self._name
 
     def mask(self, full: torch.Tensor) -> torch.Tensor:
         if math.isclose(self._intensity, 1.0):
@@ -176,12 +198,7 @@ class MaskerRandom(Masker):
         )
 
         indexes_full = np.array(
-            [
-                idxs
-                for idxs in itertools.product(
-                    *(range(len_dim) for len_dim in full.shape)
-                )
-            ]
+            list(itertools.product(*(range(len_dim) for len_dim in full.shape)))
         )
         return self._rng.choice(indexes_full, n_gridpts_to_mask, replace=False)
 
@@ -190,13 +207,35 @@ class MaskerIsland(Masker):
     def __init__(
         self, intensity: float, intensity_spread: float = 0.1, value_mask: float = 0.5
     ):
-        super().__init__(intensity, value_mask)
+        super().__init__(intensity, intensity_spread, value_mask)
 
-        self._intensity_spread = intensity_spread
-        self._name = f"island_{self._intensity:.2}"
+        self._name = (
+            f"island"
+            "_"
+            f"{(self._intensity - self._intensity_spread):.2}"
+            "_"
+            f"{(self._intensity + self._intensity_spread):.2}"
+        )
+        self._name_human = (
+            f"Island"
+            " "
+            f"[{self._intensity_min:.0%}"
+            "-"
+            f"{self._intensity_max:.0%}]"
+        )
 
-    def as_name(self) -> str:
-        return self._name
+    @classmethod
+    def from_min_max(
+        cls,
+        intensity_min: float = 0.4,
+        intensity_max: float = 0.6,
+        value_mask: float = 0.5,
+    ) -> "MaskerIsland":
+        return cls(
+            intensity=(intensity_max + intensity_min) / 2,
+            intensity_spread=(intensity_max - intensity_min) / 2,
+            value_mask=value_mask,
+        )
 
     def mask(self, full: torch.Tensor) -> torch.Tensor:
         if math.isclose(self._intensity, 0.0):

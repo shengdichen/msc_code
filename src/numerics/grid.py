@@ -124,6 +124,10 @@ class GridTime(Grid):
     def n_pts(self) -> int:
         return self._n_pts - 1
 
+    @classmethod
+    def from_start_end_only(cls, end: float, start: float = 0.0) -> "GridTime":
+        return cls(1, end - start, start)
+
     def timestep_formatted(self, timestep: int) -> str:
         return f"{self._formatter_timestep}".format(timestep)
 

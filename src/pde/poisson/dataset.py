@@ -15,7 +15,7 @@ from scipy.stats import multivariate_normal
 
 from src.definition import T_DATASET
 from src.numerics import grid
-from src.pde.dataset import DatasetPDE2d
+from src.pde.dataset import DatasetMaskedSingle, DatasetPDE2d
 from src.util import dataset as dataset_util
 from src.util import plot
 from src.util.dataset import Masker
@@ -25,20 +25,8 @@ logger = logging.getLogger(__name__)
 
 
 class DatasetPoisson2d(DatasetPDE2d):
-    def solve_instance(self) -> tuple[torch.Tensor, torch.Tensor]:
-        """
-        return (solution, source)
-        """
-        raise NotImplementedError
-
-    def as_dataset(self, n_instances: int) -> T_DATASET:
-        solutions, sources = [], []
-        for solution, source in self.solve(n_instances):
-            solutions.append(solution)
-            sources.append(source)
-        return torch.utils.data.TensorDataset(
-            torch.stack(solutions), torch.stack(sources)
-        )
+    def __init__(self, grids: grid.Grids, name_dataset: str):
+        super().__init__(grids, name_problem="poisson", name_dataset=name_dataset)
 
     @abc.abstractmethod
     def plot(self, set_title_upper: bool = True) -> mpl.figure.Figure:
@@ -81,24 +69,31 @@ class DatasetPoisson2d(DatasetPDE2d):
         self._putil.plot_2d(ax, solution)
 
 
+class DatasetMaskedSinglePoisson(DatasetMaskedSingle):
+    N_CHANNELS_LHS = 8
+    N_CHANNELS_RHS = 1
+    MASK_IDX = 0
+
+    def __init__(self, dataset_raw: DatasetPDE2d, mask: Masker):
+        super().__init__(dataset_raw, mask)
+
+
 class DatasetSin(DatasetPoisson2d):
     def __init__(
         self,
         grids: grid.Grids,
-        n_samples_per_instance=4,
+        constant_r: float = 0.85,
+        constant_multiplier: float = 1.0,
         sample_weight_min: float = -1.0,
         sample_weight_max: float = 1.0,
-        constant_r: float = 0.85,
-        constant_factor: float = 1.0,
+        n_samples_per_instance=4,
     ):
-        super().__init__(grids)
+        super().__init__(grids, name_dataset="sum_of_sine")
+
+        self._constant_r, self._constant_multiplier = constant_r, constant_multiplier
 
         self._n_samples_per_instance = n_samples_per_instance
         self._weight_min, self._weight_max = sample_weight_min, sample_weight_max
-        self._constant_r, self._constant_factor = constant_r, constant_factor
-
-    def as_name(self) -> str:
-        return "sum_of_sine"
 
     def plot(self, set_title_upper: bool = True) -> mpl.figure.Figure:
         return self._plot("Sum of Sine" if set_title_upper else "")
@@ -119,13 +114,13 @@ class DatasetSin(DatasetPoisson2d):
             * torch.sin(torch.pi * sample_x2 * coords_x2)
         )
         source = (
-            self._constant_factor * torch.pi / self._n_samples_per_instance**2
+            self._constant_multiplier * torch.pi / self._n_samples_per_instance**2
         ) * torch.sum(
             (idx_sum**self._constant_r) * product,
             dim=(-2, -1),
         )
         solution = (
-            self._constant_factor / torch.pi / self._n_samples_per_instance**2
+            self._constant_multiplier / torch.pi / self._n_samples_per_instance**2
         ) * torch.sum(
             (idx_sum ** (self._constant_r - 1)) * product,
             dim=(-2, -1),
@@ -144,30 +139,28 @@ class DatasetGauss(DatasetPoisson2d):
     def __init__(
         self,
         grids: grid.Grids,
-        n_samples_per_instance=4,
-        constant_factor: float = 1.0,
-        rng_np: np.random.Generator = np.random.default_rng(42),
-        sample_weight_min: float = 0.3,
-        sample_weight_max: float = 0.7,
+        constant_multiplier: float = 1.0,
+        rng_np: np.random.Generator = np.random.default_rng(),
         sample_mu_with_sobol: bool = False,
         sample_sigma_same: bool = False,
         sample_sigma_min: float = 0.04,
         sample_sigma_max: float = 0.13,
+        sample_weight_min: float = 0.3,
+        sample_weight_max: float = 0.7,
+        n_samples_per_instance=4,
     ):
-        super().__init__(grids)
-
-        self._constant_factor = constant_factor
-        self._rng_np = rng_np
-        self._n_samples_per_instance = n_samples_per_instance
+        super().__init__(grids, name_dataset="sum_of_gauss")
         self._coords_x1, self._coords_x2 = self._grids.coords_as_mesh()
 
-        self._weight_min, self._weight_max = sample_weight_min, sample_weight_max
+        self._constant_multiplier = constant_multiplier
+        self._rng_np = rng_np
+
         self._mu_with_sobol = sample_mu_with_sobol
         self._sigma_same = sample_sigma_same
         self._sigma_min, self._sigma_max = sample_sigma_min, sample_sigma_max
 
-    def as_name(self) -> str:
-        return "sum_of_gauss"
+        self._weight_min, self._weight_max = sample_weight_min, sample_weight_max
+        self._n_samples_per_instance = n_samples_per_instance
 
     def plot(self, set_title_upper: bool = True) -> mpl.figure.Figure:
         return self._plot("Sum of Gaussians" if set_title_upper else "")
@@ -217,9 +210,9 @@ class DatasetGauss(DatasetPoisson2d):
         self, mu_vec: np.ndarray, sigmas: torch.utils.data.dataset.TensorDataset
     ) -> tuple[np.ndarray, np.ndarray]:
         return (
-            self._constant_factor
+            self._constant_multiplier
             * self._calc_solution(mu_vec, sigma_mat=np.diag(sigmas**2)),
-            self._constant_factor * self._calc_source(mu_vec, sigmas),
+            self._constant_multiplier * self._calc_source(mu_vec, sigmas),
         )
 
     def _calc_solution(self, mu_vec: np.ndarray, sigma_mat: np.ndarray) -> np.ndarray:
@@ -270,7 +263,7 @@ class DatasetPoissonMaskedSolution:
 
         self._dataset_raw = dataset_raw
         self._mask = mask
-        self._name = f"{self._dataset_raw.as_name()}--sol_{self._mask.as_name()}"
+        self._name = f"{self._dataset_raw.name_dataset}--sol_{self._mask.name}"
 
         self._normalizer: dataset_util.Normalizer
         self._dataset: T_DATASET
@@ -422,9 +415,9 @@ class DatasetPoissonMaskedSolutionSource:
         mask_source: dataset_util.Masker,
     ) -> str:
         return (
-            f"{dataset.as_name()}--"
-            f"sol_{mask_solution.as_name()}--"
-            f"source_{mask_source.as_name()}"
+            f"{dataset.name_dataset}--"
+            f"sol_{mask_solution.name()}--"
+            f"source_{mask_source.name()}"
         )
 
     def make(
