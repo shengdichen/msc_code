@@ -35,11 +35,18 @@ class Problem:
                 intensity_min=0.6, intensity_max=0.8
             ),
         ]
-        self._datasets_train: list[dataset.DatasetMaskedSingle] = []
+
+        self._datasets_train: list[  # type: ignore [annotation-unchecked]
+            dataset.DatasetMaskedSingle
+        ] = []
 
         self._intensities_eval = [(i * 10 + 5) for i in range(10)]  # in percentage
-        self._datasets_evals_random: list[dataset.DatasetMaskedSingle] = []
-        self._datasets_evals_island: list[dataset.DatasetMaskedSingle] = []
+        self._datasets_evals_random: list[  # type: ignore [annotation-unchecked]
+            dataset.DatasetMaskedSingle
+        ] = []
+        self._datasets_evals_island: list[  # type: ignore [annotation-unchecked]
+            dataset.DatasetMaskedSingle
+        ] = []
         self._load_datasets()
 
     def _load_datasets(self) -> None:
