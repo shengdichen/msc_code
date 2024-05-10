@@ -145,7 +145,7 @@ class MaskerRandom(Masker):
         intensity: float = 0.5,
         intensity_spread: float = 0.1,
         value_mask: float = 0.5,
-        seed: typing.Optional[int] = None,
+        seed: typing.Optional[int] = 42,
     ):
         super().__init__(intensity, intensity_spread, value_mask)
 
