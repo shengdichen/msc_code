@@ -125,7 +125,7 @@ class Masking:
             ).train()
             return network
 
-        saveload = SaveloadTorch("poisson")
+        saveload = SaveloadTorch("../poisson")
         network = saveload.load_or_make(
             saveload.rebase_location(f"network-{perc_x1}-{perc_x2}"), make_network
         )
