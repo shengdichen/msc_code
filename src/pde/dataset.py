@@ -151,6 +151,7 @@ class DatasetPDE2d(DatasetPDE):
 class DatasetMasked:
     N_CHANNELS_LHS: int
     N_CHANNELS_RHS: int
+    MASK_IDXS: typing.Sequence[int]
 
     def __init__(
         self,
@@ -232,9 +233,25 @@ class DatasetMasked:
         self._assemble_unmasked()
         self._normalize_unmasked()
 
-    @abc.abstractmethod
     def _assemble_unmasked(self) -> None:
-        raise NotImplementedError
+        lhss, rhss = [], []
+        for instance in self._dataset_raw.dataset:
+            lhss.append(
+                torch.stack(
+                    [
+                        *instance,
+                        *self._coords,
+                        *self._cos_coords,
+                        *self._sin_coords,
+                    ]
+                )
+            )
+            rhss.append(
+                torch.stack([instance[mask_idx] for mask_idx in self.MASK_IDXS])
+            )
+        self._dataset_unmasked = torch.utils.data.TensorDataset(
+            torch.stack(lhss), torch.stack(rhss)
+        )
 
     def _normalize_unmasked(self) -> None:
         self._normalizer = dataset_util.Normalizer.from_dataset(self._dataset_unmasked)
@@ -253,16 +270,28 @@ class DatasetMasked:
             logger.info(f"dataset/masked> already done masking! [{path}]")
             self._dataset_masked = torch.load(path)
 
-    @abc.abstractmethod
     def mask(self) -> None:
-        raise NotImplementedError
+        lhss, rhss = dataset_util.DatasetPde.from_dataset(
+            self._dataset_unmasked
+        ).lhss_rhss
+        for lhs in lhss:
+            for mask_idx, mask in zip(self.MASK_IDXS, self._masks):
+                lhs[mask_idx] = mask.mask(lhs[mask_idx])
+        self._dataset_masked = torch.utils.data.TensorDataset(lhss, rhss)
 
-    @abc.abstractmethod
     def remask(self) -> None:
-        raise NotImplementedError
+        # NOTE:
+        #   we intentionally do NOT auto-save remasked dataset
+
+        logger.info(
+            "dataset/masked> remasking... "
+            f"[with {' + '.join([mask.name_human for mask in self._masks])}]"
+        )
+        self.mask()
 
 
 class DatasetMaskedSingle(DatasetMasked):
+    N_CHANNELS_RHS: int = 1
     MASK_IDX: int
 
     def __init__(self, dataset_raw: DatasetPDE2d, mask: dataset_util.Masker):
@@ -316,3 +345,15 @@ class DatasetMaskedSingle(DatasetMasked):
 
         logger.info(f"dataset/masked> remasking... [with {self._mask.name}]")
         self.mask()
+
+
+class DatasetMaskedDouble(DatasetMasked):
+    N_CHANNELS_RHS: int = 2
+    MASK_IDXS: tuple[int, int]
+
+    def __init__(
+        self,
+        dataset_raw: DatasetPDE2d,
+        masks: tuple[dataset_util.Masker, dataset_util.Masker],
+    ):
+        super().__init__(dataset_raw, masks)
