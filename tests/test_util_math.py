@@ -4,8 +4,7 @@ import numpy as np
 import pytest
 import torch
 
-from src.numerics import distance, grid
-from src.numerics.equality import EqualityBuiltin, EqualityTorch
+from src.numerics import distance, equality, grid
 
 
 class TestDistance:
@@ -55,7 +54,7 @@ class TestDistance:
             torch.tensor(0.5),
         )
 
-        assert EqualityTorch(
+        assert equality.EqualityTorch(
             distance.Distance(
                 torch.tensor([1, 4, 7], dtype=torch.float),
                 torch.tensor([1, 2, 3], dtype=torch.float),
@@ -109,26 +108,26 @@ class TestGrid:
 
     def test_step(self):
         gr = grid.Grid(n_pts=1, stepsize=0.1, start=3)
-        assert EqualityBuiltin(
+        assert equality.EqualityBuiltin(
             gr.step(),
             [3.0],
         ).is_equal()
         assert not gr.step(with_start=False)
 
         gr = grid.Grid(n_pts=5, stepsize=0.1, start=3)
-        assert EqualityBuiltin(
+        assert equality.EqualityBuiltin(
             list(gr.step()),
             [3.0, 3.1, 3.2, 3.3, 3.4],
         ).is_equal()
-        assert EqualityBuiltin(
+        assert equality.EqualityBuiltin(
             list(gr.step(with_start=False)),
             [3.1, 3.2, 3.3, 3.4],
         ).is_equal()
-        assert EqualityBuiltin(
+        assert equality.EqualityBuiltin(
             list(gr.step(with_end=False)),
             [3.0, 3.1, 3.2, 3.3],
         ).is_equal()
-        assert EqualityBuiltin(
+        assert equality.EqualityBuiltin(
             list(gr.step(with_start=False, with_end=False)),
             [3.1, 3.2, 3.3],
         ).is_equal()
@@ -202,7 +201,7 @@ class TestGrid:
         assert gr.min_max_perc(from_start=0.5) == (5.45, 7.9)
         assert gr.min_max_perc(to_end=0.5) == (3.0, 5.45)
 
-        assert EqualityBuiltin(
+        assert equality.EqualityBuiltin(
             gr.min_max_perc(from_start=0.1, to_end=0.1), (3.49, 7.41)
         ).is_close()
         assert gr.min_max_perc(from_start=0.5, to_end=0.5) == (5.45, 5.45)
@@ -276,7 +275,7 @@ class TestGrids:
         grs = grid.Grids([gr_1, gr_2])
 
         for _ in range(3):  # also test auto engine-reset after every draw
-            assert EqualityTorch(
+            assert equality.EqualityTorch(
                 (grs.samples_sobol(10)),
                 torch.tensor(
                     [
@@ -554,19 +553,19 @@ class TestGridTime:
     def test_step(self):
         gr = grid.GridTime(n_pts=5, stepsize=0.1)
 
-        assert EqualityBuiltin(
+        assert equality.EqualityBuiltin(
             list(gr.step()),
             [0.1, 0.2, 0.3, 0.4, 0.5],
         ).is_equal()
-        assert EqualityBuiltin(
+        assert equality.EqualityBuiltin(
             list(gr.step(with_start=True)),
             [0.0, 0.1, 0.2, 0.3, 0.4, 0.5],
         ).is_equal()
-        assert EqualityBuiltin(
+        assert equality.EqualityBuiltin(
             list(gr.step(with_end=False)),
             [0.1, 0.2, 0.3, 0.4],
         ).is_equal()
-        assert EqualityBuiltin(
+        assert equality.EqualityBuiltin(
             list(gr.step(with_start=True, with_end=False)),
             [0.0, 0.1, 0.2, 0.3, 0.4],
         ).is_equal()
