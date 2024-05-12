@@ -171,6 +171,11 @@ class DatasetMasked:
         self._dataset_unmasked: T_DATASET
         self._dataset_masked: T_DATASET
 
+        # NOTE:
+        #   first remask call will (re-)produce the (saved) masked dataset, thus we need
+        #   to remask TWICE during this first remask call
+        self._need_second_remasking: bool = True
+
         self._base_dir = self._dataset_raw.base_dir
         self._path: pathlib.Path
         self._save_unmasked = save_unmasked
@@ -288,6 +293,9 @@ class DatasetMasked:
             f"[with {' + '.join([mask.name_human for mask in self._masks])}]"
         )
         self.mask()
+        if self._need_second_remasking:
+            self.mask()
+            self._need_second_remasking = False
 
 
 class DatasetMaskedSingle(DatasetMasked):

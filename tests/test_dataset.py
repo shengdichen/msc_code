@@ -290,8 +290,7 @@ class TestDatasetMasked:
             assert equality.EqualityTorch(instance[0][2], coords_x1_truth).is_close()
             assert equality.EqualityTorch(instance[0][3], coords_x2_truth).is_close()
 
-        ds.remask()  # first remask call (re-)produces (saved) masked dataset...
-        ds.remask()  # ...thus need to remask again
+        ds.remask()
         for instance in ds.dataset_masked:
             assert equality.EqualityTorch(instance[0][0], lhs_0_truth).is_close()
             assert equality.EqualityTorch(
@@ -394,8 +393,7 @@ class TestDatasetMasked:
             assert equality.EqualityTorch(instance[0][2], coords_x1_truth).is_close()
             assert equality.EqualityTorch(instance[0][3], coords_x2_truth).is_close()
 
-        ds.remask()  # first remask call (re-)produces (saved) masked dataset...
-        ds.remask()  # ...thus need to remask again
+        ds.remask()
         for instance in ds.dataset_masked:
             assert equality.EqualityTorch(
                 instance[0][0],
