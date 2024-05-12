@@ -157,11 +157,14 @@ class Masker:
             return self._intensity_min * 100, self._intensity_max * 100
         return self._intensity_min, self._intensity_max
 
-    def _sample_intensity(self, spread: float) -> float:
-        if math.isclose(spread, 0.0):
+    def _sample_intensity(self) -> float:
+        if math.isclose(self._intensity_spread, 0.0):
             return self._intensity
 
-        intensity = random.uniform(self._intensity - spread, self._intensity + spread)
+        intensity = random.uniform(
+            self._intensity - self._intensity_spread,
+            self._intensity + self._intensity_spread,
+        )
         if intensity < 0.0:
             return 0.0
         if intensity > 1.0:
@@ -223,9 +226,7 @@ class MaskerRandom(Masker):
         return res.type_as(full)
 
     def _indexes_to_mask(self, full: torch.Tensor) -> np.ndarray:
-        n_gridpts_to_mask = int(
-            self._sample_intensity(self._intensity_spread) * np.prod(full.shape)
-        )
+        n_gridpts_to_mask = int(self._sample_intensity() * np.prod(full.shape))
 
         indexes_full = np.array(
             list(itertools.product(*(range(len_dim) for len_dim in full.shape)))
@@ -283,7 +284,7 @@ class MaskerIsland(Masker):
         return res
 
     def _range_idx_dim(self, full: torch.Tensor) -> tuple[np.ndarray, np.ndarray]:
-        perc_mask_per_side = self._sample_intensity(self._intensity_spread) / 2
+        perc_mask_per_side = self._sample_intensity() / 2
 
         lows, highs = [], []
         for size_dim in full.shape:
