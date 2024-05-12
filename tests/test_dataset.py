@@ -233,7 +233,7 @@ class TestDatasetMasked:
             ],
         )
         grid_time = grid.GridTime.from_start_end_only(end=10.0)
-        mask = dataset.MaskerRandom(intensity=0.2, value_mask=7, seed=42)
+        mask = dataset.MaskerRandom(intensity=0.2, intensity_spread=0.0, value_mask=7)
 
         train = wave_ds.DatasetMaskedSingleWave(
             wave_ds.DatasetWave(grids, grid_time), mask
@@ -273,7 +273,7 @@ class TestDatasetMasked:
         for instance in train._dataset_unmasked:  # pylint: disable=protected-access
             assert equality.EqualityTorch(instance[0][0], lhs_0_truth).is_close()
             assert equality.EqualityTorch(
-                instance[0][train.MASK_IDX],
+                instance[0][1],  # u_T
                 torch.tensor(
                     [
                         [0.7049, 0.7049, 0.7049, 0.7049, 0.7049, 0.7049],
@@ -291,15 +291,15 @@ class TestDatasetMasked:
         for instance in train.dataset_masked:
             assert equality.EqualityTorch(instance[0][0], lhs_0_truth).is_close()
             assert equality.EqualityTorch(
-                instance[0][train.MASK_IDX],
+                instance[0][1],  # u_T
                 torch.tensor(
                     [
-                        [0.7049, 7.0000, 7.0000, 0.7049, 0.7049, 0.7049],
-                        [7.0000, 0.4287, 0.4630, 0.6574, 1.0000, 0.7049],
-                        [0.7049, 0.7162, 0.1077, 7.0000, 0.6369, 0.7049],
-                        [0.7049, 0.9527, 7.0000, 0.6440, 0.2081, 0.7049],
+                        [0.7049, 0.7049, 7.0000, 7.0000, 0.7049, 0.7049],
+                        [0.7049, 0.4287, 0.4630, 0.6574, 1.0000, 0.7049],
+                        [0.7049, 0.7162, 7.0000, 0.5666, 0.6369, 0.7049],
+                        [0.7049, 0.9527, 7.0000, 0.6440, 0.2081, 7.0000],
                         [0.7049, 0.8911, 0.4814, 0.0000, 0.3809, 0.7049],
-                        [0.7049, 7.0000, 0.7049, 0.7049, 7.0000, 0.7049],
+                        [7.0000, 0.7049, 0.7049, 7.0000, 0.7049, 0.7049],
                     ]
                 ),
             ).is_close()
@@ -310,15 +310,15 @@ class TestDatasetMasked:
         for instance in train.dataset_masked:
             assert equality.EqualityTorch(instance[0][0], lhs_0_truth).is_close()
             assert equality.EqualityTorch(
-                instance[0][train.MASK_IDX],
+                instance[0][1],
                 torch.tensor(
                     [
                         [0.7049, 0.7049, 7.0000, 7.0000, 0.7049, 0.7049],
                         [0.7049, 0.4287, 0.4630, 0.6574, 1.0000, 0.7049],
                         [0.7049, 0.7162, 7.0000, 0.5666, 0.6369, 0.7049],
                         [0.7049, 0.9527, 7.0000, 0.6440, 0.2081, 7.0000],
-                        [0.7049, 7.0000, 0.4814, 0.0000, 0.3809, 7.0000],
-                        [0.7049, 0.7049, 7.0000, 0.7049, 0.7049, 0.7049],
+                        [0.7049, 0.8911, 0.4814, 0.0000, 0.3809, 0.7049],
+                        [7.0000, 0.7049, 0.7049, 7.0000, 0.7049, 0.7049],
                     ]
                 ),
             ).is_close()
