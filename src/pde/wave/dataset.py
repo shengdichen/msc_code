@@ -12,6 +12,8 @@ from src.util import plot
 
 
 class DatasetWave(DatasetPDE2d):
+    N_CHANNELS = 2
+
     def __init__(
         self,
         grids: grid.Grids,
@@ -112,15 +114,11 @@ class DatasetWave(DatasetPDE2d):
 
 
 class DatasetMaskedSingleWave(dataset.DatasetMaskedSingle):
-    N_CHANNELS_LHS = 8
-
     def __init__(self, dataset_raw: dataset.DatasetPDE2d, mask: dataset_util.Masker):
         super().__init__(dataset_raw, mask, mask_index=1)
 
 
 class DatasetMaskedDoubleWave(dataset.DatasetMaskedDouble):
-    N_CHANNELS_LHS = 8
-
     def __init__(
         self,
         dataset_raw: dataset.DatasetPDE2d,

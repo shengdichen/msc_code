@@ -15,6 +15,8 @@ logger = logging.getLogger(__name__)
 
 
 class DatasetPDE:
+    N_CHANNELS: int
+
     def __init__(
         self,
         grids: grid.Grids,
@@ -149,9 +151,6 @@ class DatasetPDE2d(DatasetPDE):
 
 
 class DatasetMasked:
-    N_CHANNELS_LHS: int
-    N_CHANNELS_RHS: int
-
     def __init__(
         self,
         dataset_raw: DatasetPDE2d,
@@ -292,8 +291,6 @@ class DatasetMasked:
 
 
 class DatasetMaskedSingle(DatasetMasked):
-    N_CHANNELS_RHS: int = 1
-
     def __init__(
         self, dataset_raw: DatasetPDE2d, mask: dataset_util.Masker, mask_index: int
     ):
@@ -318,8 +315,6 @@ class DatasetMaskedSingle(DatasetMasked):
 
 
 class DatasetMaskedDouble(DatasetMasked):
-    N_CHANNELS_RHS: int = 2
-
     def __init__(
         self,
         dataset_raw: DatasetPDE2d,

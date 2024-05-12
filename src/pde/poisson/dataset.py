@@ -17,6 +17,8 @@ logger = logging.getLogger(__name__)
 
 
 class DatasetPoisson2d(DatasetPDE2d):
+    N_CHANNELS = 2
+
     def __init__(self, grids: grid.Grids, name_dataset: str):
         super().__init__(grids, name_problem="poisson", name_dataset=name_dataset)
 
@@ -62,15 +64,11 @@ class DatasetPoisson2d(DatasetPDE2d):
 
 
 class DatasetMaskedSinglePoisson(DatasetMaskedSingle):
-    N_CHANNELS_LHS = 8
-
     def __init__(self, dataset_raw: DatasetPDE2d, mask: Masker):
         super().__init__(dataset_raw, mask, mask_index=0)
 
 
 class DatasetMaskedDoublePoisson(DatasetMaskedDouble):
-    N_CHANNELS_LHS = 8
-
     def __init__(
         self,
         dataset_raw: DatasetPDE2d,

@@ -21,7 +21,10 @@ logger = logging.getLogger(__name__)
 
 
 class Problem:
-    def __init__(self):
+    def __init__(self, n_channels_raw: int):
+        # 2 (extra) channels each for (raw-)coords, sin-coords, cos-coords
+        self._n_channels_lhs = n_channels_raw + 6
+
         self._n_instances_eval, self._n_instances_train = 300, 1800
 
         self._masks_train = [
@@ -302,19 +305,13 @@ class Problem:
     def _models_current_single(
         self, ds_train: dataset.DatasetMaskedSingle
     ) -> collections.abc.Generator[model.ModelSingle, None, None]:
-        for network in factory.Network.all(
-            self._datasets_train_single[0].N_CHANNELS_LHS,
-            self._datasets_train_single[0].N_CHANNELS_RHS,
-        ):
+        for network in factory.Network.all(dim_lhs=self._n_channels_lhs, dim_rhs=1):
             yield model.ModelSingle(network, ds_train)
 
     def _models_current_double(
         self, ds_train: dataset.DatasetMaskedDouble
     ) -> collections.abc.Generator[model.ModelDouble, None, None]:
-        for network in factory.Network.all(
-            self._datasets_train_single[0].N_CHANNELS_LHS,
-            self._datasets_train_single[0].N_CHANNELS_RHS,
-        ):
+        for network in factory.Network.all(dim_lhs=self._n_channels_lhs, dim_rhs=2):
             yield model.ModelDouble(network, ds_train)
 
     @abc.abstractmethod
@@ -331,6 +328,9 @@ class Problem:
 
 
 class ProblemPoisson(Problem):
+    def __init__(self):
+        super().__init__(n_channels_raw=dataset_poisson.DatasetPoisson2d.N_CHANNELS)
+
     def _dataset_raw(self) -> dataset.DatasetPDE2d:
         grids = grid.Grids(
             [
@@ -348,6 +348,9 @@ class ProblemPoisson(Problem):
 
 
 class ProblemHeat(Problem):
+    def __init__(self):
+        super().__init__(n_channels_raw=dataset_heat.DatasetHeat.N_CHANNELS)
+
     def _dataset_raw(self) -> dataset.DatasetPDE2d:
         grids = grid.Grids(
             [
@@ -366,6 +369,9 @@ class ProblemHeat(Problem):
 
 
 class ProblemWave(Problem):
+    def __init__(self):
+        super().__init__(n_channels_raw=dataset_wave.DatasetWave.N_CHANNELS)
+
     def _dataset_raw(self) -> dataset.DatasetPDE2d:
         grids = grid.Grids(
             [
