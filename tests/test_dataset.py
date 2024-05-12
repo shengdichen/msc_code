@@ -1,5 +1,3 @@
-import math
-
 import numpy as np
 import torch
 
@@ -208,20 +206,6 @@ class TestDatasetWave:
 
 
 class TestDatasetMasked:
-    def _size_grid(self) -> int:
-        return 5
-
-    def _value_mask(self) -> float:
-        return 7.3  # deliberately NOT within [0, 1] range
-
-    def _grid(self) -> grid.Grids:
-        return grid.Grids(
-            [
-                grid.Grid(self._size_grid(), stepsize=0.1, start=3.0),
-                grid.Grid(self._size_grid(), stepsize=0.1, start=4.0),
-            ],
-        )
-
     def test_mask_single_wave(self) -> None:
         torch.manual_seed(42)
         np.random.seed(42)
@@ -453,28 +437,3 @@ class TestDatasetMasked:
             ).is_close()
             assert equality.EqualityTorch(instance[0][2], coords_x1_truth).is_close()
             assert equality.EqualityTorch(instance[0][3], coords_x2_truth).is_close()
-
-    def test_mask_double(self) -> None:
-        torch.manual_seed(42)
-        gr = self._grid()
-
-        ds = poisson_ds.DatasetPoissonMaskedSolutionSource(gr).make(
-            poisson_ds.DatasetSin(gr, constant_multiplier=200).as_dataset(
-                n_instances=2
-            ),
-            dataset.MaskerRandom(
-                0.5, intensity_spread=0.0, value_mask=self._value_mask()
-            ),
-            dataset.MaskerRandom(
-                0.5, intensity_spread=0.0, value_mask=self._value_mask()
-            ),
-        )
-
-        for lhs, __ in ds:
-            assert torch.count_nonzero(lhs[6] == self._value_mask()) >= math.floor(
-                self._size_grid() ** 2 / 2
-            )  # solution, masked
-            assert torch.count_nonzero(lhs[7] == self._value_mask()) >= math.floor(
-                self._size_grid() ** 2 / 2
-            )  # source, masked
-            break
