@@ -1,6 +1,7 @@
 import logging
 
 from src import problem
+from src.definition import DEFINITION
 
 logger = logging.getLogger(__name__)
 
@@ -19,6 +20,8 @@ class Pipeline:
 
 
 def main():
+    DEFINITION.seed()
+
     p = Pipeline()
     p.work()
 
