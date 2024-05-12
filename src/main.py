@@ -25,6 +25,6 @@ def main():
 
 if __name__ == "__main__":
     logging.basicConfig(
-        format="%(module)s: [%(levelname)s] %(message)s", level=logging.DEBUG
+        format="%(module)s: [%(levelname)s] %(message)s", level=logging.INFO
     )
     main()
