@@ -1,6 +1,7 @@
 import logging
 
 from src import problem
+from src.definition import DEFINITION
 
 logger = logging.getLogger(__name__)
 
@@ -19,12 +20,16 @@ class Pipeline:
 
 
 def main():
+    DEFINITION.seed()
+
     p = Pipeline()
     p.work()
 
 
 if __name__ == "__main__":
     logging.basicConfig(
-        format="%(module)s: [%(levelname)s] %(message)s", level=logging.INFO
+        format="[%(asctime)s] %(module)s: [%(levelname)s] %(message)s",
+        level=logging.INFO,
+        datefmt="%Y.%m.%d-%H:%M:%S",
     )
     main()

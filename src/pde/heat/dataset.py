@@ -1,3 +1,5 @@
+import typing
+
 import matplotlib.pyplot as plt
 import torch
 
@@ -8,6 +10,8 @@ from src.util import plot
 
 
 class DatasetHeat(dataset.DatasetPDE2d):
+    N_CHANNELS = 2
+
     def __init__(
         self,
         grids: grid.Grids,
@@ -88,12 +92,19 @@ class DatasetHeat(dataset.DatasetPDE2d):
 
 
 class DatasetMaskedSingleHeat(dataset.DatasetMaskedSingle):
-    N_CHANNELS_LHS = 8
-    N_CHANNELS_RHS = 1
-    MASK_IDX = 1
-
     def __init__(self, dataset_raw: dataset.DatasetPDE2d, mask: dataset_util.Masker):
-        super().__init__(dataset_raw, mask)
+        super().__init__(dataset_raw, mask, mask_index=1)
+
+
+class DatasetMaskedDoubleHeat(dataset.DatasetMaskedDouble):
+    def __init__(
+        self,
+        dataset_raw: dataset.DatasetPDE2d,
+        mask_u_end: dataset_util.Masker,
+        mask_u_start: typing.Optional[dataset_util.Masker] = None,
+    ):
+        mask_u_start = mask_u_start or mask_u_end
+        super().__init__(dataset_raw, (mask_u_end, mask_u_start), (1, 0))
 
 
 if __name__ == "__main__":

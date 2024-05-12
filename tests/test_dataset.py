@@ -1,8 +1,6 @@
-import math
-
-import numpy as np
 import torch
 
+from src.definition import DEFINITION
 from src.numerics import equality, grid
 from src.pde.heat import dataset as heat_ds
 from src.pde.poisson import dataset as poisson_ds
@@ -208,23 +206,8 @@ class TestDatasetWave:
 
 
 class TestDatasetMasked:
-    def _size_grid(self) -> int:
-        return 5
-
-    def _value_mask(self) -> float:
-        return 7.3  # deliberately NOT within [0, 1] range
-
-    def _grid(self) -> grid.Grids:
-        return grid.Grids(
-            [
-                grid.Grid(self._size_grid(), stepsize=0.1, start=3.0),
-                grid.Grid(self._size_grid(), stepsize=0.1, start=4.0),
-            ],
-        )
-
-    def test_mask_single_wave(self) -> None:
-        torch.manual_seed(42)
-        np.random.seed(42)
+    def _setup(self) -> tuple[wave_ds.DatasetWave, dataset.MaskerRandom]:
+        DEFINITION.seed()
 
         grids = grid.Grids(
             [
@@ -235,19 +218,20 @@ class TestDatasetMasked:
         grid_time = grid.GridTime.from_start_end_only(end=10.0)
         mask = dataset.MaskerRandom(intensity=0.2, intensity_spread=0.0, value_mask=7)
 
-        train = wave_ds.DatasetMaskedSingleWave(
-            wave_ds.DatasetWave(grids, grid_time), mask
-        )
-        train.as_train(1)
+        return wave_ds.DatasetWave(grids, grid_time), mask
+
+    def test_mask_single_wave(self) -> None:
+        ds = wave_ds.DatasetMaskedSingleWave(*self._setup())
+        ds.as_train(1)
 
         lhs_0_truth = torch.tensor(
             [
-                [0.0713, 0.0713, 0.0713, 0.0713, 0.0713, 0.0713],
-                [0.0713, 0.7953, 0.6472, 0.6603, 0.2672, 0.0713],
-                [0.0713, 0.5957, 1.0000, 0.6094, 0.0000, 0.0713],
-                [0.0713, 0.4031, 0.7003, 0.9699, 0.5060, 0.0713],
-                [0.0713, 0.1757, 0.1750, 0.7983, 0.3518, 0.0713],
-                [0.0713, 0.0713, 0.0713, 0.0713, 0.0713, 0.0713],
+                [0.3683, 0.3683, 0.3683, 0.3683, 0.3683, 0.3683],
+                [0.3683, 0.8110, 0.7109, 0.8207, 0.4728, 0.3683],
+                [0.3683, 0.7537, 0.8019, 0.6743, 0.0000, 0.3683],
+                [0.3683, 0.9627, 1.0000, 0.7434, 0.3539, 0.3683],
+                [0.3683, 0.7628, 0.7301, 0.7690, 0.7184, 0.3683],
+                [0.3683, 0.3683, 0.3683, 0.3683, 0.3683, 0.3683],
             ]
         )
         coords_x1_truth = torch.tensor(
@@ -270,82 +254,172 @@ class TestDatasetMasked:
                 [0.0000, 0.2000, 0.4000, 0.6000, 0.8000, 1.0000],
             ]
         )
-        for instance in train._dataset_unmasked:  # pylint: disable=protected-access
+        for instance in ds._dataset_unmasked:  # pylint: disable=protected-access
             assert equality.EqualityTorch(instance[0][0], lhs_0_truth).is_close()
             assert equality.EqualityTorch(
                 instance[0][1],  # u_T
                 torch.tensor(
                     [
-                        [0.7049, 0.7049, 0.7049, 0.7049, 0.7049, 0.7049],
-                        [0.7049, 0.4287, 0.4630, 0.6574, 1.0000, 0.7049],
-                        [0.7049, 0.7162, 0.1077, 0.5666, 0.6369, 0.7049],
-                        [0.7049, 0.9527, 0.5242, 0.6440, 0.2081, 0.7049],
-                        [0.7049, 0.8911, 0.4814, 0.0000, 0.3809, 0.7049],
-                        [0.7049, 0.7049, 0.7049, 0.7049, 0.7049, 0.7049],
+                        [0.5333, 0.5333, 0.5333, 0.5333, 0.5333, 0.5333],
+                        [0.5333, 0.5052, 0.1167, 0.1636, 0.2603, 0.5333],
+                        [0.5333, 0.8098, 0.2663, 0.2481, 0.0000, 0.5333],
+                        [0.5333, 1.0000, 0.7210, 0.5643, 0.0701, 0.5333],
+                        [0.5333, 0.7648, 0.1161, 0.0098, 0.3040, 0.5333],
+                        [0.5333, 0.5333, 0.5333, 0.5333, 0.5333, 0.5333],
                     ]
                 ),
             ).is_close()
             assert equality.EqualityTorch(instance[0][2], coords_x1_truth).is_close()
             assert equality.EqualityTorch(instance[0][3], coords_x2_truth).is_close()
 
-        for instance in train.dataset_masked:
+        for instance in ds.dataset_masked:
             assert equality.EqualityTorch(instance[0][0], lhs_0_truth).is_close()
             assert equality.EqualityTorch(
                 instance[0][1],  # u_T
                 torch.tensor(
                     [
-                        [0.7049, 0.7049, 7.0000, 7.0000, 0.7049, 0.7049],
-                        [0.7049, 0.4287, 0.4630, 0.6574, 1.0000, 0.7049],
-                        [0.7049, 0.7162, 7.0000, 0.5666, 0.6369, 0.7049],
-                        [0.7049, 0.9527, 7.0000, 0.6440, 0.2081, 7.0000],
-                        [0.7049, 0.8911, 0.4814, 0.0000, 0.3809, 0.7049],
-                        [7.0000, 0.7049, 0.7049, 7.0000, 0.7049, 0.7049],
+                        [0.5333, 0.5333, 7.0000, 7.0000, 0.5333, 0.5333],
+                        [0.5333, 0.5052, 0.1167, 0.1636, 0.2603, 0.5333],
+                        [0.5333, 0.8098, 7.0000, 0.2481, 0.0000, 0.5333],
+                        [0.5333, 1.0000, 7.0000, 0.5643, 0.0701, 7.0000],
+                        [0.5333, 0.7648, 0.1161, 0.0098, 0.3040, 0.5333],
+                        [7.0000, 0.5333, 0.5333, 7.0000, 0.5333, 0.5333],
                     ]
                 ),
             ).is_close()
             assert equality.EqualityTorch(instance[0][2], coords_x1_truth).is_close()
             assert equality.EqualityTorch(instance[0][3], coords_x2_truth).is_close()
 
-        train.remask()
-        for instance in train.dataset_masked:
+        ds.remask()
+        for instance in ds.dataset_masked:
             assert equality.EqualityTorch(instance[0][0], lhs_0_truth).is_close()
             assert equality.EqualityTorch(
                 instance[0][1],
                 torch.tensor(
                     [
-                        [0.7049, 0.7049, 7.0000, 7.0000, 0.7049, 0.7049],
-                        [0.7049, 0.4287, 0.4630, 0.6574, 1.0000, 0.7049],
-                        [0.7049, 0.7162, 7.0000, 0.5666, 0.6369, 0.7049],
-                        [0.7049, 0.9527, 7.0000, 0.6440, 0.2081, 7.0000],
-                        [0.7049, 0.8911, 0.4814, 0.0000, 0.3809, 0.7049],
-                        [7.0000, 0.7049, 0.7049, 7.0000, 0.7049, 0.7049],
+                        [0.5333, 0.5333, 0.5333, 0.5333, 7.0000, 0.5333],
+                        [0.5333, 0.5052, 0.1167, 0.1636, 0.2603, 0.5333],
+                        [0.5333, 0.8098, 0.2663, 0.2481, 7.0000, 0.5333],
+                        [0.5333, 1.0000, 0.7210, 0.5643, 7.0000, 0.5333],
+                        [0.5333, 7.0000, 0.1161, 0.0098, 0.3040, 7.0000],
+                        [7.0000, 0.5333, 0.5333, 0.5333, 0.5333, 7.0000],
                     ]
                 ),
             ).is_close()
             assert equality.EqualityTorch(instance[0][2], coords_x1_truth).is_close()
             assert equality.EqualityTorch(instance[0][3], coords_x2_truth).is_close()
 
-    def test_mask_double(self) -> None:
-        torch.manual_seed(42)
-        gr = self._grid()
+    def test_mask_double_wave(self):
+        ds = wave_ds.DatasetMaskedDoubleWave(*self._setup())
+        ds.as_train(1)
 
-        ds = poisson_ds.DatasetPoissonMaskedSolutionSource(gr).make(
-            poisson_ds.DatasetSin(gr, constant_multiplier=200).as_dataset(
-                n_instances=2
-            ),
-            dataset.MaskerRandom(
-                0.5, intensity_spread=0.0, value_mask=self._value_mask()
-            ),
-            dataset.MaskerRandom(
-                0.5, intensity_spread=0.0, value_mask=self._value_mask()
-            ),
+        coords_x1_truth = torch.tensor(
+            [
+                [0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000],
+                [0.2000, 0.2000, 0.2000, 0.2000, 0.2000, 0.2000],
+                [0.4000, 0.4000, 0.4000, 0.4000, 0.4000, 0.4000],
+                [0.6000, 0.6000, 0.6000, 0.6000, 0.6000, 0.6000],
+                [0.8000, 0.8000, 0.8000, 0.8000, 0.8000, 0.8000],
+                [1.0000, 1.0000, 1.0000, 1.0000, 1.0000, 1.0000],
+            ]
         )
+        coords_x2_truth = torch.tensor(
+            [
+                [0.0000, 0.2000, 0.4000, 0.6000, 0.8000, 1.0000],
+                [0.0000, 0.2000, 0.4000, 0.6000, 0.8000, 1.0000],
+                [0.0000, 0.2000, 0.4000, 0.6000, 0.8000, 1.0000],
+                [0.0000, 0.2000, 0.4000, 0.6000, 0.8000, 1.0000],
+                [0.0000, 0.2000, 0.4000, 0.6000, 0.8000, 1.0000],
+                [0.0000, 0.2000, 0.4000, 0.6000, 0.8000, 1.0000],
+            ]
+        )
+        for instance in ds._dataset_unmasked:  # pylint: disable=protected-access
+            assert equality.EqualityTorch(
+                instance[0][0],
+                torch.tensor(
+                    [
+                        [0.3683, 0.3683, 0.3683, 0.3683, 0.3683, 0.3683],
+                        [0.3683, 0.8110, 0.7109, 0.8207, 0.4728, 0.3683],
+                        [0.3683, 0.7537, 0.8019, 0.6743, 0.0000, 0.3683],
+                        [0.3683, 0.9627, 1.0000, 0.7434, 0.3539, 0.3683],
+                        [0.3683, 0.7628, 0.7301, 0.7690, 0.7184, 0.3683],
+                        [0.3683, 0.3683, 0.3683, 0.3683, 0.3683, 0.3683],
+                    ]
+                ),
+            ).is_close()
+            assert equality.EqualityTorch(
+                instance[0][1],
+                torch.tensor(
+                    [
+                        [0.5333, 0.5333, 0.5333, 0.5333, 0.5333, 0.5333],
+                        [0.5333, 0.5052, 0.1167, 0.1636, 0.2603, 0.5333],
+                        [0.5333, 0.8098, 0.2663, 0.2481, 0.0000, 0.5333],
+                        [0.5333, 1.0000, 0.7210, 0.5643, 0.0701, 0.5333],
+                        [0.5333, 0.7648, 0.1161, 0.0098, 0.3040, 0.5333],
+                        [0.5333, 0.5333, 0.5333, 0.5333, 0.5333, 0.5333],
+                    ]
+                ),
+            ).is_close()
+            assert equality.EqualityTorch(instance[0][2], coords_x1_truth).is_close()
+            assert equality.EqualityTorch(instance[0][3], coords_x2_truth).is_close()
 
-        for lhs, __ in ds:
-            assert torch.count_nonzero(lhs[6] == self._value_mask()) >= math.floor(
-                self._size_grid() ** 2 / 2
-            )  # solution, masked
-            assert torch.count_nonzero(lhs[7] == self._value_mask()) >= math.floor(
-                self._size_grid() ** 2 / 2
-            )  # source, masked
-            break
+        for instance in ds.dataset_masked:
+            assert equality.EqualityTorch(
+                instance[0][0],
+                torch.tensor(
+                    [
+                        [0.3683, 0.3683, 0.3683, 0.3683, 7.0000, 0.3683],
+                        [0.3683, 0.8110, 0.7109, 0.8207, 0.4728, 0.3683],
+                        [0.3683, 0.7537, 0.8019, 0.6743, 7.0000, 0.3683],
+                        [0.3683, 0.9627, 1.0000, 0.7434, 7.0000, 0.3683],
+                        [0.3683, 7.0000, 0.7301, 0.7690, 0.7184, 7.0000],
+                        [7.0000, 0.3683, 0.3683, 0.3683, 0.3683, 7.0000],
+                    ]
+                ),
+            ).is_close()
+            assert equality.EqualityTorch(
+                instance[0][1],
+                torch.tensor(
+                    [
+                        [0.5333, 0.5333, 7.0000, 7.0000, 0.5333, 0.5333],
+                        [0.5333, 0.5052, 0.1167, 0.1636, 0.2603, 0.5333],
+                        [0.5333, 0.8098, 7.0000, 0.2481, 0.0000, 0.5333],
+                        [0.5333, 1.0000, 7.0000, 0.5643, 0.0701, 7.0000],
+                        [0.5333, 0.7648, 0.1161, 0.0098, 0.3040, 0.5333],
+                        [7.0000, 0.5333, 0.5333, 7.0000, 0.5333, 0.5333],
+                    ]
+                ),
+            ).is_close()
+            assert equality.EqualityTorch(instance[0][2], coords_x1_truth).is_close()
+            assert equality.EqualityTorch(instance[0][3], coords_x2_truth).is_close()
+
+        ds.remask()
+        for instance in ds.dataset_masked:
+            assert equality.EqualityTorch(
+                instance[0][0],
+                torch.tensor(
+                    [
+                        [0.3683, 0.3683, 7.0000, 0.3683, 0.3683, 7.0000],
+                        [0.3683, 0.8110, 0.7109, 0.8207, 0.4728, 0.3683],
+                        [7.0000, 0.7537, 0.8019, 0.6743, 0.0000, 0.3683],
+                        [7.0000, 0.9627, 1.0000, 0.7434, 0.3539, 7.0000],
+                        [7.0000, 0.7628, 0.7301, 0.7690, 0.7184, 0.3683],
+                        [0.3683, 0.3683, 0.3683, 0.3683, 7.0000, 0.3683],
+                    ]
+                ),
+            ).is_close()
+            assert equality.EqualityTorch(
+                instance[0][1],
+                torch.tensor(
+                    [
+                        [0.5333, 0.5333, 0.5333, 7.0000, 0.5333, 0.5333],
+                        [0.5333, 7.0000, 0.1167, 0.1636, 0.2603, 0.5333],
+                        [7.0000, 0.8098, 7.0000, 7.0000, 0.0000, 7.0000],
+                        [0.5333, 1.0000, 0.7210, 0.5643, 0.0701, 0.5333],
+                        [0.5333, 7.0000, 0.1161, 0.0098, 0.3040, 0.5333],
+                        [0.5333, 0.5333, 0.5333, 0.5333, 0.5333, 0.5333],
+                    ]
+                ),
+            ).is_close()
+            assert equality.EqualityTorch(instance[0][2], coords_x1_truth).is_close()
+            assert equality.EqualityTorch(instance[0][3], coords_x2_truth).is_close()

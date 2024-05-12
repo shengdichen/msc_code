@@ -1,6 +1,8 @@
+import random
 from pathlib import Path
 
 import matplotlib as mpl
+import numpy as np
 import torch
 
 T_DATASET = torch.utils.data.dataset.TensorDataset
@@ -25,6 +27,12 @@ class Definition:
     @property
     def device_preferred(self) -> str:
         return "cuda" if self._has_cuda else "cpu"
+
+    @staticmethod
+    def seed(seed: int = 42) -> None:
+        torch.manual_seed(seed)
+        np.random.seed(seed)
+        random.seed(seed)
 
     @staticmethod
     def latex_configure(font_latex: bool = True) -> None:

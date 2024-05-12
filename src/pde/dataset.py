@@ -15,6 +15,8 @@ logger = logging.getLogger(__name__)
 
 
 class DatasetPDE:
+    N_CHANNELS: int
+
     def __init__(
         self,
         grids: grid.Grids,
@@ -149,17 +151,16 @@ class DatasetPDE2d(DatasetPDE):
 
 
 class DatasetMasked:
-    N_CHANNELS_LHS: int
-    N_CHANNELS_RHS: int
-
     def __init__(
         self,
         dataset_raw: DatasetPDE2d,
         masks: typing.Sequence[dataset_util.Masker],
+        masks_indexes: typing.Sequence[int],
         save_unmasked: bool = True,
     ):
         self._dataset_raw = dataset_raw
         self._masks = masks
+        self._masks_indexes = masks_indexes
 
         self._grids = self._dataset_raw.grids
         self._coords = self._grids.coords_as_mesh_torch()
@@ -169,6 +170,11 @@ class DatasetMasked:
         self._normalizer: dataset_util.Normalizer
         self._dataset_unmasked: T_DATASET
         self._dataset_masked: T_DATASET
+
+        # NOTE:
+        #   first remask call will (re-)produce the (saved) masked dataset, thus we need
+        #   to remask TWICE during this first remask call
+        self._need_second_remasking: bool = True
 
         self._base_dir = self._dataset_raw.base_dir
         self._path: pathlib.Path
@@ -232,9 +238,25 @@ class DatasetMasked:
         self._assemble_unmasked()
         self._normalize_unmasked()
 
-    @abc.abstractmethod
     def _assemble_unmasked(self) -> None:
-        raise NotImplementedError
+        lhss, rhss = [], []
+        for instance in self._dataset_raw.dataset:
+            lhss.append(
+                torch.stack(
+                    [
+                        *instance,
+                        *self._coords,
+                        *self._cos_coords,
+                        *self._sin_coords,
+                    ]
+                )
+            )
+            rhss.append(
+                torch.stack([instance[mask_idx] for mask_idx in self._masks_indexes])
+            )
+        self._dataset_unmasked = torch.utils.data.TensorDataset(
+            torch.stack(lhss), torch.stack(rhss)
+        )
 
     def _normalize_unmasked(self) -> None:
         self._normalizer = dataset_util.Normalizer.from_dataset(self._dataset_unmasked)
@@ -253,20 +275,34 @@ class DatasetMasked:
             logger.info(f"dataset/masked> already done masking! [{path}]")
             self._dataset_masked = torch.load(path)
 
-    @abc.abstractmethod
     def mask(self) -> None:
-        raise NotImplementedError
+        lhss, rhss = dataset_util.DatasetPde.from_dataset(
+            self._dataset_unmasked
+        ).lhss_rhss
+        for lhs in lhss:
+            for mask_idx, mask in zip(self._masks_indexes, self._masks):
+                lhs[mask_idx] = mask.mask(lhs[mask_idx])
+        self._dataset_masked = torch.utils.data.TensorDataset(lhss, rhss)
 
-    @abc.abstractmethod
     def remask(self) -> None:
-        raise NotImplementedError
+        # NOTE:
+        #   we intentionally do NOT auto-save remasked dataset
+
+        logger.info(
+            "dataset/masked> remasking... "
+            f"[with {' + '.join([mask.name_human for mask in self._masks])}]"
+        )
+        self.mask()
+        if self._need_second_remasking:
+            self.mask()
+            self._need_second_remasking = False
 
 
 class DatasetMaskedSingle(DatasetMasked):
-    MASK_IDX: int
-
-    def __init__(self, dataset_raw: DatasetPDE2d, mask: dataset_util.Masker):
-        super().__init__(dataset_raw, [mask])
+    def __init__(
+        self, dataset_raw: DatasetPDE2d, mask: dataset_util.Masker, mask_index: int
+    ):
+        super().__init__(dataset_raw, [mask], [mask_index])
 
         self._mask = mask
 
@@ -275,44 +311,22 @@ class DatasetMaskedSingle(DatasetMasked):
         cls,
         dataset_raw: DatasetPDE2d,
         masks: typing.Sequence[dataset_util.Masker],
+        mask_index: int,
         n_instances: int,
     ) -> typing.Sequence["DatasetMaskedSingle"]:
         evals = []
         for mask in masks:
-            ds = cls(dataset_raw, mask)
+            ds = cls(dataset_raw, mask, mask_index)
             ds.as_eval(n_instances)
             evals.append(ds)
         return evals
 
-    def _assemble_unmasked(self) -> None:
-        lhss, rhss = [], []
-        for instance in self._dataset_raw.dataset:
-            lhss.append(
-                torch.stack(
-                    [
-                        *instance,
-                        *self._coords,
-                        *self._cos_coords,
-                        *self._sin_coords,
-                    ]
-                )
-            )
-            rhss.append(instance[self.MASK_IDX].unsqueeze(0))
-        self._dataset_unmasked = torch.utils.data.TensorDataset(
-            torch.stack(lhss), torch.stack(rhss)
-        )
 
-    def mask(self) -> None:
-        lhss, rhss = dataset_util.DatasetPde.from_dataset(
-            self._dataset_unmasked
-        ).lhss_rhss
-        for lhs in lhss:
-            lhs[self.MASK_IDX] = self._mask.mask(lhs[self.MASK_IDX])
-        self._dataset_masked = torch.utils.data.TensorDataset(lhss, rhss)
-
-    def remask(self) -> None:
-        # NOTE:
-        #   we intentionally do NOT auto-save remasked dataset
-
-        logger.info(f"dataset/masked> remasking... [with {self._mask.name}]")
-        self.mask()
+class DatasetMaskedDouble(DatasetMasked):
+    def __init__(
+        self,
+        dataset_raw: DatasetPDE2d,
+        masks: tuple[dataset_util.Masker, dataset_util.Masker],
+        masks_indexes: tuple[int, int],
+    ):
+        super().__init__(dataset_raw, masks, masks_indexes)
