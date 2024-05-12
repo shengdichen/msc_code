@@ -4,8 +4,8 @@ import random
 import typing
 
 import matplotlib.pyplot as plt
+import src.pde.legacy.poisson.dataset
 import torch
-
 from src.deepl import factory
 from src.definition import DEFINITION, T_NETWORK
 from src.numerics import grid
@@ -58,7 +58,7 @@ class Pipeline:
 
     def build(self) -> None:
         for dataset_raw in [self._poisson_gauss, self._poisson_sine]:
-            dataset_poisson.DatasetPoissonMaskedSolution.load_split(
+            src.pde.legacy.poisson.dataset.DatasetPoissonMaskedSolution.load_split(
                 self._grids,
                 dataset_raw,
                 masks_eval=self._masks_eval,
@@ -86,8 +86,12 @@ class Pipeline:
 
     def _train(
         self,
-        trains: typing.Sequence[dataset_poisson.DatasetPoissonMaskedSolution],
-        evals: typing.Sequence[dataset_poisson.DatasetPoissonMaskedSolution],
+        trains: typing.Sequence[
+            src.pde.legacy.poisson.dataset.DatasetPoissonMaskedSolution
+        ],
+        evals: typing.Sequence[
+            src.pde.legacy.poisson.dataset.DatasetPoissonMaskedSolution
+        ],
         use_adhoc_train: bool = False,
     ) -> dict[str, T_NETWORK]:
         datasets_eval = [ds.dataset for ds in evals]
@@ -95,8 +99,8 @@ class Pipeline:
         networks = {}
         for train in trains:
             for network, name_network in factory.Networks().networks(
-                dataset_poisson.DatasetPoissonMaskedSolution.N_CHANNELS_LHS,
-                dataset_poisson.DatasetPoissonMaskedSolution.N_CHANNELS_RHS,
+                src.pde.legacy.poisson.dataset.DatasetPoissonMaskedSolution.N_CHANNELS_LHS,
+                src.pde.legacy.poisson.dataset.DatasetPoissonMaskedSolution.N_CHANNELS_RHS,
             ):
                 path = (
                     DEFINITION.BIN_DIR / "poisson" / f"{train.name}"
@@ -138,8 +142,8 @@ class Pipeline:
         network_factory = factory.Networks()
         for train in trains:
             for __, name_network in network_factory.networks(
-                dataset_poisson.DatasetPoissonMaskedSolution.N_CHANNELS_LHS,
-                dataset_poisson.DatasetPoissonMaskedSolution.N_CHANNELS_RHS,
+                src.pde.legacy.poisson.dataset.DatasetPoissonMaskedSolution.N_CHANNELS_LHS,
+                src.pde.legacy.poisson.dataset.DatasetPoissonMaskedSolution.N_CHANNELS_RHS,
             ):
                 path_base = (
                     DEFINITION.BIN_DIR / "poisson" / f"{train.name}"
@@ -198,10 +202,10 @@ class Pipeline:
         masks_eval: typing.Iterable[dataset_util.Masker],
         masks_train: typing.Iterable[dataset_util.Masker],
     ) -> tuple[
-        typing.Sequence[dataset_poisson.DatasetPoissonMaskedSolution],
-        typing.Sequence[dataset_poisson.DatasetPoissonMaskedSolution],
+        typing.Sequence[src.pde.legacy.poisson.dataset.DatasetPoissonMaskedSolution],
+        typing.Sequence[src.pde.legacy.poisson.dataset.DatasetPoissonMaskedSolution],
     ]:
-        return dataset_poisson.DatasetPoissonMaskedSolution.load_split(
+        return src.pde.legacy.poisson.dataset.DatasetPoissonMaskedSolution.load_split(
             self._grids,
             dataset_raw,
             masks_eval=masks_eval,

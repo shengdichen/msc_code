@@ -11,6 +11,10 @@ import torch
 from src.deepl import cno, fno_2d
 from src.numerics import grid
 from src.pde.dataset import DatasetMasked
+from src.pde.legacy.poisson.dataset import (
+    DatasetPoissonMaskedSolution,
+    DatasetPoissonMaskedSolutionSource,
+)
 from src.pde.legacy.poisson.learner import (
     LearnerPoissonCNOMaskedSolution,
     LearnerPoissonCNOMaskedSolutionSource,
@@ -18,13 +22,7 @@ from src.pde.legacy.poisson.learner import (
     LearnerPoissonFNOMaskedSolutionSource,
     LearnerPoissonFourier,
 )
-from src.pde.poisson.dataset import (
-    DatasetGauss,
-    DatasetPoisson2d,
-    DatasetPoissonMaskedSolution,
-    DatasetPoissonMaskedSolutionSource,
-    DatasetSin,
-)
+from src.pde.poisson.dataset import DatasetGauss, DatasetPoisson2d, DatasetSin
 from src.util.dataset import Masker, MaskerIsland, MaskerRandom, Splitter
 from src.util.saveload import SaveloadImage, SaveloadTorch
 
