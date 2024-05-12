@@ -13,7 +13,7 @@ from tqdm import tqdm
 from src.deepl import cno, fno_2d, network
 from src.definition import DEFINITION, T_DATASET, T_NETWORK
 from src.numerics import distance, grid, multidiff
-from src.pde.poisson.dataset import SolverPoisson
+from src.pde.poisson.solver import SolverPoisson
 from src.util import plot
 from src.util.saveload import SaveloadImage, SaveloadTorch
 

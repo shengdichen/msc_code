@@ -8,6 +8,7 @@ from collections.abc import Callable, Iterable
 import numpy as np
 import torch
 
+from src.definition import T_DATASET
 from src.numerics import distance
 
 
@@ -41,7 +42,7 @@ class DatasetPde:
         return self._lhss, self._rhss
 
     @property
-    def dataset(self) -> torch.utils.data.dataset.TensorDataset:
+    def dataset(self) -> T_DATASET:
         return self._dataset
 
     @property
@@ -67,9 +68,7 @@ class DatasetPde:
         return cls(lhss_torch, rhss_torch)
 
     @classmethod
-    def from_dataset(
-        cls, *datasets: torch.utils.data.dataset.TensorDataset
-    ) -> "DatasetPde":
+    def from_dataset(cls, *datasets: T_DATASET) -> "DatasetPde":
         lhss: list[torch.Tensor] = []
         rhss: list[torch.Tensor] = []
         for dataset in datasets:
@@ -79,8 +78,39 @@ class DatasetPde:
         return cls.from_torch(lhss, rhss)
 
     @staticmethod
-    def one_big_batch(dataset: torch.utils.data.dataset.TensorDataset) -> list:
+    def one_big_batch(dataset: T_DATASET) -> list:
         return list(torch.utils.data.DataLoader(dataset, batch_size=len(dataset)))[0]
+
+
+class Splitter:
+    def __init__(self, dataset_full: T_DATASET):
+        self._dataset_full = dataset_full
+        self._n_instances = len(self._dataset_full)
+
+    def split(
+        self, n_instances_eval: int, n_instances_train: int
+    ) -> tuple[T_DATASET, T_DATASET]:
+        indexes_eval, indexes_train = self._indexes_eval_train(
+            n_instances_eval, n_instances_train
+        )
+
+        return (
+            torch.utils.data.Subset(self._dataset_full, indexes_eval),
+            torch.utils.data.Subset(self._dataset_full, indexes_train),
+        )
+
+    def _indexes_eval_train(
+        self, n_instances_eval: int, n_instances_train: int
+    ) -> tuple[np.ndarray, np.ndarray]:
+        # NOTE:
+        # generate indexes in one call with |replace| set to |False| to guarantee strict
+        # separation of train and eval datasets
+        indexes = np.random.default_rng(seed=42).choice(
+            self._n_instances,
+            n_instances_eval + n_instances_train,
+            replace=False,
+        )
+        return indexes[:n_instances_eval], indexes[-n_instances_train:]
 
 
 class Masker:
@@ -127,11 +157,14 @@ class Masker:
             return self._intensity_min * 100, self._intensity_max * 100
         return self._intensity_min, self._intensity_max
 
-    def _sample_intensity(self, spread: float) -> float:
-        if math.isclose(spread, 0.0):
+    def _sample_intensity(self) -> float:
+        if math.isclose(self._intensity_spread, 0.0):
             return self._intensity
 
-        intensity = random.uniform(self._intensity - spread, self._intensity + spread)
+        intensity = random.uniform(
+            self._intensity - self._intensity_spread,
+            self._intensity + self._intensity_spread,
+        )
         if intensity < 0.0:
             return 0.0
         if intensity > 1.0:
@@ -193,9 +226,7 @@ class MaskerRandom(Masker):
         return res.type_as(full)
 
     def _indexes_to_mask(self, full: torch.Tensor) -> np.ndarray:
-        n_gridpts_to_mask = int(
-            self._sample_intensity(self._intensity_spread) * np.prod(full.shape)
-        )
+        n_gridpts_to_mask = int(self._sample_intensity() * np.prod(full.shape))
 
         indexes_full = np.array(
             list(itertools.product(*(range(len_dim) for len_dim in full.shape)))
@@ -253,7 +284,7 @@ class MaskerIsland(Masker):
         return res
 
     def _range_idx_dim(self, full: torch.Tensor) -> tuple[np.ndarray, np.ndarray]:
-        perc_mask_per_side = self._sample_intensity(self._intensity_spread) / 2
+        perc_mask_per_side = self._sample_intensity() / 2
 
         lows, highs = [], []
         for size_dim in full.shape:
@@ -318,9 +349,7 @@ class Reorderer:
         return [tensor.permute(idxs) for tensor in tensors]
 
     @staticmethod
-    def components_to_second(
-        dataset: torch.utils.data.dataset.TensorDataset,
-    ) -> torch.utils.data.dataset.TensorDataset:
+    def components_to_second(dataset: T_DATASET) -> T_DATASET:
         """
         lhss: [n_instances, x..., n_channels_lhs] -> [n_instances, n_channels_lhs, x...]
         rhss: [n_instances, x..., n_channels_rhs] -> [n_instances, n_channels_rhs, x...]
@@ -342,9 +371,7 @@ class Reorderer:
         return [tensor.permute(idxs) for tensor in tensors]
 
     @staticmethod
-    def components_to_last(
-        dataset: torch.utils.data.dataset.TensorDataset,
-    ) -> torch.utils.data.dataset.TensorDataset:
+    def components_to_last(dataset: T_DATASET) -> T_DATASET:
         """
         lhss: [n_instances, n_channels_lhs, x...] -> [n_instances, x..., n_channels_lhs]
         rhss: [n_instances, n_channels_rhs, x...] -> [n_instances, x..., n_channels_rhs]
@@ -379,9 +406,7 @@ class Normalizer:
         self._shape_rhss = shape_rhss
 
     @classmethod
-    def from_dataset(
-        cls, dataset: torch.utils.data.dataset.TensorDataset
-    ) -> "Normalizer":
+    def from_dataset(cls, dataset: T_DATASET) -> "Normalizer":
         return cls.from_lhss_rhss(*DatasetPde.from_dataset(dataset).lhss_rhss)
 
     @classmethod
@@ -417,9 +442,7 @@ class Normalizer:
         idxs[0], idxs[1] = idxs[1], idxs[0]
         return target.permute(idxs)
 
-    def normalize_dataset(
-        self, dataset: torch.utils.data.dataset.TensorDataset
-    ) -> torch.utils.data.dataset.TensorDataset:
+    def normalize_dataset(self, dataset: T_DATASET) -> T_DATASET:
         lhss, rhss = DatasetPde.from_dataset(dataset).lhss_rhss
         return torch.utils.data.TensorDataset(
             self.normalize_lhss(lhss), self.normalize_rhss(rhss)

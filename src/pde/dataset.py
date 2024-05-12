@@ -4,7 +4,6 @@ import logging
 import pathlib
 import typing
 
-import numpy as np
 import torch
 
 from src.definition import DEFINITION, T_DATASET
@@ -13,39 +12,6 @@ from src.util import dataset as dataset_util
 from src.util import plot
 
 logger = logging.getLogger(__name__)
-
-
-class DatasetSplits:
-    def __init__(self, dataset_full: torch.utils.data.dataset.TensorDataset):
-        self._dataset_full = dataset_full
-        self._n_instances = len(self._dataset_full)
-
-    def split(
-        self, n_instances_eval: int, n_instances_train: int
-    ) -> tuple[
-        torch.utils.data.dataset.TensorDataset, torch.utils.data.dataset.TensorDataset
-    ]:
-        indexes_eval, indexes_train = self._indexes_eval_train(
-            n_instances_eval, n_instances_train
-        )
-
-        return (
-            torch.utils.data.Subset(self._dataset_full, indexes_eval),
-            torch.utils.data.Subset(self._dataset_full, indexes_train),
-        )
-
-    def _indexes_eval_train(
-        self, n_instances_eval: int, n_instances_train: int
-    ) -> tuple[np.ndarray, np.ndarray]:
-        # NOTE:
-        # generate indexes in one call with |replace| set to |False| to guarantee strict
-        # separation of train and eval datasets
-        indexes = np.random.default_rng(seed=42).choice(
-            self._n_instances,
-            n_instances_eval + n_instances_train,
-            replace=False,
-        )
-        return indexes[:n_instances_eval], indexes[-n_instances_train:]
 
 
 class DatasetPDE:
@@ -130,7 +96,7 @@ class DatasetPDE:
             self._base_dir / f"{self._name_dataset}-train_{n_instances_train}.pth",
         )
         if not (path_eval.exists() and path_train.exists()):
-            ds_eval, ds_train = DatasetSplits(
+            ds_eval, ds_train = dataset_util.Splitter(
                 self.load_full(n_instances_eval + n_instances_train)
             ).split(
                 n_instances_eval=n_instances_eval, n_instances_train=n_instances_train
@@ -140,8 +106,8 @@ class DatasetPDE:
         return torch.load(path_eval), torch.load(path_train)
 
     def as_dataset(self, n_instances: int) -> T_DATASET:
-        instances = list(self.solve(n_instances))
-        channels = [[] for __ in range(len(instances[0]))]
+        instances: list[typing.Sequence[torch.Tensor]] = list(self.solve(n_instances))
+        channels: list[list[torch.Tensor]] = [[] for __ in range(len(instances[0]))]
         for instance in instances:
             for channel, item in zip(channels, instance):
                 channel.append(item)
@@ -151,12 +117,12 @@ class DatasetPDE:
 
     def solve(
         self, n_instances: int
-    ) -> collections.abc.Generator[typing.Iterable[torch.Tensor]]:
+    ) -> collections.abc.Generator[typing.Sequence[torch.Tensor], None, None]:
         for __ in range(n_instances):
             yield self.solve_instance()
 
     @abc.abstractmethod
-    def solve_instance(self) -> typing.Iterable[torch.Tensor]:
+    def solve_instance(self) -> typing.Sequence[torch.Tensor]:
         raise NotImplementedError
 
 
@@ -178,7 +144,7 @@ class DatasetPDE2d(DatasetPDE):
         self._putil = plot.PlotUtil(self._grids)
 
     @abc.abstractmethod
-    def solve_instance(self) -> typing.Iterable[torch.Tensor]:
+    def solve_instance(self) -> typing.Sequence[torch.Tensor]:
         raise NotImplementedError
 
 
@@ -308,7 +274,7 @@ class DatasetMaskedSingle(DatasetMasked):
     def evals_from_masks(
         cls,
         dataset_raw: DatasetPDE2d,
-        masks: dataset_util.Masker,
+        masks: typing.Sequence[dataset_util.Masker],
         n_instances: int,
     ) -> typing.Sequence["DatasetMaskedSingle"]:
         evals = []

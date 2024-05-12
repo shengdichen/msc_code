@@ -22,7 +22,7 @@ class SolverHeat2d:
     ):
         torch.manual_seed(42)
 
-        self._savename = pathlib.Path("pinn_heat-final.torch")
+        self._savename = pathlib.Path("../pinn_heat-final.torch")
         if self._savename.exists():
             self._network = torch.load(self._savename)
         else:
