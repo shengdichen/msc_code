@@ -451,7 +451,7 @@ class UpFIRDnConv2d(nn.Module):
 class ResBlock2d(nn.Module):
     """
     Residual block for 2d convolution
-    H_out = Conv2d(H_in) + Conv2d(\sigma(Conv2d^{num\_layers-1}(H_in)))
+    H_out = Conv2d(H_in) + Conv2d(\\sigma(Conv2d^{num\\_layers-1}(H_in)))
     """
 
     def __init__(
@@ -611,7 +611,7 @@ class GeneralUNet2d(nn.Module):
                         |                                              |                      |
                        ConvS2 - Conv - ResBlock*4 ------------ Conv - TConvS2                depth
                                   |                              |                            |
-                                 ConvS2 - Conv - ResBlock*4 - TConvS2                         \/
+                                 ConvS2 - Conv - ResBlock*4 - TConvS2                         \\/
 
     """
 
