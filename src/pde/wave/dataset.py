@@ -6,12 +6,11 @@ import torch
 
 from src.numerics import grid
 from src.pde import dataset
-from src.pde.dataset import DatasetPDE2d
 from src.util import dataset as dataset_util
 from src.util import plot
 
 
-class DatasetWave(DatasetPDE2d):
+class DatasetWave(dataset.DatasetPDE2d):
     N_CHANNELS = 2
 
     def __init__(
@@ -55,11 +54,14 @@ class DatasetWave(DatasetPDE2d):
             torch.sin(k_2 * torch.pi * self._coords_x2.unsqueeze(-1).unsqueeze(-1)),
         )
 
+    def _calc_weights_samples(self) -> None:
+        self._weights_samples = torch.distributions.uniform.Uniform(
+            self._sample_weight_min, self._sample_weight_max
+        ).sample([self._n_samples] * self._grids.n_dims)
+
     def solve_instance(self) -> tuple[torch.Tensor, torch.Tensor]:
         if self._reweight_samples:
-            self._weights_samples = torch.distributions.uniform.Uniform(
-                self._sample_weight_min, self._sample_weight_max
-            ).sample([self._n_samples] * self._grids.n_dims)
+            self._calc_weights_samples()
         return (
             self.solve_at_time(self._grid_time.start),
             self.solve_at_time(self._grid_time.end),
@@ -77,6 +79,8 @@ class DatasetWave(DatasetPDE2d):
         return result
 
     def plot_animation(self) -> None:
+        self._calc_weights_samples()
+
         fig, ax = plt.subplots(figsize=(6, 6), dpi=200)
 
         p = plot.PlotAnimation2D(self._grid_time)
