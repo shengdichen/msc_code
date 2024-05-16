@@ -18,7 +18,7 @@ class DatasetHeat(dataset.DatasetPDE2d):
         grid_time: grid.GridTime,
         sample_weight_min: float = -1.0,
         sample_weight_max: float = 1.0,
-        n_samples_per_instance=4,
+        n_samples_per_instance: int = 4,
         reweight_samples: bool = True,
     ):
         super().__init__(grids, name_problem="heat", name_dataset="sum_of_sine")
