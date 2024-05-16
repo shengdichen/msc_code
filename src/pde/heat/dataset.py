@@ -84,7 +84,7 @@ class DatasetHeat(dataset.DatasetPDE2d):
                 grid.Grid.from_start_end(64, start=-1.0, end=1.0),
             ],
         )
-        grid_time = grid.GridTime.from_start_end(n_pts=100, start=0.0, end=0.01)
+        grid_time = grid.GridTime(n_pts=100, stepsize=1e-4)
 
         for n_instances in [1, 2, 4, 8, 16]:
             DatasetHeat(

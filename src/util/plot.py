@@ -2,9 +2,9 @@ import pathlib
 import typing
 
 import matplotlib as mpl
-from matplotlib import animation
 import numpy as np
 import torch
+from matplotlib import animation
 from matplotlib import pyplot as plt
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 from tqdm import tqdm

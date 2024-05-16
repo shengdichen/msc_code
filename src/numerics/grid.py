@@ -177,18 +177,13 @@ class Grids:
         return (gr.end for gr in self._grids)
 
     def indexes(self) -> Generator[Iterable[int], None, None]:
-        for idxs in itertools.product(*(range(gr.n_pts) for gr in self._grids)):
-            yield idxs
+        yield from itertools.product(*(range(gr.n_pts) for gr in self._grids))
 
     def steps(self) -> Generator[Iterable[float], None, None]:
-        for vals in itertools.product(*(gr.step() for gr in self._grids)):
-            yield vals
+        yield from itertools.product(*(gr.step() for gr in self._grids))
 
     def steps_with_index(self) -> Generator[Iterable[tuple[int, float]], None, None]:
-        for idxs_vals in itertools.product(
-            *(gr.step_with_index() for gr in self._grids)
-        ):
-            yield idxs_vals
+        yield from itertools.product(*(gr.step_with_index() for gr in self._grids))
 
     def boundaries(self) -> Generator[Iterable[float], None, None]:
         for vals in itertools.product(*(gr.step() for gr in self._grids)):
@@ -287,7 +282,7 @@ class Grids:
 
         res = self.constants_like(val_mask).to(raw.dtype)
         for indexes in self.indexes():
-            if all([idx_min <= idx <= idx_max for idx in indexes]):
+            if all((idx_min <= idx <= idx_max for idx in indexes)):
                 res[indexes] = raw[indexes]
         return res
 
