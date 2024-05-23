@@ -145,7 +145,7 @@ class Problem:
         y_max, y_clip = 0.18, 0.175
         for ds_train in self._datasets_train_single:
             models = list(self._models_current_single(ds_train))
-            fig, (ax_random, ax_island) = plt.subplots(1, 2, figsize=(11, 5.5), dpi=200)
+            fig, (ax_random, ax_island) = plt.subplots(1, 2, figsize=(9, 5), dpi=200)
             for m in models:
                 m.load_network()
                 m.datasets_eval = self._datasets_evals_single_random
@@ -173,6 +173,8 @@ class Problem:
             ax_island.set_title("(Eval-)Masking: Island")
             ax_random.set_ylabel("error [$L^2$]")
 
+            fig.tight_layout()
+
             path = pathlib.Path(f"{ds_train.path}.png")
             fig.savefig(path)
             plt.close(fig)
@@ -182,7 +184,7 @@ class Problem:
         for ds_train in self._datasets_train_double:
             models = list(self._models_current_double(ds_train))
             fig, ((ax_0_random, ax_0_island), (ax_1_random, ax_1_island)) = (
-                plt.subplots(2, 2, figsize=(11, 11), dpi=200)
+                plt.subplots(2, 2, figsize=(9, 9), dpi=200)
             )
             for m in models:
                 m.load_network()
@@ -225,6 +227,8 @@ class Problem:
             ax_1_island.set_title("Channel 1 Masking: Island")
             ax_0_random.set_ylabel("error [$L^2$]")
             ax_1_random.set_ylabel("error [$L^2$]")
+
+            fig.tight_layout()
 
             path = pathlib.Path(f"{ds_train.path}.png")
             fig.savefig(path)
