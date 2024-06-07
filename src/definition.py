@@ -35,7 +35,7 @@ class Definition:
         random.seed(seed)
 
     @staticmethod
-    def latex_configure(font_latex: bool = True) -> None:
+    def configure_font_matplotlib(font_latex: bool = True) -> None:
         mpl.rcParams["font.family"] = "serif"
 
         if font_latex:

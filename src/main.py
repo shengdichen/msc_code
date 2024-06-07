@@ -21,6 +21,7 @@ class Pipeline:
 
 def main():
     DEFINITION.seed()
+    DEFINITION.configure_font_matplotlib(font_latex=False)
 
     p = Pipeline()
     p.work()
