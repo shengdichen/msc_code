@@ -3,6 +3,7 @@ import collections
 import logging
 import math
 import pathlib
+import pickle
 import typing
 
 import matplotlib as mpl
@@ -10,6 +11,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from src.deepl import factory
+from src.definition import DEFINITION
 from src.numerics import grid
 from src.pde import dataset, model
 from src.pde.heat import dataset as dataset_heat
@@ -104,6 +106,71 @@ class Problem:
     def train(self) -> None:
         self.train_single()
         self.train_double()
+
+    def _plot_train_log(self, name_ds_train: str, name_model: str) -> None:
+        DEFINITION.seed()
+        ds_train = self._datasets_train_single[
+            {"full": 0, "mid": 1, "low": 2, "high": 3}[name_ds_train]
+        ]
+        m = list(self._models_current_single(ds_train))[
+            {"fno": 0, "cno": 1, "kno": 2, "unet": 3}[name_model]
+        ]
+
+        ds_eval = self._dataset_single(ds_train.masks[0])
+        ds_eval.as_eval(self._n_instances_eval)
+        m.datasets_eval = [ds_eval]
+
+        y_max, y_clip = 0.30, 0.275
+        for n_epochs_stale_max in [30]:
+            fig, ax = plt.subplots(figsize=(6, 6), dpi=200)
+
+            path = m.path_with_remask(n_epochs_stale_max)
+            path_pickel = pathlib.Path(f"{path}.pickle")
+            if not path_pickel.exists():
+                res_train = m.train(n_epochs_stale_max=n_epochs_stale_max, adhoc=True)
+                with open(path_pickel, "wb") as f:
+                    pickle.dump(res_train, f)
+            with open(path_pickel, "rb") as f:
+                errors, epochs_remask, bests = pickle.load(f)
+
+            if not epochs_remask:
+                logger.info("model> no plot-data, skipping")
+                continue
+
+            errors = 100 * np.clip(errors, a_min=0.0, a_max=y_clip)
+            ax.plot(errors[:, 0], label="train")
+            ax.plot(errors[:, 1], label="eval")
+            ax.plot(
+                bests[0],
+                100 * np.array(bests[1]),
+                linestyle="",
+                marker="*",
+                label="improvement",
+            )
+
+            ax.set_xlabel("training epoch")
+            ax.tick_params(axis="x", labelrotation=30, labelsize="small")
+            for epoch in epochs_remask:
+                ax.axvline(
+                    epoch,
+                    linestyle="dotted",
+                    color="black",
+                    linewidth=1.0,
+                )
+
+            fig.suptitle(
+                f"{ds_train.name_human(multiline=True)}"
+                "\n"
+                f"Resample: {n_epochs_stale_max}"
+            )
+            self._style_y_as_error(ax, 100 * y_max)
+            ax.set_ylabel("error [MSE%]")
+
+            ax.legend()
+
+            fig.tight_layout()
+            fig.savefig(f"{path}.png")
+            plt.close(fig)
 
     def train_single(self) -> None:
         for ds_train in self._datasets_train_single:
@@ -281,22 +348,33 @@ class Problem:
                 )
             ax.xaxis.set_major_formatter(mpl.ticker.PercentFormatter(decimals=0))
 
-            ax.set_ylim(0.0, y_max)
+            self._style_y_as_error(ax, y_max, y_ticks, baseline_low, baseline_high)
+
+    def _style_y_as_error(
+        self,
+        ax: mpl.axes.Axes,
+        y_max: float,
+        y_ticks: typing.Optional[typing.Sequence[float]] = None,
+        baseline_low: float = 5.0,
+        baseline_high: float = 15.0,
+    ) -> None:
+        ax.set_ylim(0.0, y_max)
+        if y_ticks:
             ax.set_yticks(y_ticks)
-            ax.tick_params(axis="y", labelrotation=30, labelsize="small")
-            ax.axhline(
-                baseline_low,
-                linestyle="dashed",
-                color="darkgrey",
-                linewidth=1.5,
-            )
-            ax.axhline(
-                baseline_high,
-                linestyle="dashed",
-                color="darkgrey",
-                linewidth=1.5,
-            )
-            ax.yaxis.set_major_formatter(mpl.ticker.PercentFormatter(decimals=1))
+        ax.tick_params(axis="y", labelrotation=30, labelsize="small")
+        ax.axhline(
+            baseline_low,
+            linestyle="dashed",
+            color="darkgrey",
+            linewidth=1.5,
+        )
+        ax.axhline(
+            baseline_high,
+            linestyle="dashed",
+            color="darkgrey",
+            linewidth=1.5,
+        )
+        ax.yaxis.set_major_formatter(mpl.ticker.PercentFormatter(decimals=1))
 
     def models_single(self) -> collections.abc.Generator[model.ModelSingle, None, None]:
         for ds_train in self._datasets_train_single:
@@ -350,6 +428,10 @@ class ProblemPoisson(Problem):
     def _dataset_double(self, mask: util_dataset.Masker) -> dataset.DatasetMaskedDouble:
         return dataset_poisson.DatasetMaskedDoublePoisson(self._dataset_raw(), mask)
 
+    def plot_remask(self) -> None:
+        self._plot_train_log("full", "unet")
+        self._plot_train_log("low", "cno")
+
 
 class ProblemHeat(Problem):
     def __init__(self):
@@ -391,3 +473,6 @@ class ProblemWave(Problem):
 
     def _dataset_double(self, mask: util_dataset.Masker) -> dataset.DatasetMaskedDouble:
         return dataset_wave.DatasetMaskedDoubleWave(self._dataset_raw(), mask)
+
+    def plot_remask(self) -> None:
+        self._plot_train_log("full", "kno")

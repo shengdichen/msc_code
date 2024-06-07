@@ -1,9 +1,9 @@
+import abc
 import collections
 import logging
 import math
 import pathlib
 import typing
-import abc
 
 import numpy as np
 import torch
@@ -68,12 +68,17 @@ class Model:
         n_epochs_stale_max: int = 30,
         n_remasks_stale_max: int = 3,
         freq_report: int = 100,
-    ) -> None:
-        path = pathlib.Path(f"{self._path_network}.pth")
-        if path.exists():
+        adhoc: bool = False,
+    ) -> tuple[np.ndarray, list[float], tuple[list[int], list[float]]]:
+        if adhoc:
+            path = pathlib.Path(f"{self.path_with_remask(n_epochs_stale_max)}.pth")
+        else:
+            path = pathlib.Path(f"{self._path_network}.pth")
+
+        if path.exists() and not adhoc:
             logger.info(f"model> already done! [{path}]")
             self._network.load(path)
-            return
+            return np.array([]), [], ([], [])
 
         logger.info(f"model> learning... [{path}]")
         self._update_optimizer_scheduler(n_epochs_max)
@@ -84,13 +89,21 @@ class Model:
         n_epochs_stale = 0
         n_remasks_stale = 0
 
+        errors = []
+        epochs_remask = []
+
+        record_bests = False
+        bests: tuple[list[int], list[float]] = [], []
+
         for epoch in tqdm(range(n_epochs_max)):
-            if n_epochs_stale == n_epochs_stale_max:
+            if n_epochs_stale_max > 0 and n_epochs_stale == n_epochs_stale_max:
                 n_remasks_stale += 1
                 logger.info(
                     f"train/stale> "
                     f"n_epochs, n_remasks: ({n_epochs_stale}, {n_remasks_stale})"
                 )
+                epochs_remask.append(epoch)
+                record_bests = True
                 if n_remasks_stale == n_remasks_stale_max:
                     logger.info(
                         "train/stale> "
@@ -103,7 +116,11 @@ class Model:
             error_train = self._train_epoch(batch_size=batch_size)
 
             error_curr = self.eval()
+            errors.append([error_train, error_curr])
             if error_curr < error_best:
+                if record_bests:
+                    bests[0].append(epoch)
+                    bests[1].append(error_curr)
                 self._network.save(path)
                 error_best = error_curr
                 epoch_best = epoch
@@ -122,6 +139,11 @@ class Model:
                     f"{error_train:.4%}, {error_curr:.4%} [mse: (train, eval)]"
                 )
                 logger.info(f"train/best> {error_best:.4%} @ epoch {epoch_best}")
+
+        return np.array(errors), epochs_remask, bests
+
+    def path_with_remask(self, n_epochs_stale_max: int) -> pathlib.Path:
+        return pathlib.Path(f"{self._path_network}--remask_{n_epochs_stale_max}")
 
     def _update_optimizer_scheduler(self, n_epochs_max: int) -> None:
         self._optimizer = torch.optim.Adam(self._network.network.parameters())
@@ -384,6 +406,7 @@ class ModelDouble(Model):
         for __, rhss_theirs, rhss_ours in self._iterate_dataset(
             dataset, batch_size=batch_size
         ):
-            yield distance.Distance(rhss_ours[0], rhss_theirs[0]), distance.Distance(
-                rhss_ours[1], rhss_theirs[1]
+            yield (
+                distance.Distance(rhss_ours[0], rhss_theirs[0]),
+                distance.Distance(rhss_ours[1], rhss_theirs[1]),
             )
