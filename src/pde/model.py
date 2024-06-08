@@ -275,6 +275,34 @@ class ModelSingle(Model):
         ):
             yield distance.Distance(rhss_ours, rhss_theirs)
 
+    def reconstruct(self) -> tuple[np.ndarray, float]:
+        batch = next(
+            self._iterate_dataset(self._datasets_eval[0].dataset_masked, batch_size=30)
+        )
+        channels_masked, channels_truth, channels_ours = (
+            batch[0][0],
+            batch[1][0],
+            batch[2][0],
+        )
+
+        channels = []
+        for chan_masked, chan_truth, chan_ours in zip(
+            channels_masked, channels_truth, channels_ours
+        ):
+            error = chan_ours - chan_truth
+            channels.append(
+                [
+                    chan_truth.detach().cpu().numpy(),
+                    chan_masked.detach().cpu().numpy(),
+                    chan_ours.detach().cpu().numpy(),
+                    error.detach().cpu().numpy(),
+                ]
+            )
+            dst = distance.Distance(chan_ours, chan_truth)
+            dst_mse = dst.mse_relative()
+            print(dst.mse(), dst_mse)
+        return np.array(channels), dst_mse.item()
+
 
 class ModelDouble(Model):
     def __init__(
