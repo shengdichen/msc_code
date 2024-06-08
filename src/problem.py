@@ -494,7 +494,7 @@ class ProblemHeat(Problem):
     def __init__(self):
         super().__init__(n_channels_raw=dataset_heat.DatasetHeat.N_CHANNELS)
 
-    def _dataset_raw(self) -> dataset.DatasetPDE2d:
+    def _dataset_raw(self) -> dataset_heat.DatasetHeat:
         grids = grid.Grids(
             [
                 grid.Grid.from_start_end(64, start=-1.0, end=1.0),
@@ -510,12 +510,16 @@ class ProblemHeat(Problem):
     def _dataset_double(self, mask: util_dataset.Masker) -> dataset.DatasetMaskedDouble:
         return dataset_heat.DatasetMaskedDoubleHeat(self._dataset_raw(), mask)
 
+    def plot_raw(self) -> None:
+        ds_raw = self._dataset_raw()
+        ds_raw.plot_snapshots()
+
 
 class ProblemWave(Problem):
     def __init__(self):
         super().__init__(n_channels_raw=dataset_wave.DatasetWave.N_CHANNELS)
 
-    def _dataset_raw(self) -> dataset.DatasetPDE2d:
+    def _dataset_raw(self) -> dataset_wave.DatasetWave:
         grids = grid.Grids(
             [
                 grid.Grid.from_start_end(64, start=0.0, end=1.0),
@@ -533,3 +537,7 @@ class ProblemWave(Problem):
 
     def plot_remask(self) -> None:
         self._plot_train_log("full", "kno")
+
+    def plot_raw(self) -> None:
+        ds_raw = self._dataset_raw()
+        ds_raw.plot_snapshots()
