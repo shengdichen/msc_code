@@ -96,26 +96,26 @@ class DatasetWave(dataset.DatasetPDE2d):
 
         plt.close(fig)
 
-    def plot_snapshots(self) -> None:
+    def plot_snapshots(self, uniform_scale: bool = True) -> None:
         self._calc_weights_samples()
 
-        fig, axs = plt.subplots(1, 3, figsize=(12, 5), dpi=200)
         times = [
             self._grid_time.start,
             (self._grid_time.start + self._grid_time.end) / 2,
             self._grid_time.end,
         ]
+        snapshots = [self.solve_at_time(time).detach().numpy() for time in times]
+        titles = [f"t = {time:.1f}" for time in times]
 
-        for ax, time in zip(axs, times):
-            snapshot = self.solve_at_time(time).detach().numpy()
-            ax.matshow(snapshot, cmap="jet")
-            ax.set_title(f"$t = {time}$")
-            ax.set_xlabel("$x_1$")
-            ax.set_ylabel("$x_2$")
-
-        fig.tight_layout()
-        fig.savefig(self._base_dir / "plot_snapshots.png")
-        plt.close(fig)
+        pt = plot.PlotIllustration(self._grids)
+        if uniform_scale:
+            pt.plot_targets_uniform(snapshots, titles)
+        else:
+            pt.plot_targets(snapshots, titles)
+        pt.finalize(
+            self._base_dir / "plot_snapshots.png",
+            title=f"Snapshots: {self.name_problem.title()} Equation",
+        )
 
     @staticmethod
     def plot_animation_samples() -> None:
