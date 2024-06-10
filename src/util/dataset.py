@@ -175,6 +175,11 @@ class Masker:
             return 1.0
         return intensity
 
+    def _intensity_real(self, full: torch.Tensor, masked: torch.Tensor) -> float:
+        return (
+            np.count_nonzero(masked == self._value_mask) / np.prod(full.shape)
+        ).item()
+
     def plot(self, resolution: int = 50) -> None:
         grids = grid.Grids(
             [
@@ -321,7 +326,7 @@ class MaskerIsland(Masker):
                 res[idxs] = full[idxs]
         logger.debug(
             "mask/island> intensity (expected, actual): "
-            f"{np.count_nonzero(res == self._value_mask) / np.prod(full.shape)}"
+            f"{self._intensity_real(full, res)}"
             ", "
             f"{self._intensity}"
         )
@@ -329,6 +334,69 @@ class MaskerIsland(Masker):
 
     def _range_idx_dim(self, full: torch.Tensor) -> tuple[np.ndarray, np.ndarray]:
         perc_untouched_per_side = (1 - self._sample_intensity()) ** (1 / full.dim())
+        perc_mask_per_side = (1 - perc_untouched_per_side) / 2
+
+        lows, highs = [], []
+        for size_dim in full.shape:
+            lows.append(int(size_dim * perc_mask_per_side))
+            highs.append(int(size_dim * (1 - perc_mask_per_side)))
+        return np.array(lows), np.array(highs)
+
+
+class MaskerRing(Masker):
+    def __init__(
+        self, intensity: float, intensity_spread: float = 0.1, value_mask: float = 0.5
+    ):
+        super().__init__(intensity, intensity_spread, value_mask)
+
+        self._name = (
+            f"ring"
+            "_"
+            f"{(self._intensity - self._intensity_spread):.2}"
+            "_"
+            f"{(self._intensity + self._intensity_spread):.2}"
+        )
+        if self._intensity_spread:
+            self._name_human = (
+                f"Ring"
+                " "
+                f"[{self._intensity_min:.0%}"
+                "-"
+                f"{self._intensity_max:.0%}]"
+            )
+        else:
+            self._name_human = f"Ring {self._intensity:.0%}"
+
+    @classmethod
+    def from_min_max(
+        cls,
+        intensity_min: float = 0.4,
+        intensity_max: float = 0.6,
+        value_mask: float = 0.5,
+    ) -> "MaskerRing":
+        return cls(
+            intensity=(intensity_max + intensity_min) / 2,
+            intensity_spread=(intensity_max - intensity_min) / 2,
+            value_mask=value_mask,
+        )
+
+    def mask(self, full: torch.Tensor) -> torch.Tensor:
+        if math.isclose(self._intensity, 1.0):
+            return (self._value_mask * torch.ones_like(full)).type_as(full)
+
+        res = full.detach().clone()
+        if math.isclose(self._intensity, 0.0):
+            return res
+
+        lows, highs = self._range_idx_dim(full)
+        for idxs in itertools.product(*(range(len_dim) for len_dim in full.shape)):
+            idxs_np = np.array(idxs)
+            if np.all(idxs_np >= lows) and np.all(idxs_np < highs):
+                res[idxs] = self._value_mask
+        return res
+
+    def _range_idx_dim(self, full: torch.Tensor) -> tuple[np.ndarray, np.ndarray]:
+        perc_untouched_per_side = self._sample_intensity() ** (1 / full.dim())
         perc_mask_per_side = (1 - perc_untouched_per_side) / 2
 
         lows, highs = [], []
