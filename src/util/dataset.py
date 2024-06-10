@@ -1,5 +1,6 @@
 import abc
 import itertools
+import logging
 import math
 import random
 import typing
@@ -11,6 +12,8 @@ import torch
 from src.definition import DEFINITION, T_DATASET
 from src.numerics import distance, grid
 from src.util import plot
+
+logger = logging.getLogger(__name__)
 
 
 class DatasetPde:
@@ -316,10 +319,17 @@ class MaskerIsland(Masker):
             idxs_np = np.array(idxs)
             if np.all(idxs_np >= lows) and np.all(idxs_np < highs):
                 res[idxs] = full[idxs]
+        logger.debug(
+            "mask/island> intensity (expected, actual): "
+            f"{np.count_nonzero(res == self._value_mask) / np.prod(full.shape)}"
+            ", "
+            f"{self._intensity}"
+        )
         return res
 
     def _range_idx_dim(self, full: torch.Tensor) -> tuple[np.ndarray, np.ndarray]:
-        perc_mask_per_side = self._sample_intensity() / 2
+        perc_untouched_per_side = (1 - self._sample_intensity()) ** (1 / full.dim())
+        perc_mask_per_side = (1 - perc_untouched_per_side) / 2
 
         lows, highs = [], []
         for size_dim in full.shape:
