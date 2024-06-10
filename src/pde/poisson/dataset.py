@@ -12,7 +12,7 @@ from src.numerics import grid
 from src.pde.dataset import (DatasetMaskedDouble, DatasetMaskedSingle,
                              DatasetPDE2d)
 from src.util import dataset as dataset_util
-from src.util.dataset import Masker
+from src.util import plot
 
 logger = logging.getLogger(__name__)
 
@@ -22,6 +22,25 @@ class DatasetPoisson2d(DatasetPDE2d):
 
     def __init__(self, grids: grid.Grids, name_dataset: str):
         super().__init__(grids, name_problem="poisson", name_dataset=name_dataset)
+
+    def plot_uf(self) -> None:
+        pt = plot.PlotIllustration(self._grids)
+        n_instances = 2
+        pt.make_fig_ax(n_instances * 2)
+
+        for i in range(n_instances):
+            str_instance = f" [instance {i+1}]"
+            pt.plot_targets(
+                self.solve_instance(),
+                titles=[f"u{str_instance}", f"f{str_instance}"],
+                idx_ax_start=i * self.N_CHANNELS,
+            )
+
+        title = (
+            f"{self.name_problem.title()} Equation "
+            f'"{self.name_dataset.replace("_", " ")}"'
+        )
+        pt.finalize(self.base_dir / f"{self.name_dataset}--raw.png", title=title)
 
     @abc.abstractmethod
     def plot(self, set_title_upper: bool = True) -> mpl.figure.Figure:
@@ -65,7 +84,7 @@ class DatasetPoisson2d(DatasetPDE2d):
 
 
 class DatasetMaskedSinglePoisson(DatasetMaskedSingle):
-    def __init__(self, dataset_raw: DatasetPDE2d, mask: Masker):
+    def __init__(self, dataset_raw: DatasetPDE2d, mask: dataset_util.Masker):
         super().__init__(dataset_raw, mask, mask_index=0)
 
 

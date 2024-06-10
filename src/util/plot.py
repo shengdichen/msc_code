@@ -278,26 +278,42 @@ class PlotIllustration:
         self,
         targets: typing.Sequence[np.ndarray],
         titles: typing.Sequence[str],
+        idx_ax_start: int = 0,
     ):
-        self.make_fig_ax(len(targets))
+        if not self._fig:
+            self.make_fig_ax(len(targets))
 
         for i, (target, title) in enumerate(zip(targets, titles)):
-            self.plot_2d(self._axs_2d[i], target, title=title)
-            self.plot_3d(self._axs_3d[i], target)
+            self.plot_2d(self._axs_2d[idx_ax_start + i], target, title=title)
+            self.plot_3d(self._axs_3d[idx_ax_start + i], target)
 
     def plot_targets_uniform(
         self,
         targets: typing.Sequence[np.ndarray],
         titles: typing.Sequence[str],
+        idx_ax_start: int = 0,
     ):
-        self.make_fig_ax(len(targets))
+        if not self._fig:
+            self.make_fig_ax(len(targets))
 
         _min, _max = PlotIllustration.min_max_targets(targets)
         ticks_z = PlotIllustration.ticks_auto(_min, _max)
 
-        for i, (target, title) in enumerate(zip(targets, titles)):
-            self.plot_2d(self._axs_2d[i], target, title=title, _min=_min, _max=_max)
-            self.plot_3d(self._axs_3d[i], target, _min=_min, _max=_max, ticks_z=ticks_z)
+        for i, (target, title) in enumerate(zip(targets, titles), start=idx_ax_start):
+            self.plot_2d(
+                self._axs_2d[i],
+                target,
+                title=title,
+                _min=_min,
+                _max=_max,
+            )
+            self.plot_3d(
+                self._axs_3d[i],
+                target,
+                _min=_min,
+                _max=_max,
+                ticks_z=ticks_z,
+            )
 
     @staticmethod
     def plot_sample() -> None:

@@ -470,7 +470,7 @@ class ProblemPoisson(Problem):
     def __init__(self):
         super().__init__(n_channels_raw=dataset_poisson.DatasetPoisson2d.N_CHANNELS)
 
-    def _dataset_raw(self) -> dataset.DatasetPDE2d:
+    def _dataset_raw(self) -> dataset_poisson.DatasetPoisson2d:
         grids = grid.Grids(
             [
                 grid.Grid(n_pts=64, stepsize=0.01, start=0.0),
@@ -488,6 +488,21 @@ class ProblemPoisson(Problem):
     def plot_remask(self) -> None:
         self._plot_train_log("full", "unet")
         self._plot_train_log("low", "cno")
+
+    def plot_raw(self) -> None:
+        DEFINITION.seed(42)
+        ds_raw = self._dataset_raw()
+        ds_raw.plot_uf()
+
+        DEFINITION.seed(42)
+        dataset_poisson.DatasetGauss(
+            grid.Grids(
+                [
+                    grid.Grid(n_pts=64, stepsize=0.01, start=0.0),
+                    grid.Grid(n_pts=64, stepsize=0.01, start=0.0),
+                ]
+            )
+        ).plot_uf()
 
 
 class ProblemHeat(Problem):
