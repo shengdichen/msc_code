@@ -561,8 +561,10 @@ class ProblemWave(Problem):
 class ProblemMask:
     def __init__(self):
         self._mask_random = util_dataset.MaskerRandom(0.5, intensity_spread=0.0)
-        self._mask_island = util_dataset.MaskerIsland(0.5, intensity_spread=0.0)
+        self._mask_island = util_dataset.MaskerIsland(0.75, intensity_spread=0.0)
+        self._mask_ring = util_dataset.MaskerRing(0.25, intensity_spread=0.0)
 
     def plot(self) -> None:
         self._mask_random.plot(resolution=25)
-        self._mask_island.plot(resolution=75)
+        self._mask_island.plot(resolution=100)
+        self._mask_ring.plot(resolution=100)
