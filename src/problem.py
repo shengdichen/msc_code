@@ -556,3 +556,13 @@ class ProblemWave(Problem):
     def plot_raw(self) -> None:
         ds_raw = self._dataset_raw()
         ds_raw.plot_snapshots()
+
+
+class ProblemMask:
+    def __init__(self):
+        self._mask_random = util_dataset.MaskerRandom(0.5, intensity_spread=0.0)
+        self._mask_island = util_dataset.MaskerIsland(0.5, intensity_spread=0.0)
+
+    def plot(self) -> None:
+        self._mask_random.plot(resolution=25)
+        self._mask_island.plot(resolution=75)

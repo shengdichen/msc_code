@@ -8,8 +8,9 @@ from collections.abc import Callable, Iterable
 import numpy as np
 import torch
 
-from src.definition import T_DATASET
-from src.numerics import distance
+from src.definition import DEFINITION, T_DATASET
+from src.numerics import distance, grid
+from src.util import plot
 
 
 class DatasetPde:
@@ -171,6 +172,34 @@ class Masker:
             return 1.0
         return intensity
 
+    def plot(self, resolution: int = 50) -> None:
+        grids = grid.Grids(
+            [
+                grid.Grid.from_start_end(resolution, start=-1, end=+1),
+                grid.Grid.from_start_end(resolution, start=-1, end=+1),
+            ],
+        )
+        coords_x1, coords_x2 = grids.coords_as_mesh_torch()
+
+        pt = plot.PlotIllustration(grids)
+        values_mask = [0, 1 / 4, 1 / 2]
+        pt.make_fig_ax(1 + len(values_mask))
+
+        target = torch.cos(0.5 * torch.pi * coords_x1) * torch.cos(
+            0.5 * torch.pi * coords_x2
+        )
+        targets = [target]
+        titles = ["cos × cos (unmasked)"]  # no, this mult sign is not ascii
+        for val in values_mask:
+            self._value_mask = val
+            targets.append(self.mask(target))
+            titles.append(f"mask-value: {val:.2f}")
+        pt.plot_targets_uniform(targets, titles)
+        pt.finalize(
+            DEFINITION.BIN_DIR / f"mask_{self._name}.png",
+            title=f"Masking: {self.name_human}",
+        )
+
 
 class MaskerRandom(Masker):
     def __init__(
@@ -191,13 +220,16 @@ class MaskerRandom(Masker):
             "_"
             f"{(self._intensity + self._intensity_spread):.2}"
         )
-        self._name_human = (
-            f"Random"
-            " "
-            f"[{self._intensity_min:.0%}"
-            "-"
-            f"{self._intensity_max:.0%}]"
-        )
+        if self._intensity_spread:
+            self._name_human = (
+                f"Random"
+                " "
+                f"[{self._intensity_min:.0%}"
+                "-"
+                f"{self._intensity_max:.0%}]"
+            )
+        else:
+            self._name_human = f"Random {self._intensity:.0%}"
 
     @classmethod
     def from_min_max(
@@ -247,13 +279,16 @@ class MaskerIsland(Masker):
             "_"
             f"{(self._intensity + self._intensity_spread):.2}"
         )
-        self._name_human = (
-            f"Island"
-            " "
-            f"[{self._intensity_min:.0%}"
-            "-"
-            f"{self._intensity_max:.0%}]"
-        )
+        if self._intensity_spread:
+            self._name_human = (
+                f"Island"
+                " "
+                f"[{self._intensity_min:.0%}"
+                "-"
+                f"{self._intensity_max:.0%}]"
+            )
+        else:
+            self._name_human = f"Island {self._intensity:.0%}"
 
     @classmethod
     def from_min_max(
