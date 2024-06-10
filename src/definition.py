@@ -17,6 +17,10 @@ class Definition:
 
     BIN_DIR = SRC_DIR.parent / "bin"
 
+    FONT_SIZE_SMALL = 10.5
+    FONT_SIZE_DEFAULT = 14
+    FONT_SIZE_BIG = 15.5
+
     def __init__(self):
         self._has_cuda = torch.cuda.is_available()
 
@@ -47,6 +51,19 @@ class Definition:
         else:
             mpl.rcParams["font.sans-serif"].insert(0, "Avenir LT Std")
             mpl.rcParams["font.serif"].insert(0, "Libertinus Serif")
+
+            mpl.rcParams["font.size"] = DEFINITION.FONT_SIZE_DEFAULT
+
+            mpl.rcParams["axes.titlesize"] = DEFINITION.FONT_SIZE_DEFAULT  # title, ax
+            mpl.rcParams["axes.labelsize"] = (
+                DEFINITION.FONT_SIZE_DEFAULT
+            )  # label, x & y
+
+            mpl.rcParams["xtick.labelsize"] = DEFINITION.FONT_SIZE_SMALL  # tick, x
+            mpl.rcParams["ytick.labelsize"] = DEFINITION.FONT_SIZE_SMALL  # tick, y
+
+            mpl.rcParams["legend.fontsize"] = DEFINITION.FONT_SIZE_DEFAULT
+            mpl.rcParams["figure.titlesize"] = DEFINITION.FONT_SIZE_BIG  # suptitle
 
 
 DEFINITION = Definition()
