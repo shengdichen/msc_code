@@ -215,6 +215,7 @@ class PlotIllustration:
         title: typing.Optional[str] = None,
         _min: typing.Optional[float] = None,
         _max: typing.Optional[float] = None,
+        colormap: typing.Optional[str] = None,
     ) -> None:
         ax.contourf(
             self._coords_x1,
@@ -222,7 +223,7 @@ class PlotIllustration:
             target,
             vmin=_min,
             vmax=_max,
-            cmap=self._colormap,
+            cmap=colormap or self._colormap,
         )
 
         if title:
@@ -242,6 +243,7 @@ class PlotIllustration:
         _min: typing.Optional[float] = None,
         _max: typing.Optional[float] = None,
         ticks_z: typing.Optional[Sequence[float]] = None,
+        colormap: typing.Optional[str] = None,
     ) -> None:
         ax.plot_surface(
             self._coords_x1,
@@ -249,7 +251,7 @@ class PlotIllustration:
             target,
             vmin=_min,
             vmax=_max,
-            cmap=self._colormap,
+            cmap=colormap or self._colormap,
             edgecolor=self._edgecolor,
         )
 
@@ -291,12 +293,21 @@ class PlotIllustration:
         self,
         targets: typing.Sequence[np.ndarray],
         titles: typing.Sequence[str],
+        _min: typing.Optional[float] = None,
+        _max: typing.Optional[float] = None,
         idx_ax_start: int = 0,
     ):
         if not self._fig:
             self.make_fig_ax(len(targets))
 
-        _min, _max = PlotIllustration.min_max_targets(targets)
+        if _min is None:
+            if _max is None:
+                _min, _max = PlotIllustration.min_max_targets(targets)
+            else:
+                _min, __ = PlotIllustration.min_max_targets(targets)
+        else:
+            if _max is None:
+                __, _max = PlotIllustration.min_max_targets(targets)
         ticks_z = PlotIllustration.ticks_auto(_min, _max)
 
         for i, (target, title) in enumerate(zip(targets, titles), start=idx_ax_start):

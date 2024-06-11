@@ -18,6 +18,7 @@ from src.pde.heat import dataset as dataset_heat
 from src.pde.poisson import dataset as dataset_poisson
 from src.pde.wave import dataset as dataset_wave
 from src.util import dataset as util_dataset
+from src.util import plot as util_plot
 
 logger = logging.getLogger(__name__)
 
@@ -376,9 +377,10 @@ class Problem:
         for ds_eval, name in zip(
             [
                 self._datasets_evals_single_random[5],
-                self._datasets_evals_single_island[4],
+                self._datasets_evals_single_island[5],
+                self._datasets_evals_single_ring[5],
             ],
-            ["random", "island"],
+            ["random", "island", "ring"],
         ):
             ds_train = self._datasets_train_single[0]
             m = next(self._models_current_single(ds_train))
@@ -386,48 +388,39 @@ class Problem:
             m.datasets_eval = [ds_eval]
             ((truth, masked, ours, error),), mse = m.reconstruct()
 
-            fig = plt.figure(figsize=(16, 9), dpi=200)
+            pt = util_plot.PlotIllustration(
+                ds_eval.grids,
+                ticks_x1_3d=[0.0, 0.20, 0.40, 0.60],
+                ticks_x2_3d=[0.0, 0.20, 0.40, 0.60],
+            )
+            pt.make_fig_ax(4)
 
-            coords = ds_eval.grids.coords_as_mesh()
-            coords_ticks = [0.0, 0.20, 0.40, 0.60]
-
-            for ax, mat, title in zip(
-                (fig.add_subplot(2, 4, i) for i in [1, 2, 3]),
+            pt.plot_targets_uniform(
                 [truth, masked, ours],
                 ["Truth", "Masked", "Prediction"],
-            ):
-                ax.contourf(*coords, mat, cmap="inferno", vmin=0.0, vmax=1.0)
-                ax.set_xticks(coords_ticks)
-                ax.set_yticks(coords_ticks)
-                ax.set_title(title)
+                _min=0.05,
+                _max=0.95,
+            )
 
-            ax = fig.add_subplot(2, 4, 4)
-            ax.contourf(*coords, error, cmap="inferno", vmin=-0.7, vmax=+0.7)
-            ax.set_xticks(coords_ticks)
-            ax.set_yticks(coords_ticks)
-            ax.set_title(f"Error ({mse:.2%} MSE)")
+            pt.plot_2d(
+                pt.axs_2d[3],
+                error,
+                title=f"Raw Difference (MSE: {mse:.2%})",
+                _min=-0.2,
+                _max=+0.2,
+                colormap="plasma",
+            )
+            pt.plot_3d(pt.axs_3d[3], error, _min=-0.7, _max=+0.7, colormap="plasma")
 
-            axs = [fig.add_subplot(2, 4, i, projection="3d") for i in [5, 6, 7, 8]]
-            for ax, mat in zip(axs, [truth, masked, ours, error]):
-                ax.plot_surface(
-                    *coords, mat, vmin=0.0, vmax=1.0, cmap="viridis", edgecolor="k"
-                )
-                ax.set_xticks(coords_ticks)
-                ax.set_yticks(coords_ticks)
-                ax.tick_params(axis="z", labelsize="small")
-                ax.set_zticks([0.0, 0.3, 0.6, 0.9])
-            axs[-1].set_zlim(-0.8, +0.8)
-            axs[-1].set_zticks([-0.6, -0.3, 0, 0.3, 0.6])
-
-            fig.suptitle(
+            title = (
                 f"Training> {ds_train.name_human(multiline=False)}"
                 "\n"
-                f"Evaluation> {ds_eval.name_human(multiline=False)}",
-                fontsize=14,
+                f"Evaluation> {ds_eval.name_human(multiline=False)}"
             )
-            fig.tight_layout()
-            fig.savefig(f"{ds_train.path}--reconstruction-single-{name}.png")
-            plt.close(fig)
+            pt.finalize(
+                pathlib.Path(f"{ds_train.path}--reconstruction-single-{name}.png"),
+                title=title,
+            )
 
     def models_single(self) -> collections.abc.Generator[model.ModelSingle, None, None]:
         for ds_train in self._datasets_train_single:
