@@ -196,13 +196,26 @@ class Masker:
         target = torch.cos(0.5 * torch.pi * coords_x1) * torch.cos(
             0.5 * torch.pi * coords_x2
         )
-        targets = [target]
-        titles = ["cos × cos (unmasked)"]  # no, this mult sign is not ascii
+
+        _min, _max = 0.0, 1.0
+        pt.plot_2d(
+            pt.axs_2d[0],
+            target,
+            "cos × cos (unmasked)",  # no, this mult sign is not ascii
+            _min=0.0,
+            _max=+1.0,
+            colormap="plasma",
+        )
+        pt.plot_3d(pt.axs_3d[0], target, _min=_min, _max=_max, colormap="plasma")
+
+        targets = []
+        titles = []
         for val in values_mask:
             self._value_mask = val
             targets.append(self.mask(target))
             titles.append(f"mask-value: {val:.2f}")
-        pt.plot_targets_uniform(targets, titles)
+        pt.plot_targets_uniform(targets, titles, _min=_min, _max=_max, idx_ax_start=1)
+
         pt.finalize(
             DEFINITION.BIN_DIR / f"mask_{self._name}.png",
             title=f"Masking: {self.name_human}",
