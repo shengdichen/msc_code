@@ -241,6 +241,8 @@ class MaskerRandom(Masker):
             "_"
             f"{(self._intensity + self._intensity_spread):.2}"
         )
+        if not math.isclose(self._value_mask, 0.5):
+            self._name = f"{self._name}_val_{self._value_mask:.1f}"
         if self._intensity_spread:
             self._name_human = (
                 f"Random"
