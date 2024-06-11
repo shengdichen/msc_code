@@ -228,6 +228,24 @@ class Problem:
             m.datasets_eval = self._datasets_evals_double_island
             m.eval(print_result=True)
 
+    def island_ring(self) -> None:
+        mask_train = util_dataset.MaskerIsland(0.5)
+
+        ds_train = self._dataset_single(mask_train)
+        ds_train.as_train(self._n_instances_train)
+        for m in list(self._models_current_single(ds_train)):
+            ds_eval = self._dataset_single(ds_train.masks[0])
+            ds_eval.as_eval(self._n_instances_eval)
+            m.datasets_eval = [ds_eval]
+            m.load_network()
+
+            m.datasets_eval = self._datasets_evals_single_random
+            m.eval(print_result=True)
+            m.datasets_eval = self._datasets_evals_single_island
+            m.eval(print_result=True)
+            m.datasets_eval = self._datasets_evals_single_ring
+            m.eval(print_result=True)
+
     def mask_nonstandard(self) -> None:
         for value_mask in [0.5, 0.0, 1.0]:  # include default 0.5 for direct comparison
             mask_train = util_dataset.MaskerRandom.from_min_max(
