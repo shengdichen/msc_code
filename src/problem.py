@@ -64,6 +64,12 @@ class Problem:
         self._datasets_evals_double_island: list[  # type: ignore [annotation-unchecked]
             dataset.DatasetMaskedDouble
         ] = []
+        self._datasets_evals_single_ring: list[  # type: ignore [annotation-unchecked]
+            dataset.DatasetMaskedSingle
+        ] = []
+        self._datasets_evals_double_ring: list[  # type: ignore [annotation-unchecked]
+            dataset.DatasetMaskedDouble
+        ] = []
         self._load_datasets()
 
     def _load_datasets(self) -> None:
@@ -102,6 +108,19 @@ class Problem:
             ds_double = self._dataset_double(mask)
             ds_double.as_eval(self._n_instances_eval)
             self._datasets_evals_double_island.append(ds_double)
+
+        for mask in [
+            util_dataset.MaskerRing.from_min_max(
+                intensity_min=i / 10, intensity_max=i / 10 + 0.1
+            )
+            for i in range(10)
+        ]:
+            ds_single = self._dataset_single(mask)
+            ds_single.as_eval(self._n_instances_eval)
+            self._datasets_evals_single_ring.append(ds_single)
+            ds_double = self._dataset_double(mask)
+            ds_double.as_eval(self._n_instances_eval)
+            self._datasets_evals_double_ring.append(ds_double)
 
     def train(self) -> None:
         self.train_single()
@@ -212,34 +231,33 @@ class Problem:
         y_max, y_clip = 0.18, 0.175
         for ds_train in self._datasets_train_single:
             models = list(self._models_current_single(ds_train))
-            fig, (ax_random, ax_island) = plt.subplots(1, 2, figsize=(9, 5), dpi=200)
+            fig, axs = plt.subplots(1, 3, figsize=(13, 5), dpi=200)
             for m in models:
                 m.load_network()
-                m.datasets_eval = self._datasets_evals_single_random
-                errors_random = m.errors(clip_at_max=y_clip)
-                m.datasets_eval = self._datasets_evals_single_island
-                errors_island = m.errors(clip_at_max=y_clip)
-                self._plot_errors(
-                    ax_random,
-                    errors_random,
-                    ax_island,
-                    errors_island,
-                    label=m.name_network,
-                )
+                for ax, ds_eval in zip(
+                    axs,
+                    [
+                        self._datasets_evals_single_random,
+                        self._datasets_evals_single_island,
+                        self._datasets_evals_single_ring,
+                    ],
+                ):
+                    m.datasets_eval = ds_eval
+                    self._plot_errors(
+                        ax, m.errors(clip_at_max=y_clip), label=m.name_network
+                    )
 
-            self._style_plot(
-                ax_random,
-                ax_island,
-                mask_min_max=ds_train.masks[0].min_max(as_percentage=True),
-                y_max=y_max * 100,
-                y_ticks=[2.5, 5, 10, 15, 17.5],
-            )
+            for ax, mask_name in zip(axs, ["Random", "Island", "Ring"]):
+                self._style_plot(
+                    ax,
+                    mask_min_max=ds_train.masks[0].min_max(as_percentage=True),
+                    y_max=y_max * 100,
+                    y_ticks=[2.5, 5, 10, 15, 17.5],
+                )
+                ax.set_title(f"(Eval-)Masking: {mask_name}")
+            axs[0].set_ylabel("MSE%")
 
             fig.suptitle(ds_train.name_human(multiline=True))
-            ax_random.set_title("(Eval-)Masking: Random")
-            ax_island.set_title("(Eval-)Masking: Island")
-            ax_random.set_ylabel("error [$L^2$]")
-
             fig.tight_layout()
 
             path = pathlib.Path(f"{ds_train.path}.png")
@@ -250,51 +268,39 @@ class Problem:
         y_max, y_clip = 0.26, 0.25
         for ds_train in self._datasets_train_double:
             models = list(self._models_current_double(ds_train))
-            fig, ((ax_0_random, ax_0_island), (ax_1_random, ax_1_island)) = (
-                plt.subplots(2, 2, figsize=(9, 9), dpi=200)
-            )
+            fig, axs_channels = plt.subplots(2, 3, figsize=(13, 9), dpi=200)
             for m in models:
                 m.load_network()
-                m.datasets_eval = self._datasets_evals_double_random
-                errors_0_random, errors_1_random = m.errors(clip_at_max=y_clip)
-                m.datasets_eval = self._datasets_evals_double_island
-                errors_0_island, errors_1_island = m.errors(clip_at_max=y_clip)
-                self._plot_errors(
-                    ax_0_random,
-                    errors_0_random,
-                    ax_0_island,
-                    errors_0_island,
-                    label=m.name_network,
-                )
-                self._plot_errors(
-                    ax_1_random,
-                    errors_1_random,
-                    ax_1_island,
-                    errors_1_island,
-                    label=m.name_network,
-                )
 
-            for ax_random, ax_island in (
-                (ax_0_random, ax_0_island),
-                (ax_1_random, ax_1_island),
-            ):
-                self._style_plot(
-                    ax_random,
-                    ax_island,
-                    mask_min_max=ds_train.masks[0].min_max(as_percentage=True),
-                    y_max=y_max * 100,
-                    y_ticks=[i * 5 for i in range(6)],
-                    baseline_high=20.0,
-                )
+                for i, ds_eval in enumerate(
+                    [
+                        self._datasets_evals_double_random,
+                        self._datasets_evals_double_island,
+                        self._datasets_evals_double_ring,
+                    ]
+                ):
+                    m.datasets_eval = ds_eval
+                    errors_chan_0, errors_chan_1 = m.errors(clip_at_max=y_clip)
+                    self._plot_errors(
+                        axs_channels[0][i], errors_chan_0, label=m.name_network
+                    )
+                    self._plot_errors(
+                        axs_channels[1][i], errors_chan_1, label=m.name_network
+                    )
+
+            for idx_channel, axs in enumerate(axs_channels):
+                for ax, mask_name in zip(axs, ["Random", "Island", "Ring"]):
+                    self._style_plot(
+                        ax,
+                        mask_min_max=ds_train.masks[0].min_max(as_percentage=True),
+                        y_max=y_max * 100,
+                        y_ticks=[i * 5 for i in range(6)],
+                        baseline_high=20.0,
+                    )
+                    ax.set_title(f"Channel {idx_channel} Masking: {mask_name}")
+                axs[0].set_ylabel("MSE%")
 
             fig.suptitle(ds_train.name_human(multiline=True))
-            ax_0_random.set_title("Channel 0 Masking: Random")
-            ax_0_island.set_title("Channel 0 Masking: Island")
-            ax_1_random.set_title("Channel 1 Masking: Random")
-            ax_1_island.set_title("Channel 1 Masking: Island")
-            ax_0_random.set_ylabel("error [$L^2$]")
-            ax_1_random.set_ylabel("error [$L^2$]")
-
             fig.tight_layout()
 
             path = pathlib.Path(f"{ds_train.path}.png")
@@ -303,52 +309,42 @@ class Problem:
 
     def _plot_errors(
         self,
-        ax_random: mpl.axes.Axes,
-        errors_random: np.ndarray,
-        ax_island: mpl.axes.Axes,
-        errors_island: np.ndarray,
+        ax: mpl.axes.Axes,
+        errors: np.ndarray,
         label: str,
     ) -> None:
         style = {"linestyle": "dashed", "linewidth": 1.0, "marker": "x"}
-        ax_random.plot(
+        ax.plot(
             self._intensities_eval,
-            errors_random,
-            **style,
-            label=label,
-        )
-        ax_island.plot(
-            self._intensities_eval,
-            errors_island,
+            errors,
             **style,
             label=label,
         )
 
     def _style_plot(
         self,
-        ax_random: mpl.axes.Axes,
-        ax_island: mpl.axes.Axes,
+        ax: mpl.axes.Axes,
         mask_min_max: tuple[float, float],
         y_max: float,
         y_ticks: typing.Sequence[float],
         baseline_low: float = 5.0,
         baseline_high: float = 15.0,
     ) -> None:
-        for ax in [ax_random, ax_island]:
-            ax.legend()
+        ax.legend()
 
-            ax.set_xlabel("masking intensity")
-            ax.set_xlim(-3, 103)
-            ax.set_xticks([10 * (x + 1) for x in range(9)])
-            ax.tick_params(axis="x", labelrotation=30, labelsize="small")
-            if not mask_min_max == (0, 100):
-                ax.fill_betweenx(
-                    range(math.ceil(y_max) + 1),
-                    *mask_min_max,
-                    color="lightgrey",
-                )
-            ax.xaxis.set_major_formatter(mpl.ticker.PercentFormatter(decimals=0))
+        ax.set_xlabel("masking intensity")
+        ax.set_xlim(-3, 103)
+        ax.set_xticks([10 * (x + 1) for x in range(9)])
+        ax.tick_params(axis="x", labelrotation=30, labelsize="small")
+        if not mask_min_max == (0, 100):
+            ax.fill_betweenx(
+                range(math.ceil(y_max) + 1),
+                *mask_min_max,
+                color="lightgrey",
+            )
+        ax.xaxis.set_major_formatter(mpl.ticker.PercentFormatter(decimals=0))
 
-            self._style_y_as_error(ax, y_max, y_ticks, baseline_low, baseline_high)
+        self._style_y_as_error(ax, y_max, y_ticks, baseline_low, baseline_high)
 
     def _style_y_as_error(
         self,
