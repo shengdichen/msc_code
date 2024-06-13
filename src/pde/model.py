@@ -69,7 +69,9 @@ class Model:
         n_remasks_stale_max: int = 3,
         freq_report: int = 100,
         adhoc: bool = False,
-    ) -> tuple[np.ndarray, list[float], tuple[list[int], list[float]]]:
+    ) -> tuple[
+        np.ndarray, list[float], tuple[int, float], tuple[list[int], list[float]]
+    ]:
         if adhoc:
             path = pathlib.Path(f"{self.path_with_remask(n_epochs_stale_max)}.pth")
         else:
@@ -78,7 +80,7 @@ class Model:
         if path.exists() and not adhoc:
             logger.info(f"model> already done! [{path}]")
             self._network.load(path)
-            return np.array([]), [], ([], [])
+            return np.array([]), [], (0, 0.0), ([], [])
 
         logger.info(f"model> learning... [{path}]")
         self._update_optimizer_scheduler(n_epochs_max)
@@ -93,6 +95,7 @@ class Model:
         epochs_remask = []
 
         record_bests = False
+        best_premask: tuple[int, float] = 0, math.inf
         bests: tuple[list[int], list[float]] = [], []
 
         for epoch in tqdm(range(n_epochs_max)):
@@ -121,6 +124,8 @@ class Model:
                 if record_bests:
                     bests[0].append(epoch)
                     bests[1].append(error_curr)
+                else:
+                    best_premask = epoch, error_curr
                 self._network.save(path)
                 error_best = error_curr
                 epoch_best = epoch
@@ -140,7 +145,7 @@ class Model:
                 )
                 logger.info(f"train/best> {error_best:.4%} @ epoch {epoch_best}")
 
-        return np.array(errors), epochs_remask, bests
+        return np.array(errors), epochs_remask, best_premask, bests
 
     def path_with_remask(self, n_epochs_stale_max: int) -> pathlib.Path:
         return pathlib.Path(f"{self._path_network}--remask_{n_epochs_stale_max}")

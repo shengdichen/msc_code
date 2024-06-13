@@ -140,33 +140,84 @@ class Problem:
         ds_eval.as_eval(self._n_instances_eval)
         m.datasets_eval = [ds_eval]
 
-        y_max, y_clip = 0.30, 0.275
+        n_remasks_stale_max = 3
+        y_max, y_clip = 0.21, 0.21
         for n_epochs_stale_max in [30]:
-            fig, ax = plt.subplots(figsize=(6, 6), dpi=200)
+            fig, ax = plt.subplots(figsize=(9, 6), dpi=200)
 
             path = m.path_with_remask(n_epochs_stale_max)
             path_pickel = pathlib.Path(f"{path}.pickle")
             if not path_pickel.exists():
-                res_train = m.train(n_epochs_stale_max=n_epochs_stale_max, adhoc=True)
+                res_train = m.train(
+                    n_epochs_stale_max=n_epochs_stale_max,
+                    n_remasks_stale_max=n_remasks_stale_max,
+                    adhoc=True,
+                )
                 with open(path_pickel, "wb") as f:
                     pickle.dump(res_train, f)
             with open(path_pickel, "rb") as f:
-                errors, epochs_remask, bests = pickle.load(f)
+                errors, epochs_remask, best_premask, bests = pickle.load(f)
 
             if not epochs_remask:
                 logger.info("model> no plot-data, skipping")
                 continue
 
+            errors_non_perc = errors
             errors = 100 * np.clip(errors, a_min=0.0, a_max=y_clip)
             ax.plot(errors[:, 0], label="train")
             ax.plot(errors[:, 1], label="eval")
+            ax.plot(
+                best_premask[0],
+                100 * best_premask[1],
+                linestyle="",
+                marker="^",
+                markersize=9,
+                color="red",
+                label="best (pre-remask)",
+            )
             ax.plot(
                 bests[0],
                 100 * np.array(bests[1]),
                 linestyle="",
                 marker="*",
-                label="improvement",
+                markersize=10,
+                label="improvement (post-remask)",
             )
+
+            best_pre = best_premask[1]
+            print(f"best/pre> epoch: {best_premask[0]}, err-eval: {best_pre:.4%}")
+            for epoch, err_eval in zip(bests[0], bests[1]):
+                improv = err_eval / best_pre
+                print(
+                    f"best/post> epoch: {epoch}, err-eval: {err_eval:.4%}, improv: {improv:.3f}"
+                )
+
+            radius, ratio = 1.9, 5.5  # TODO: find a way to calc ratio
+            width, height = ratio * radius, radius
+            for coord_x in epochs_remask[:-1]:
+                err_pre, err_post = (
+                    errors_non_perc[coord_x - 1][0],
+                    errors_non_perc[coord_x][0],
+                )
+                print(
+                    f"remask> epoch: {coord_x}"
+                    " | "
+                    f"err-train-pre: {err_pre:.4%}; "
+                    f"err-train-post: {err_post:.4%}; "
+                    f"bump: {err_post/err_pre:.3f}"
+                    " | "
+                    f"err-eval-pre: {errors_non_perc[coord_x - 1][1]:.4%}; "
+                    f"err-eval-post: {errors_non_perc[coord_x][1]:.4%}"
+                )
+                circle = mpl.patches.Ellipse(
+                    (coord_x, 100 * err_post),
+                    width,
+                    height,
+                    color="tab:blue",  # the default blue
+                    linewidth=2,  # the default blue
+                    fill=False,
+                )
+                ax.add_patch(circle)
 
             ax.set_xlabel("training epoch")
             ax.tick_params(axis="x", labelrotation=30, labelsize="small")
@@ -179,9 +230,11 @@ class Problem:
                 )
 
             fig.suptitle(
-                f"{ds_train.name_human(multiline=True)}"
+                f"{ds_train.name_human()}"
                 "\n"
-                f"Resample: {n_epochs_stale_max}"
+                f"({m.name_network})"
+                "  "
+                f"Resample-freq: {n_epochs_stale_max} + Max-resample: {n_remasks_stale_max}"
             )
             self._style_y_as_error(ax, 100 * y_max)
             ax.set_ylabel("error [MSE%]")
@@ -515,7 +568,6 @@ class ProblemPoisson(Problem):
 
     def plot_remask(self) -> None:
         self._plot_train_log("full", "unet")
-        self._plot_train_log("low", "cno")
 
     def plot_raw(self) -> None:
         DEFINITION.seed(42)

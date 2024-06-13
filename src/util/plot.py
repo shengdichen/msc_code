@@ -23,6 +23,16 @@ class PlotUtil:
         self._grids = grids
         self._coords_x1, self._coords_x2 = self._grids.coords_as_mesh()
 
+    @staticmethod
+    def ax_ratio(ax: mpl.axes.Axes) -> float:
+        # BUG:
+        #   does NOT make a perfect circle with mpl.patches.Ellipse
+
+        range_x, range_y = ax.get_xlim(), ax.get_ylim()
+        len_x = range_x[1] - range_x[0]
+        len_y = range_y[1] - range_y[0]
+        return len_x / len_y
+
     def plot_2d(
         self,
         ax: mpl.axes.Axes,
