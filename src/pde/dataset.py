@@ -181,6 +181,10 @@ class DatasetMasked:
         self._save_unmasked = save_unmasked
 
     @property
+    def grids(self) -> grid.Grids:
+        return self._grids
+
+    @property
     def dataset_masked(self) -> T_DATASET:
         return self._dataset_masked
 

@@ -1,5 +1,6 @@
 import abc
 import itertools
+import logging
 import math
 import random
 import typing
@@ -8,8 +9,11 @@ from collections.abc import Callable, Iterable
 import numpy as np
 import torch
 
-from src.definition import T_DATASET
-from src.numerics import distance
+from src.definition import DEFINITION, T_DATASET
+from src.numerics import distance, grid
+from src.util import plot
+
+logger = logging.getLogger(__name__)
 
 
 class DatasetPde:
@@ -171,6 +175,52 @@ class Masker:
             return 1.0
         return intensity
 
+    def _intensity_real(self, full: torch.Tensor, masked: torch.Tensor) -> float:
+        return (
+            np.count_nonzero(masked == self._value_mask) / np.prod(full.shape)
+        ).item()
+
+    def plot(self, resolution: int = 50) -> None:
+        grids = grid.Grids(
+            [
+                grid.Grid.from_start_end(resolution, start=-1, end=+1),
+                grid.Grid.from_start_end(resolution, start=-1, end=+1),
+            ],
+        )
+        coords_x1, coords_x2 = grids.coords_as_mesh_torch()
+
+        pt = plot.PlotIllustration(grids)
+        values_mask = [0, 1 / 4, 1 / 2]
+        pt.make_fig_ax(1 + len(values_mask))
+
+        target = torch.cos(0.5 * torch.pi * coords_x1) * torch.cos(
+            0.5 * torch.pi * coords_x2
+        )
+
+        _min, _max = 0.0, 1.0
+        pt.plot_2d(
+            pt.axs_2d[0],
+            target,
+            "cos × cos (unmasked)",  # no, this mult sign is not ascii
+            _min=0.0,
+            _max=+1.0,
+            colormap="plasma",
+        )
+        pt.plot_3d(pt.axs_3d[0], target, _min=_min, _max=_max, colormap="plasma")
+
+        targets = []
+        titles = []
+        for val in values_mask:
+            self._value_mask = val
+            targets.append(self.mask(target))
+            titles.append(f"mask-value: {val:.2f}")
+        pt.plot_targets_uniform(targets, titles, _min=_min, _max=_max, idx_ax_start=1)
+
+        pt.finalize(
+            DEFINITION.BIN_DIR / f"mask_{self._name}.png",
+            title=f"Masking: {self.name_human}",
+        )
+
 
 class MaskerRandom(Masker):
     def __init__(
@@ -191,13 +241,18 @@ class MaskerRandom(Masker):
             "_"
             f"{(self._intensity + self._intensity_spread):.2}"
         )
-        self._name_human = (
-            f"Random"
-            " "
-            f"[{self._intensity_min:.0%}"
-            "-"
-            f"{self._intensity_max:.0%}]"
-        )
+        if not math.isclose(self._value_mask, 0.5):
+            self._name = f"{self._name}_val_{self._value_mask:.1f}"
+        if self._intensity_spread:
+            self._name_human = (
+                f"Random"
+                " "
+                f"[{self._intensity_min:.0%}"
+                "-"
+                f"{self._intensity_max:.0%}]"
+            )
+        else:
+            self._name_human = f"Random {self._intensity:.0%}"
 
     @classmethod
     def from_min_max(
@@ -247,13 +302,16 @@ class MaskerIsland(Masker):
             "_"
             f"{(self._intensity + self._intensity_spread):.2}"
         )
-        self._name_human = (
-            f"Island"
-            " "
-            f"[{self._intensity_min:.0%}"
-            "-"
-            f"{self._intensity_max:.0%}]"
-        )
+        if self._intensity_spread:
+            self._name_human = (
+                f"Island"
+                " "
+                f"[{self._intensity_min:.0%}"
+                "-"
+                f"{self._intensity_max:.0%}]"
+            )
+        else:
+            self._name_human = f"Island {self._intensity:.0%}"
 
     @classmethod
     def from_min_max(
@@ -281,10 +339,80 @@ class MaskerIsland(Masker):
             idxs_np = np.array(idxs)
             if np.all(idxs_np >= lows) and np.all(idxs_np < highs):
                 res[idxs] = full[idxs]
+        logger.debug(
+            "mask/island> intensity (expected, actual): "
+            f"{self._intensity_real(full, res)}"
+            ", "
+            f"{self._intensity}"
+        )
         return res
 
     def _range_idx_dim(self, full: torch.Tensor) -> tuple[np.ndarray, np.ndarray]:
-        perc_mask_per_side = self._sample_intensity() / 2
+        perc_untouched_per_side = (1 - self._sample_intensity()) ** (1 / full.dim())
+        perc_mask_per_side = (1 - perc_untouched_per_side) / 2
+
+        lows, highs = [], []
+        for size_dim in full.shape:
+            lows.append(int(size_dim * perc_mask_per_side))
+            highs.append(int(size_dim * (1 - perc_mask_per_side)))
+        return np.array(lows), np.array(highs)
+
+
+class MaskerRing(Masker):
+    def __init__(
+        self, intensity: float, intensity_spread: float = 0.1, value_mask: float = 0.5
+    ):
+        super().__init__(intensity, intensity_spread, value_mask)
+
+        self._name = (
+            f"ring"
+            "_"
+            f"{(self._intensity - self._intensity_spread):.2}"
+            "_"
+            f"{(self._intensity + self._intensity_spread):.2}"
+        )
+        if self._intensity_spread:
+            self._name_human = (
+                f"Ring"
+                " "
+                f"[{self._intensity_min:.0%}"
+                "-"
+                f"{self._intensity_max:.0%}]"
+            )
+        else:
+            self._name_human = f"Ring {self._intensity:.0%}"
+
+    @classmethod
+    def from_min_max(
+        cls,
+        intensity_min: float = 0.4,
+        intensity_max: float = 0.6,
+        value_mask: float = 0.5,
+    ) -> "MaskerRing":
+        return cls(
+            intensity=(intensity_max + intensity_min) / 2,
+            intensity_spread=(intensity_max - intensity_min) / 2,
+            value_mask=value_mask,
+        )
+
+    def mask(self, full: torch.Tensor) -> torch.Tensor:
+        if math.isclose(self._intensity, 1.0):
+            return (self._value_mask * torch.ones_like(full)).type_as(full)
+
+        res = full.detach().clone()
+        if math.isclose(self._intensity, 0.0):
+            return res
+
+        lows, highs = self._range_idx_dim(full)
+        for idxs in itertools.product(*(range(len_dim) for len_dim in full.shape)):
+            idxs_np = np.array(idxs)
+            if np.all(idxs_np >= lows) and np.all(idxs_np < highs):
+                res[idxs] = self._value_mask
+        return res
+
+    def _range_idx_dim(self, full: torch.Tensor) -> tuple[np.ndarray, np.ndarray]:
+        perc_untouched_per_side = self._sample_intensity() ** (1 / full.dim())
+        perc_mask_per_side = (1 - perc_untouched_per_side) / 2
 
         lows, highs = [], []
         for size_dim in full.shape:

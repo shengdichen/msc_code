@@ -74,6 +74,24 @@ class DatasetHeat(dataset.DatasetPDE2d):
 
         plt.close(fig)
 
+    def plot_snapshots(self) -> None:
+        self._calc_weights_samples()
+
+        times = [
+            self._grid_time.start,
+            (self._grid_time.start + self._grid_time.end) / 2,
+            self._grid_time.end,
+        ]
+        snapshots = [self.solve_at_time(time).detach().numpy() for time in times]
+        titles = [f"t = {time:.4f}" for time in times]
+
+        pt = plot.PlotIllustration(self._grids)
+        pt.plot_targets_uniform(snapshots, titles)
+        pt.finalize(
+            self._base_dir / "plot_snapshots.png",
+            title=f"Snapshots: {self.name_problem.title()} Equation",
+        )
+
     @staticmethod
     def plot_animation_samples() -> None:
         torch.manual_seed(42)
