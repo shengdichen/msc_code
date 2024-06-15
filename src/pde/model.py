@@ -308,6 +308,35 @@ class ModelSingle(Model):
             print(dst.mse(), dst_mse)
         return np.array(channels), dst_mse.item()
 
+    def instance_train_eval(
+        self,
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, float]:
+        batch = next(
+            self._iterate_dataset(self._dataset_train.dataset_masked, batch_size=2)
+        )
+        train_masked = self._untorch(batch[0][0][0])
+        train_unmasked = self._untorch(batch[1][0][0])
+
+        batch = next(
+            self._iterate_dataset(self._datasets_eval[0].dataset_masked, batch_size=1)
+        )
+        eval_masked = self._untorch(batch[0][0][0])
+        eval_unmasked = batch[1][0][0]
+        eval_ours = batch[2][0][0]
+        mse = distance.Distance(eval_ours, eval_unmasked).mse_relative().item()
+        return (
+            train_unmasked,
+            train_masked,
+            self._untorch(eval_unmasked),
+            eval_masked,
+            self._untorch(eval_ours),
+            mse,
+        )
+
+    @staticmethod
+    def _untorch(mat: torch.Tensor) -> np.ndarray:
+        return mat.detach().cpu().numpy()
+
 
 class ModelDouble(Model):
     def __init__(

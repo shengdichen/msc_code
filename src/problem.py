@@ -286,7 +286,7 @@ class Problem:
 
         ds_train = self._dataset_single(mask_train)
         ds_train.as_train(self._n_instances_train)
-        for m in list(self._models_current_single(ds_train)):
+        for m in [list(self._models_current_single(ds_train))[2]]:  # kno
             ds_eval = self._dataset_single(ds_train.masks[0])
             ds_eval.as_eval(self._n_instances_eval)
             m.datasets_eval = [ds_eval]
@@ -298,6 +298,39 @@ class Problem:
             m.eval(print_result=True)
             m.datasets_eval = self._datasets_evals_single_ring
             m.eval(print_result=True)
+
+            ds_eval = self._datasets_evals_single_ring[4]
+            m.datasets_eval = [ds_eval]
+            m.eval(print_result=True)
+            __, train_masked, eval_unmasked, eval_masked, eval_ours, mse = (
+                m.instance_train_eval()
+            )
+            pt = util_plot.PlotIllustration(
+                ds_eval.grids,
+                ticks_x1_3d=[0.0, 0.20, 0.40, 0.60],
+                ticks_x2_3d=[0.0, 0.20, 0.40, 0.60],
+            )
+            pt.make_fig_ax(4)
+
+            pt.plot_targets_uniform(
+                [train_masked, eval_unmasked, eval_masked, eval_ours],
+                [
+                    "Truth (Train)",
+                    "Truth (Eval)",
+                    "Masked (Eval)",
+                    f"Prediction (Eval: {m.name_network} @ {mse:.2%})",
+                ],
+            )
+
+            title = (
+                f"Training> {ds_train.name_human(multiline=False)}"
+                "\n"
+                f"Evaluation> {ds_eval.name_human(multiline=False)}"
+            )
+            pt.finalize(
+                pathlib.Path(f"{ds_train.path}--ring.png"),
+                title=title,
+            )
 
     def mask_nonstandard(self) -> None:
         for value_mask in [0.5, 0.0, 1.0]:  # include default 0.5 for direct comparison
