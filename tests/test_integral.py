@@ -18,18 +18,18 @@ class TestIntegralMontecarlo:
 
     def test_calc_volume(self):
         assert (
-            IntegralMontecarlo()._volume
-            == IntegralMontecarlo([[0, 1], [0, 1]])._volume
+            IntegralMontecarlo()._volume  # pylint: disable=protected-access
+            == IntegralMontecarlo([[0, 1], [0, 1]])._volume  # pylint: disable=protected-access
             == 1.0
         )
 
         assert (
-            IntegralMontecarlo([[0, 2], [0, 3]])._volume
-            == IntegralMontecarlo([[0, 3], [0, 2]])._volume
+            IntegralMontecarlo([[0, 2], [0, 3]])._volume  # pylint: disable=protected-access
+            == IntegralMontecarlo([[0, 3], [0, 2]])._volume  # pylint: disable=protected-access
             == 6.0
         )
 
-        assert IntegralMontecarlo([[-1, +2], [-5, +10], [-20, +30]])._volume == 2250.0
+        assert IntegralMontecarlo([[-1, +2], [-5, +10], [-20, +30]])._volume == 2250.0  # pylint: disable=protected-access
 
         for ranges in [[[1, 0]], [[0, 1], [1, 0]], [[0, 1], [0, 1], [1, 0]]]:
             with pytest.raises(ValueError):
@@ -37,7 +37,7 @@ class TestIntegralMontecarlo:
 
     def test_samples(self):
         assert torch.equal(
-            IntegralMontecarlo(n_samples=10)._samples,
+            IntegralMontecarlo(n_samples=10)._samples,  # pylint: disable=protected-access
             torch.Tensor(
                 [
                     [0.0000, 0.0000],
@@ -55,7 +55,7 @@ class TestIntegralMontecarlo:
         )
 
         assert torch.equal(
-            IntegralMontecarlo(self._range_nonstandard(), n_samples=10)._samples,
+            IntegralMontecarlo(self._range_nonstandard(), n_samples=10)._samples,  # pylint: disable=protected-access
             torch.Tensor(
                 [
                     [1.0000, -1.0000],

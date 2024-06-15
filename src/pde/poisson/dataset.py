@@ -9,7 +9,8 @@ import torch
 from scipy.stats import multivariate_normal
 
 from src.numerics import grid
-from src.pde.dataset import DatasetMaskedDouble, DatasetMaskedSingle, DatasetPDE2d
+from src.pde.dataset import (DatasetMaskedDouble, DatasetMaskedSingle,
+                             DatasetPDE2d)
 from src.util import dataset as dataset_util
 from src.util.dataset import Masker
 
@@ -89,7 +90,7 @@ class DatasetSin(DatasetPoisson2d):
         constant_multiplier: float = 1.0,
         sample_weight_min: float = -1.0,
         sample_weight_max: float = 1.0,
-        n_samples_per_instance=4,
+        n_samples_per_instance: int = 4,
     ):
         super().__init__(grids, name_dataset="sum_of_sine")
 
@@ -150,7 +151,7 @@ class DatasetGauss(DatasetPoisson2d):
         sample_sigma_max: float = 0.13,
         sample_weight_min: float = 0.3,
         sample_weight_max: float = 0.7,
-        n_samples_per_instance=4,
+        n_samples_per_instance: int = 4,
     ):
         super().__init__(grids, name_dataset="sum_of_gauss")
         self._coords_x1, self._coords_x2 = self._grids.coords_as_mesh()
