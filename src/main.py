@@ -7,16 +7,58 @@ logger = logging.getLogger(__name__)
 
 
 class Pipeline:
-    def __init__(self):
-        self._problem_poisson = problem.ProblemPoisson()
-        self._problem_heat = problem.ProblemHeat()
-        self._problem_wave = problem.ProblemWave()
-
-        self._problems = [self._problem_poisson, self._problem_heat, self._problem_wave]
-
     def work(self) -> None:
-        for pr in self._problems:
-            pr.eval()
+        self.plot_eval()
+
+    def plot_mask(self) -> None:
+        problem.ProblemMask().plot()
+
+    def plot_raw(self) -> None:
+        DEFINITION.seed(42)
+        problem.ProblemPoisson().plot_raw()
+
+        DEFINITION.seed(2)
+        problem.ProblemHeat().plot_raw()
+
+        DEFINITION.seed(37)
+        problem.ProblemWave().plot_raw()
+
+    def plot_eval(self) -> None:
+        DEFINITION.seed(42)
+        poisson = problem.ProblemPoisson()
+        poisson.plot_error_single()
+        poisson.plot_error_double()
+
+        DEFINITION.seed(42)
+        heat = problem.ProblemHeat()
+        heat.plot_error_single()
+        heat.plot_error_double()
+
+        DEFINITION.seed(42)
+        wave = problem.ProblemWave()
+        wave.plot_error_single()
+        wave.plot_error_double()
+
+    def dynamic_remask(self) -> None:
+        DEFINITION.seed(42)
+        poisson = problem.ProblemPoisson()
+        poisson.plot_remask()
+
+    def plot_reconstruction(self) -> None:
+        DEFINITION.seed(42)
+        poisson = problem.ProblemPoisson()
+        poisson.plot_reconstruction()
+
+    def island_ring(self) -> None:
+        DEFINITION.seed(42)
+        problem.ProblemPoisson().island_ring()
+
+    def mask_nonstandard(self) -> None:
+        DEFINITION.seed(42)
+        problem.ProblemPoisson().mask_nonstandard()
+
+        DEFINITION.seed(42)
+        problem.ProblemWave().mask_nonstandard()
 
 
 def main():
